@@ -56,6 +56,15 @@ QAtSpiDBusConnection::QAtSpiDBusConnection(QObject *parent)
     connect(dbusWatcher, &QDBusServiceWatcher::serviceRegistered,
             this, &QAtSpiDBusConnection::checkEnabledState);
 
+    if (QGuiApplication::platformName().startsWith("xcb"_L1)) {
+        // In addition try if there is an xatom exposing the bus address, this allows applications run as root to work
+        QString address = getAddressFromXCB();
+        if (!address.isEmpty()) {
+            m_enabled = true;
+            connectA11yBus(address);
+        }
+    }
+
     // If it is registered already, setup a11y right away
     if (c.interface()->isServiceRegistered(A11Y_SERVICE))
         checkEnabledState();
@@ -66,15 +75,6 @@ QAtSpiDBusConnection::QAtSpiDBusConnection(QObject *parent)
         if (interface_name == QLatin1StringView(OrgA11yStatusInterface::staticInterfaceName()))
             checkEnabledState();
     });
-
-    if (QGuiApplication::platformName().startsWith("xcb"_L1)) {
-        // In addition try if there is an xatom exposing the bus address, this allows applications run as root to work
-        QString address = getAddressFromXCB();
-        if (!address.isEmpty()) {
-            m_enabled = true;
-            connectA11yBus(address);
-        }
-    }
 }
 
 QString QAtSpiDBusConnection::getAddressFromXCB()
