@@ -70,7 +70,7 @@ void tst_WaylandClientIviApplication::uniqueIviIds()
 int main(int argc, char **argv)
 {
     QTemporaryDir tmpRuntimeDir;
-    setenv("XDG_RUNTIME_DIR", tmpRuntimeDir.path().toLocal8Bit(), 1);
+    setenv("XDG_RUNTIME_DIR", tmpRuntimeDir.path().toLocal8Bit().constData(), 1);
     setenv("QT_QPA_PLATFORM", "wayland", 1); // force QGuiApplication to use wayland plugin
     setenv("QT_WAYLAND_SHELL_INTEGRATION", "ivi-shell", 1);
     setenv("QT_WAYLAND_DISABLE_WINDOWDECORATION", "1", 1); // window decorations don't make much sense on ivi-application

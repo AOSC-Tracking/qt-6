@@ -103,6 +103,7 @@ public:
 class ReflectionMapPass : public QSSGRenderPass
 {
 public:
+    ReflectionMapPass();
     void renderPrep(QSSGRenderer &renderer, QSSGLayerRenderData &data) final;
     void renderPass(QSSGRenderer &renderer) final;
     Type passType() const final { return Type::Standalone; }
@@ -112,6 +113,7 @@ public:
     QList<QSSGRenderReflectionProbe *> reflectionProbes;
     QSSGRenderableObjectList reflectionPassObjects;
     QSSGRhiGraphicsPipelineState ps;
+    bool m_includeSTO = false; // Compatibility flag to include STO objects in reflection map rendering.
 };
 
 class ZPrePassPass : public QSSGRenderPass
@@ -361,7 +363,7 @@ protected:
         QSSGShaderDefineList shaderDefines;
         QColor clearColor = Qt::black;
         QRhiDepthStencilClearValue depthStencilClearValue = { };
-        size_t index = 0;
+        qsizetype index = 0;
 
         std::optional<SkyboxCubeMapPass> skyboxCubeMapPass;
         std::optional<SkyboxPass> skyboxPass;

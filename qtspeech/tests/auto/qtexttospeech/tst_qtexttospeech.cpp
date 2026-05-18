@@ -517,8 +517,8 @@ void tst_QTextToSpeech::volume()
     QTRY_COMPARE(spy.size(), 1);
     QVERIFY(spy.value(0).first().toDouble() > 0.6);
 
-    QVERIFY2(tts.volume() > 0.65, QByteArray::number(tts.volume()));
-    QVERIFY2(tts.volume() < 0.75, QByteArray::number(tts.volume()));
+    QCOMPARE_GT(tts.volume(), 0.65);
+    QCOMPARE_LT(tts.volume(), 0.75);
 
     tts.setVolume(tts.volume());
     QCOMPARE(spy.size(), 1);
@@ -969,6 +969,17 @@ void tst_QTextToSpeech::synthesize()
             finished = true;
         }
     });
+
+    // warm up to avoid that initializing audio hardware makes timing flaky
+    if (canCheckDuration) {
+        tts.say("Initializing");
+        QTRY_VERIFY(running);
+        QTRY_VERIFY(finished);
+        running = false;
+        finished = false;
+        speechTimer.invalidate();
+        speechTime = 0;
+    }
 
     // first, measure how long it takes to speak the text. We can't do that if we
     // can't play audio.

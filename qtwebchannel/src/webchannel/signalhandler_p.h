@@ -64,11 +64,6 @@ public:
     int qt_metacall(QMetaObject::Call call, int methodId, void **args) override;
 
     /**
-     * Reset all connections, useful for benchmarks.
-     */
-    void clear();
-
-    /**
      * Fully remove and disconnect an object from handler
      */
     void remove(const QObject *object);
@@ -156,7 +151,7 @@ void SignalHandler<Receiver>::connectTo(const QObject *object, const int signalI
         qWarning() << "SignalHandler: QMetaObject::connect returned false. Unable to connect to" << object << signal.name() << signal.methodSignature();
         return;
     }
-    connectionCounter.first = connection;
+    connectionCounter.first = std::move(connection);
     connectionCounter.second = 1;
 
     setupSignalArgumentTypes(metaObject, signal);
@@ -248,27 +243,9 @@ int SignalHandler<Receiver>::qt_metacall(QMetaObject::Call call, int methodId, v
 }
 
 template<class Receiver>
-void SignalHandler<Receiver>::clear()
-{
-    // "consume loop": disconnectNotify() calls unknown code
-    const auto oldConnectionsCounter = std::exchange(m_connectionsCounter, {});
-    for (const SignalConnectionHash &connections : oldConnectionsCounter) {
-        for (const ConnectionPair &connection : connections)
-            QObject::disconnect(connection.first);
-    }
-    const SignalArgumentHash keep = m_signalArgumentTypes.take(&QObject::staticMetaObject);
-    m_signalArgumentTypes.clear();
-    m_signalArgumentTypes[&QObject::staticMetaObject] = keep;
-}
-
-template<class Receiver>
 void SignalHandler<Receiver>::remove(const QObject *object)
 {
-    auto it = m_connectionsCounter.find(object);
-    Q_ASSERT(it != m_connectionsCounter.cend());
-    const SignalConnectionHash connections = std::move(it.value());
-    m_connectionsCounter.erase(it);
-    for (const ConnectionPair &connection : connections)
+    for (ConnectionPair &connection : m_connectionsCounter.take(object))
         QObject::disconnect(connection.first);
 }
 

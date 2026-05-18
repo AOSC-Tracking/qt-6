@@ -1,5 +1,6 @@
 // Copyright (C) 2018 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 #ifndef QGEOCAMERATILES_P_P_H
 #define QGEOCAMERATILES_P_P_H
 
@@ -94,7 +95,7 @@ public:
     QSet<QGeoTileSpec> m_tiles;
 
     int m_intZoomLevel = 0;
-    int m_sideLength = 0;
+    int m_sideLength = 1;
     bool m_dirtyGeometry = false;
     bool m_dirtyMetadata = false;
     double m_viewExpansion = 1.0;

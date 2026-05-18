@@ -244,6 +244,8 @@ void QQmlVMEMetaObjectEndpoint::tryConnect()
                         = QQmlMetaType::propertyCacheForType(pd->propType());
                 void *argv[1] = { &target };
                 QMetaObject::metacall(target, QMetaObject::ReadProperty, coreIndex, argv);
+                if (!target)
+                    return;
                 Q_ASSERT(newPropertyCache);
                 pd = newPropertyCache->property(valueTypeIndex);
             }
@@ -282,11 +284,22 @@ QQmlInterceptorMetaObject::~QQmlInterceptorMetaObject()
 
 }
 
+static bool propertyIndicesConflict(QQmlPropertyIndex a, QQmlPropertyIndex b)
+{
+    if (a.coreIndex() != b.coreIndex())
+        return false;
+
+    if (!a.hasValueTypeIndex() || !b.hasValueTypeIndex())
+        return true;
+
+    return a.valueTypeIndex() == b.valueTypeIndex();
+}
+
 void QQmlInterceptorMetaObject::registerInterceptor(QQmlPropertyIndex index, QQmlPropertyValueInterceptor *interceptor)
 {
     for (QQmlPropertyValueInterceptor *vi = interceptors; vi; vi = vi->m_next) {
-        if (Q_UNLIKELY(vi->m_propertyIndex.coreIndex() == index.coreIndex())) {
-            qWarning() << "Attempting to set another interceptor on "
+        if (Q_UNLIKELY(propertyIndicesConflict(vi->m_propertyIndex, index))) {
+            qWarning() << "Attempting to set another interceptor on"
                        << object->metaObject()->className() << "property"
                        << object->metaObject()->property(index.coreIndex()).name()
                        << "- unsupported";

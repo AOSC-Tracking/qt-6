@@ -4,7 +4,6 @@
 #include "qplatformmediaplayer_p.h"
 #include <private/qmediaplayer_p.h>
 #include "qmediaplayer.h"
-#include "qplatformaudiodevices_p.h"
 #include "qplatformmediaintegration_p.h"
 
 QT_BEGIN_NAMESPACE
@@ -34,6 +33,13 @@ void QPlatformMediaPlayer::mediaStatusChanged(QMediaPlayer::MediaStatus status)
 void QPlatformMediaPlayer::error(QMediaPlayer::Error error, const QString &errorString)
 {
     player->d_func()->setError(error, errorString);
+}
+
+void QPlatformMediaPlayer::setInvalidMediaWithError(QMediaPlayer::Error err,
+                                                    const QString &errString)
+{
+    mediaStatusChanged(QMediaPlayer::InvalidMedia);
+    error(err, errString);
 }
 
 QPlatformMediaPlayer::PitchCompensationAvailability

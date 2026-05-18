@@ -1,9 +1,11 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
+#include <QtCore/qtconfigmacros.h>
 #undef QT_NO_FOREACH // this file contains unported legacy Q_FOREACH uses
 
 #include "qquickitemparticle_p.h"
+#include "qquickparticleemitter_p.h"
 #include <QtQuick/qsgnode.h>
 #include <QTimer>
 #include <QQmlComponent>
@@ -293,9 +295,14 @@ QQuickItemParticleAttached *QQuickItemParticle::qmlAttachedProperties(QObject *o
 
 bool QQuickItemParticle::clockShouldUpdate() const
 {
-    QQuickItem *parentItem = qobject_cast<QQuickItem *>(parent());
-    return (m_system && m_system->isRunning() && !m_system->isPaused() && m_system->isEnabled()
-            && ((parentItem && parentItem->isEnabled()) || !parentItem) && isEnabled());
+    // Determine if the QQuickItemParticle clock should stop by looking at the system running
+    // state and any parent Emitter enabled state. Note that this enabled state is the overridden
+    // QQuickParticleEmitter::enabled, and not the unrelated QQuickItem::enabled (which controls
+    // if the item reacts to input events).
+    QQuickParticleEmitter *parentEmitter = qobject_cast<QQuickParticleEmitter *>(parent());
+    bool parentEmitterDisabled = parentEmitter && !parentEmitter->isEnabled();
+    bool systemRunning = m_system && (m_system->isRunning() || m_system->isPaused());
+    return systemRunning && !parentEmitterDisabled;
 }
 
 void QQuickItemParticle::reconnectParent(QQuickItem *parentItem)

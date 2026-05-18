@@ -1,8 +1,7 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
 
-#ifndef QPLACEMANAGERENGINE_TEST_H
-#define QPLACEMANAGERENGINE_TEST_H
+#pragma once
 
 #include <QtCore/QDateTime>
 #include <QtCore/QFile>
@@ -30,9 +29,9 @@
 
 QT_BEGIN_NAMESPACE
 
-inline size_t qHash(const QPlaceCategory &category)
+inline size_t qHash(const QPlaceCategory &category, size_t seed = 0)
 {
-    return qHash(QUuid(category.categoryId().toLatin1()));
+    return qHash(QUuid(category.categoryId().toLatin1()), seed);
 }
 
 QT_END_NAMESPACE
@@ -720,4 +719,3 @@ private:
     QHash<QString, QList<QPlaceContent>> m_placeEditorials;
 };
 
-#endif

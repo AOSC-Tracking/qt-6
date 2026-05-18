@@ -36,6 +36,8 @@ public:
 
     ~StreamDecoder() override;
 
+    void seek(quint64 sessionID, TrackPosition pos, const LoopOffset &offset);
+
     QPlatformMediaPlayer::TrackType trackType() const;
 
     // Maximum number of frames that we are allowed to keep in render queue
@@ -47,7 +49,7 @@ public slots:
 
     void onFinalPacketReceived(PlaybackEngineObjectID sourceID);
 
-    void onFrameProcessed(Frame frame);
+    void onFrameProcessed(const Frame &frame);
 
 signals:
     void requestHandleFrame(Frame frame);
@@ -64,7 +66,7 @@ private:
 
     void decodeSubtitle(const Packet &packet);
 
-    void onFrameFound(Frame frame);
+    void onFrameFound(const Frame &frame);
 
     int sendAVPacket(const Packet &packet);
 
@@ -72,14 +74,18 @@ private:
 
 private:
     CodecContext m_codecContext;
-    TrackPosition m_absSeekPos = TrackPosition(0);
+
     const QPlatformMediaPlayer::TrackType m_trackType;
 
-    qint32 m_pendingFramesCount = 0;
+    struct SessionContext
+    {
+        TrackPosition absSeekPos = TrackPosition(0);
+        qint32 pendingFramesCount = 0;
+        LoopOffset offset = {};
+        QQueue<Packet> packets = {};
+    };
 
-    LoopOffset m_offset;
-
-    QQueue<Packet> m_packets;
+    SessionContext m_sessionCtx;
 };
 
 } // namespace QFFmpeg

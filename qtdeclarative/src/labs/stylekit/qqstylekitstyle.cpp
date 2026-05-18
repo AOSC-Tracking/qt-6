@@ -4,6 +4,7 @@
 #include "qqstylekit_p.h"
 #include "qqstylekitstyle_p.h"
 #include "qqstylekittheme_p.h"
+#include "qqstylekitvariation_p.h"
 #include "qqstylekitcustomtheme_p.h"
 #include "qqstylekitcontrolproperties_p.h"
 #include "qqstylekitpropertyresolver_p.h"
@@ -51,7 +52,7 @@ QT_BEGIN_NAMESPACE
     \labs
 
     \sa Theme, CustomTheme, StyleVariation, ControlStyle, DelegateStyle,
-    CustomControl, {qtlabsstylekit-property-resolution.html}{Property Resolution}
+        CustomControl
 */
 
 /*!
@@ -91,7 +92,7 @@ QT_BEGIN_NAMESPACE
 
     \snippet StyleSnippets.qml dark
 
-    \sa light, themeName, {qtlabsstylekit-theme.html}{Theme}
+    \sa light, themeName
 */
 
 /*!
@@ -110,8 +111,6 @@ QT_BEGIN_NAMESPACE
     you to set many more properties than otherwise needed. A
     reference implementation of a fallback style can be found
     \l {qtlabsstylekit-fallbackstyle.html}{here.}
-
-    \sa {qtlabsstylekit-property-resolution.html}{Property Resolution}
 */
 
 /*!
@@ -123,7 +122,7 @@ QT_BEGIN_NAMESPACE
 
     \snippet StyleSnippets.qml light
 
-    \sa dark, themeName, {qtlabsstylekit-theme.html}{Theme}
+    \sa dark, themeName
 */
 
 /*!
@@ -337,7 +336,8 @@ void QQStyleKitStyle::setThemeName(const QString &themeName)
         return;
 
     m_themeName = themeName;
-    recreateTheme();
+    if (m_completed)
+        recreateTheme();
 
     emit themeNameChanged();
 }
@@ -377,18 +377,15 @@ void QQStyleKitStyle::recreateTheme()
             qmlWarning(this) << "Custom theme '" << effectiveThemeName << "' has no theme component set";
     }
 
-    if (m_effectiveThemeName == effectiveThemeName) {
-        // Switching theme name from e.g "System" to "Light" might not
-        // actually change the currently effective theme.
-        emit themeNameChanged();
+    if (m_effectiveThemeName == effectiveThemeName)
         return;
-    }
 
     if (m_theme) {
         m_theme->deleteLater();
         m_theme = nullptr;
     }
 
+    m_effectiveThemeName = effectiveThemeName;
     m_currentThemeComponent = effectiveThemeComponent;
 
     if (effectiveThemeComponent) {
@@ -426,9 +423,11 @@ void QQStyleKitStyle::recreateTheme()
         m_theme->fonts()->setFallbackFont(fonts());
     if (m_theme->palettes())
         m_theme->palettes()->setFallbackPalette(palettes());
+
     if (this == current()) {
         m_theme->updateThemePalettes();
         m_theme->updateThemeFonts();
+        QQStyleKitVariation::resetVariationsForStyle(this);
         QQStyleKitReader::resetAll();
     }
 
@@ -510,4 +509,3 @@ void QQStyleKitStyle::componentComplete()
 QT_END_NAMESPACE
 
 #include "moc_qqstylekitstyle_p.cpp"
-

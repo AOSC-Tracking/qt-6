@@ -39,7 +39,7 @@
 
     \snippet gallery/galleryitemrenderer.cpp initialize
 
-    synchronize() takes care of copying GalleryItem data so that it can be
+    synchronizeData() takes care of copying GalleryItem data so that it can be
     safely accessed on the \l {Scene Graph and Rendering}{Qt Quick scene graph's
     render thread} later on:
 

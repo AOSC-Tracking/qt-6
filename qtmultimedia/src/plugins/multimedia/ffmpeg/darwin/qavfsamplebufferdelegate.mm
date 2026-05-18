@@ -3,6 +3,14 @@
 
 #include <QtFFmpegMediaPluginImpl/private/qavfsamplebufferdelegate_p.h>
 
+#define AVMediaType XAVMediaType
+extern "C" {
+#include <libavutil/hwcontext_videotoolbox.h>
+} // extern "C"
+#undef AVMediaType
+
+#include <QtCore/qsize.h>
+
 #include <QtMultimedia/private/qavfhelpers_p.h>
 #include <QtMultimedia/private/qvideoframe_p.h>
 
@@ -13,18 +21,20 @@
 #include <QtFFmpegMediaPluginImpl/private/qffmpeghwaccel_p.h>
 #undef AVMediaType
 
+#include <chrono>
 #include <optional>
+
+using namespace Qt::StringLiterals;
 
 QT_USE_NAMESPACE
 
-@implementation QAVFSampleBufferDelegate {
+@implementation QT_MANGLE_NAMESPACE(QAVFSampleBufferDelegate) {
 @private
     std::function<void(const QVideoFrame &)> frameHandler;
     QFFmpeg::QAVFSampleBufferDelegateTransformProvider transformationProvider;
-    AVBufferRef *hwFramesContext;
     std::unique_ptr<QFFmpeg::HWAccel> m_accel;
-    qint64 startTime;
-    std::optional<qint64> baseTime;
+    std::chrono::microseconds startTime;
+    std::optional<std::chrono::microseconds> baseTime;
     qreal frameRate;
 }
 
@@ -59,9 +69,6 @@ QT_USE_NAMESPACE
     if (!frameHandler)
         return;
 
-    // NB: on iOS captureOutput/connection can be nil (when recording a video -
-    // avfmediaassetwriter).
-
     CVImageBufferRef imageBuffer = CMSampleBufferGetImageBuffer(sampleBuffer);
     if (!imageBuffer || CFGetTypeID(imageBuffer) != CVPixelBufferGetTypeID()) {
         qWarning() << "Cannot get image buffer from sample buffer";
@@ -72,8 +79,19 @@ QT_USE_NAMESPACE
         imageBuffer,
         QAVFHelpers::QSharedCVPixelBuffer::RefMode::NeedsRef);
 
-    const CMTime time = CMSampleBufferGetPresentationTimeStamp(sampleBuffer);
-    const qint64 frameTime = time.timescale ? time.value * 1000000 / time.timescale : 0;
+    QSize incomingFrameSize {
+        static_cast<int>(CVPixelBufferGetWidth(pixelBuffer.get())),
+        static_cast<int>(CVPixelBufferGetHeight(pixelBuffer.get())) };
+    Q_ASSERT(!incomingFrameSize.isEmpty());
+    CvPixelFormat incomingCvPixelFormat = CVPixelBufferGetPixelFormatType(pixelBuffer.get());
+
+    Q_ASSERT(m_accel);
+    m_accel->updateFramesContext(
+        av_map_videotoolbox_format_to_pixfmt(incomingCvPixelFormat),
+        incomingFrameSize);
+
+    std::chrono::microseconds frameTime =
+        QAVFHelpers::CMTimeToMicroseconds(CMSampleBufferGetPresentationTimeStamp(sampleBuffer));
     if (!baseTime) {
         baseTime = frameTime;
         startTime = frameTime;
@@ -97,8 +115,7 @@ QT_USE_NAMESPACE
 
     format.setStreamFrameRate(frameRate);
 
-    Q_ASSERT(self->m_accel);
-    auto frame = QFFmpeg::qVideoFrameFromCvPixelBuffer(
+    QVideoFrame frame = QFFmpeg::qVideoFrameFromCvPixelBuffer(
         *m_accel,
         startTime - *baseTime,
         pixelBuffer,
@@ -114,13 +131,15 @@ QT_USE_NAMESPACE
         frame.setMirrored(presentationTransform.mirroredHorizontallyAfterRotation);
     }
 
-    frame.setStartTime(startTime - *baseTime);
-    frame.setEndTime(frameTime - *baseTime);
+    frame.setStartTime((startTime - *baseTime).count());
+    frame.setEndTime((frameTime - *baseTime).count());
     startTime = frameTime;
 
     frameHandler(frame);
 }
 
+// Sets the initial HWAccel. Should only be called once during
+// initialization.
 - (void)setHWAccel:(std::unique_ptr<QFFmpeg::HWAccel> &&)accel
 {
     m_accel = std::move(accel);

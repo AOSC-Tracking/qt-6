@@ -107,6 +107,7 @@ private:
 
     bool m_completed = false;
     bool m_isUpdatingPalette = false;
+    bool m_hasVariations = false;
 
     QQuickDeferredPointer<QQStyleKitStyle> m_fallbackStyle;
     QPointer<QQmlComponent> m_light;
@@ -124,6 +125,8 @@ private:
     friend class QQStyleKitAttached;
     friend class QQStyleKitPropertyGroup;
     friend class QQStyleKitPropertyResolver;
+    friend class QQStyleKitDebug;
+    friend class QQStyleKitVariation;
 };
 
 QT_END_NAMESPACE

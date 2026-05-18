@@ -24,6 +24,7 @@ qt_internal_add_module(Help
         qhelpsearchresult.cpp qhelpsearchresult.h
     DEFINES
         # -QT_ASCII_CAST_WARNINGS # special case remove
+        "QT_ENABLE_STRICT_MODE_UP_TO=QT_VERSION_CHECK(6,11,0)"
         QHELP_LIB
     LIBRARIES
         Qt::CorePrivate
@@ -32,6 +33,11 @@ qt_internal_add_module(Help
         Qt::Core
         Qt::Sql
     NO_GENERATE_CPP_EXPORTS
+)
+
+qt_internal_extend_target(Help CONDITION QT_FEATURE_concurrent
+    LIBRARIES
+        Qt::Concurrent
 )
 
 if(QT_FEATURE_fullqthelp)

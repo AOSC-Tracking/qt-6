@@ -413,7 +413,7 @@ void QWaylandQtShellSurfacePrivate::configure(uint windowState, const QRect &new
     }
 
     uint32_t serial = compositor->nextSerial();
-    m_pendingConfigures[serial] = qMakePair(windowState, newGeometry);
+    m_pendingConfigures[serial] = {windowState, newGeometry};
 
     send_set_position(serial, newGeometry.x(), newGeometry.y());
     send_resize(serial, newGeometry.width(), newGeometry.height());

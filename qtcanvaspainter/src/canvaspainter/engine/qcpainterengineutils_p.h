@@ -68,6 +68,7 @@ struct QCPaint {
 };
 
 struct QCDebugCounters {
+    // Draw
     int fillDrawCallCount = 0;
     int strokeDrawCallCount = 0;
     int textDrawCallCount = 0;
@@ -77,6 +78,13 @@ struct QCDebugCounters {
     // Total amounts
     int drawCallCount = 0;
     int triangleCount = 0;
+    // Images
+    qsizetype imageMemoryUsage = 0;
+    int imageCount = 0;
+    // Path caching
+    int pathGroupCount = 0;
+    int cachedSubpathCount = 0;
+    int cachedPathVertexDataSize = 0;
 };
 
 enum QCCommand : quint8 {
@@ -128,10 +136,8 @@ struct QCState {
     QCClip clip;
     QCPaint fill;
     QCPaint stroke;
-    QCanvasPainter::CompositeOperation compositeOperation;
-    QCanvasPainter::LineJoin lineJoin;
-    QCanvasPainter::LineCap lineCap;
-    QCanvasPainter::PathWinding winding;
+    QCanvasCustomBrush *customFill = nullptr;
+    QCanvasCustomBrush *customStroke = nullptr;
     float strokeWidth;
     float antialias;
     float miterLimit;
@@ -139,14 +145,16 @@ struct QCState {
     float brightness;
     float contrast;
     float saturate;
-    QCanvasCustomBrush *customFill = nullptr;
-    QCanvasCustomBrush *customStroke = nullptr;
+    float textLineHeight;
+    float textAntialias;
+    QCanvasPainter::CompositeOperation compositeOperation;
+    QCanvasPainter::LineJoin lineJoin;
+    QCanvasPainter::LineCap lineCap;
+    QCanvasPainter::PathWinding winding;
     QCanvasPainter::WrapMode textWrapMode = QCanvasPainter::WrapMode::NoWrap;
     QCanvasPainter::TextAlign textAlignment = QCanvasPainter::TextAlign::Start;
     QCanvasPainter::TextBaseline textBaseline = QCanvasPainter::TextBaseline::Alphabetic;
     QCanvasPainter::TextDirection textDirection = QCanvasPainter::TextDirection::Inherit;
-    float textLineHeight;
-    float textAntialias;
     bool blendEnable;
 };
 
@@ -162,19 +170,68 @@ struct QCPoint {
 };
 typedef QVarLengthArray<QCPoint> QCPoints;
 
-// Variables to determine if the QCanvasPath or related state
-// has changed so that paths, points & vertices need to be recreated.
+// Variables to determine if the QCanvasPath has changed so that paths, points &
+// vertices need to be recreated.
 struct QCCachedPath
 {
-    int pathGroup = 0;
+    int pathGroup = -1;
     int pathIterations = -1;
     int commandsCount = 0;
+};
+
+// Variables to determine if related state has changed so that paths, points &
+// vertices need to be recreated.
+struct QCCachedPathFillProperties
+{
+    float antialias = 1.0f;
+    int renderHints = 0;
+};
+
+inline bool operator==(const QCCachedPathFillProperties &a, const QCCachedPathFillProperties &b) noexcept
+{
+    return qFuzzyCompare(a.antialias, b.antialias)
+           && a.renderHints == b.renderHints;
+}
+
+inline bool operator!=(const QCCachedPathFillProperties &a, const QCCachedPathFillProperties &b) noexcept
+{
+    return !(a == b);
+}
+
+inline size_t qHash(const QCCachedPathFillProperties &s, size_t seed) noexcept
+{
+    return qHash(s.antialias, seed) ^ s.renderHints;
+}
+
+// Variables to determine if related state has changed so that paths, points &
+// vertices need to be recreated.
+struct QCCachedPathStrokeProperties
+{
+    float antialias = 1.0f;
     float strokeWidth = 1.0f;
     QCanvasPainter::LineCap lineCap = QCanvasPainter::LineCap::Butt;
     QCanvasPainter::LineJoin lineJoin = QCanvasPainter::LineJoin::Miter;
-    float edgeAAWidth = 1.0f;
+    int renderHints = 0;
 };
 
+inline bool operator==(const QCCachedPathStrokeProperties &a, const QCCachedPathStrokeProperties &b) noexcept
+{
+    return qFuzzyCompare(a.antialias, b.antialias)
+           && qFuzzyCompare(a.strokeWidth, b.strokeWidth)
+           && a.lineCap == b.lineCap
+           && a.lineJoin == b.lineJoin
+           && a.renderHints == b.renderHints;
+}
+
+inline bool operator!=(const QCCachedPathStrokeProperties &a, const QCCachedPathStrokeProperties &b) noexcept
+{
+    return !(a == b);
+}
+
+inline size_t qHash(const QCCachedPathStrokeProperties &s, size_t seed) noexcept
+{
+    return qHash(s.antialias, seed) ^ qHash(s.strokeWidth) ^ int(s.lineCap) ^ int(s.lineJoin) ^ s.renderHints;
+}
 
 struct QCContext {
     QCCommands commands;
@@ -184,24 +241,21 @@ struct QCContext {
     QCVertices vertices;
     // Currently active path, so paths[pathsCount - 1]
     QCPath *currentPath = nullptr;
-    // Currently rendered painter path
-    QCanvasPath *currentPainterPath = nullptr;
-    int currentPathGroup = -1;
-    QTransform currentPathTransform;
     // Currently prepared painter path.
     // Means that current commands & commandsData are from this path.
-    const QCanvasPath *preparedPainterPath = nullptr;
+    const QCanvasPath *preparedPath = nullptr;
     // Transform which was used for preparedPainterPath
-    QTransform preparedTransform;
-    QHash<const QCanvasPath*, QCCachedPath> cachedFillPaths;
-    QHash<const QCanvasPath*, QCCachedPath> cachedStrokePaths;
+    QTransform preparedPathTransform;
+    QHash<QCanvasPath *, QCCachedPath> cachedFillPaths;
+    QHash<QCanvasPath *, QCCachedPath> cachedStrokePaths;
     QList<QCState> states;
     QRectF view;
     QRectF bounds;
     QCanvasPainter::RenderHints renderHints = QCanvasPainter::RenderHint::Antialiasing;
-    float dpr;
     QMatrix4x4 customMatrix;
-    bool customMatrixValid;
+    QCDebugCounters debugCounters;
+    float dpr;
+    float divsTol;
     float tessTol;
     float distTol;
     float devicePxRatio;
@@ -213,11 +267,13 @@ struct QCContext {
     int verticesCount = 0;
     int pointsCount = 0;
     int pathsCount = 0;
-    QCDebugCounters debugCounters;
-    bool antialiasingEnabled = true;
     int fontId;
     float fontAlphaMin;
     float fontAlphaMax;
+    int preparedPathIterations = -1;
+    int preparedPathCommandsCount = 0;
+    bool customMatrixValid;
+    bool antialiasingEnabled = true;
 };
 
 #ifdef QCPAINTER_PERF_DEBUG

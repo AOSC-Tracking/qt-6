@@ -1,5 +1,6 @@
 // Copyright (C) 2022 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "qdeclarativeplace_p.h"
 #include "qdeclarativecontactdetails_p.h"
@@ -149,7 +150,7 @@ QT_BEGIN_NAMESPACE
 
 QDeclarativePlace::QDeclarativePlace(QObject *parent)
 :   QObject(parent),
-    m_extendedAttributes(new QQmlPropertyMap(this)),
+    m_extendedAttributes(QQmlPropertyMap::create(this)),
     m_contactDetails(new QDeclarativeContactDetails(this))
 {
     connect(m_contactDetails, &QDeclarativeContactDetails::valueChanged,
@@ -160,7 +161,7 @@ QDeclarativePlace::QDeclarativePlace(QObject *parent)
 
 QDeclarativePlace::QDeclarativePlace(const QPlace &src, QDeclarativeGeoServiceProvider *plugin, QObject *parent)
 :   QObject(parent),
-    m_extendedAttributes(new QQmlPropertyMap(this)),
+    m_extendedAttributes(QQmlPropertyMap::create(this)),
     m_contactDetails(new QDeclarativeContactDetails(this)),
     m_plugin(plugin)
 {

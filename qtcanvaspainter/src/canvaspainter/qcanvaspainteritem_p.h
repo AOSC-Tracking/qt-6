@@ -29,6 +29,7 @@ class QCanvasPainterItemPrivate : public QQuickRhiItemPrivate
 {
     Q_DECLARE_PUBLIC(QCanvasPainterItem)
 public:
+    void init();
     void updateDebugData(const QCDebugCounters &debugCounters);
     void updateDebug();
 

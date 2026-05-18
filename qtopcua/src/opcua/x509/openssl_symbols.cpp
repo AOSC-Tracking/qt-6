@@ -45,8 +45,9 @@
 
 QT_BEGIN_NAMESPACE
 
-Q_LOGGING_CATEGORY(lcSsl, "qt.opcua.ssl");
+Q_LOGGING_CATEGORY(lcOpcUaSsl, "qt.opcua.ssl");
 
+namespace QtOpcUaSsl {
 
 /*
     Note to maintainer:
@@ -92,13 +93,13 @@ Q_LOGGING_CATEGORY(lcSsl, "qt.opcua.ssl");
 namespace {
 void qsslSocketUnresolvedSymbolWarning(const char *functionName)
 {
-    qCWarning(lcSsl, "QSslSocket: cannot call unresolved function %s", functionName);
+    qCWarning(lcOpcUaSsl, "QSslSocket: cannot call unresolved function %s", functionName);
 }
 
 #if QT_CONFIG(library)
 void qsslSocketCannotResolveSymbolWarning(const char *functionName)
 {
-    qCWarning(lcSsl, "QSslSocket: cannot resolve %s", functionName);
+    qCWarning(lcOpcUaSsl, "QSslSocket: cannot resolve %s", functionName);
 }
 #endif
 
@@ -176,6 +177,21 @@ DEFINEFUNC(void, ASN1_INTEGER_free, ASN1_INTEGER *a, a, return, return)
 DEFINEFUNC2(int, i2d_X509_REQ_bio, BIO *bp, bp, X509_REQ *req, req, return 0, return)
 DEFINEFUNC2(int, i2d_X509_bio, BIO *bp, bp, X509 *x509, x509, return 0, return)
 
+int q_EVP_PKEY_CTX_set_rsa_keygen_bits(EVP_PKEY_CTX *ctx, int bits)
+{
+    return q_RSA_pkey_ctx_ctrl(ctx, EVP_PKEY_OP_KEYGEN,
+                               EVP_PKEY_CTRL_RSA_KEYGEN_BITS,
+                               bits, NULL);
+}
+
+int q_ERR_load_crypto_strings()
+{ return q_OPENSSL_init_crypto(OPENSSL_INIT_LOAD_CRYPTO_STRINGS, NULL); }
+
+int q_BIO_get_mem_data(BIO *b, void *pp)
+{
+    return (int)q_BIO_ctrl(b, BIO_CTRL_INFO, 0, (char *)pp);
+}
+
 #define RESOLVEFUNC(func) \
     if (!(_q_##func = _q_PTR_##func(libs.ssl->resolve(#func)))     \
         && !(_q_##func = _q_PTR_##func(libs.crypto->resolve(#func)))) \
@@ -186,9 +202,9 @@ DEFINEFUNC2(int, i2d_X509_bio, BIO *bp, bp, X509 *x509, x509, return 0, return)
 #if !QT_CONFIG(library)
 bool q_resolveOpenSslSymbols()
 {
-    qCWarning(lcSsl, "QSslSocket: unable to resolve symbols. Qt is configured without the "
+    qCWarning(lcOpcUaSsl, "QSslSocket: unable to resolve symbols. Qt is configured without the "
                      "'library' feature, which means runtime resolving of libraries won't work.");
-    qCWarning(lcSsl, "Either compile Qt statically or with support for runtime resolving "
+    qCWarning(lcOpcUaSsl, "Either compile Qt statically or with support for runtime resolving "
                      "of libraries.");
     return false;
 }
@@ -706,10 +722,12 @@ QDateTime q_getTimeFromASN1(const ASN1_TIME *aTime)
         return result;
 
     } else {
-        qCWarning(lcSsl, "unsupported date format detected");
+        qCWarning(lcOpcUaSsl, "unsupported date format detected");
         return QDateTime();
     }
 
 }
+
+} // namespace QtOpcUaSsl
 
 QT_END_NAMESPACE

@@ -17,6 +17,6 @@
     \section2 Usage
     To use this module, import it like this:
     \code
-    import QtWayland.Compositor.IviApplication
+    import QtWayland.Compositor.QtShell
     \endcode
 */

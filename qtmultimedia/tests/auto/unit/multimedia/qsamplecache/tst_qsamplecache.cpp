@@ -25,6 +25,12 @@ private slots:
     void testIncompatibleFile_data() { generateTestData(); }
     void testIncompatibleFile();
 
+    void testDRwavHeapBufferOverflow_data() { generateTestData(); }
+    void testDRwavHeapBufferOverflow();
+
+    void testDRwavIntegerUnderflow_data() { generateTestData(); }
+    void testDRwavIntegerUnderflow();
+
 private:
     void generateTestData()
     {
@@ -107,6 +113,32 @@ void tst_QSampleCache::testIncompatibleFile()
     const QUrl corruptedWavUrl = QUrl::fromLocalFile(QFINDTESTDATA("testdata/corrupted.wav"));
     SharedSamplePtr sample = requestSample(cache, corruptedWavUrl);
     QVERIFY(!sample);
+}
+
+void tst_QSampleCache::testDRwavHeapBufferOverflow()
+{
+    QFETCH(const QSampleCache::SampleSourceType, sampleSourceType);
+
+    QSampleCache cache;
+    cache.setSampleSourceType(sampleSourceType);
+
+    const QUrl corruptedWavUrl =
+            QUrl::fromLocalFile(QFINDTESTDATA("testdata/drwav_heap-buffer-overflow.wav"));
+    SharedSamplePtr sample = requestSample(cache, corruptedWavUrl);
+    QVERIFY(sample); // we can still read it
+}
+
+void tst_QSampleCache::testDRwavIntegerUnderflow()
+{
+    QFETCH(const QSampleCache::SampleSourceType, sampleSourceType);
+
+    QSampleCache cache;
+    cache.setSampleSourceType(sampleSourceType);
+
+    const QUrl corruptedWavUrl =
+            QUrl::fromLocalFile(QFINDTESTDATA("testdata/drwav_integer-underflow.wav"));
+    SharedSamplePtr sample = requestSample(cache, corruptedWavUrl);
+    QVERIFY(!sample); // bad file
 }
 
 QTEST_GUILESS_MAIN(tst_QSampleCache)

@@ -14,6 +14,7 @@
 #include <QtMultimedia/private/qsamplecache_p.h>
 
 using namespace Qt::Literals;
+using namespace std::chrono_literals;
 
 class tst_QSoundEffect : public QObject
 {
@@ -55,6 +56,12 @@ private slots:
     void testQSoundEffectVoiceMuted();
     void testQSoundEffectVoiceLooping();
 
+    void changeDeviceBetweenPlay();
+
+    void getPlaybackEngine();
+    void getPlaybackEngine_nullDevice();
+    void getPlaybackEngine_invalidFormat();
+
 private:
     QSoundEffect* sound;
     QUrl url; // test.wav: pcm_s16le, 48000 Hz, stereo, s16
@@ -66,6 +73,18 @@ private:
         QByteArray data(reinterpret_cast<const char *>(floats.data()),
                         floats.size() * sizeof(float));
         return std::make_shared<QSample>(data, format);
+    }
+
+    static QAudioFormat getFormat()
+    {
+        QAudioDevice device = QMediaDevices::defaultAudioOutput();
+        auto format = device.preferredFormat();
+        format.setSampleFormat(QAudioFormat::Float);
+        if (format.channelCount() > 2) {
+            format.setChannelCount(2);
+            format.setChannelConfig(QAudioFormat::ChannelConfigStereo);
+        }
+        return format;
     }
 };
 
@@ -666,6 +685,57 @@ void tst_QSoundEffect::testQSoundEffectVoiceLooping()
     QCOMPARE(buffer[1], 0.5f);
     QCOMPARE(buffer[2], 1.0f);
     QCOMPARE(buffer[3], 0.5f);
+}
+
+void tst_QSoundEffect::changeDeviceBetweenPlay()
+{
+    QList outputs = QMediaDevices::audioOutputs();
+    if (outputs.size() < 2)
+        QSKIP("Needs at least 2 audioOuputs");
+
+    sound->setAudioDevice(outputs[0]);
+
+    sound->setSource(url);
+    // wait for async load before playing
+    QTRY_COMPARE(sound->status(), QSoundEffect::Ready);
+    sound->play();
+    QTest::qWait(20ms); // give the engine a bit of time to start playback
+    sound->stop();
+
+    sound->setAudioDevice(outputs[1]);
+    sound->setSource(url2);
+    sound->play();
+}
+
+using QRtAudioEngine = QtMultimediaPrivate::QRtAudioEngine;
+using QSoundEffectPrivateWithPlayer = QtMultimediaPrivate::QSoundEffectPrivateWithPlayer;
+
+void tst_QSoundEffect::getPlaybackEngine()
+{
+    std::shared_ptr<QRtAudioEngine> engine = QSoundEffectPrivateWithPlayer::getEngineFor(
+            QMediaDevices::defaultAudioOutput(), getFormat());
+
+    // the sink starts suspended
+    QCOMPARE(engine->audioSink().state(), QAudio::SuspendedState);
+}
+
+void tst_QSoundEffect::getPlaybackEngine_nullDevice()
+{
+    QTest::ignoreMessage(QtMsgType::QtWarningMsg,
+                         "QRtAudioEngine needs to be called with a valid device");
+
+    std::shared_ptr<QRtAudioEngine> engine =
+            QSoundEffectPrivateWithPlayer::getEngineFor(QAudioDevice(), QAudioFormat());
+    QCOMPARE(engine, nullptr);
+}
+
+void tst_QSoundEffect::getPlaybackEngine_invalidFormat()
+{
+    QTest::ignoreMessage(QtMsgType::QtWarningMsg, "QRtAudioEngine requires floating point samples");
+
+    std::shared_ptr<QRtAudioEngine> engine = QSoundEffectPrivateWithPlayer::getEngineFor(
+            QMediaDevices::defaultAudioOutput(), QAudioFormat());
+    QCOMPARE(engine, nullptr);
 }
 
 QTEST_MAIN(tst_QSoundEffect)

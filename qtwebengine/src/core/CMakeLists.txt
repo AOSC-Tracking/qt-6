@@ -192,7 +192,7 @@ foreach(arch ${archs})
                 user_script.cpp user_script.h
                 visited_links_manager_qt.cpp visited_links_manager_qt.h
                 web_contents_adapter.cpp web_contents_adapter.h
-                web_contents_adapter_client.h
+                web_contents_adapter_client.cpp web_contents_adapter_client.h
                 web_contents_delegate_qt.cpp web_contents_delegate_qt.h
                 web_contents_view_qt.cpp web_contents_view_qt.h
                 web_engine_context.cpp web_engine_context.h
@@ -454,7 +454,6 @@ foreach(arch ${archs})
 
         if(LINUX)
             list(APPEND gnArgArg
-                angle_enable_gl=true
                 use_gtk=false # GTK toolkit bindings
                 use_qt5=false # Qt5 toolkit bindings
                 use_gio=false
@@ -470,7 +469,7 @@ foreach(arch ${archs})
                 ozone_extra_path="${CMAKE_CURRENT_LIST_DIR}/ozone/ozone_extra.gni"
             )
             set(systemLibs libjpeg libpng freetype harfbuzz libwebp libxml
-                opus snappy icu ffmpeg re2 lcms2 libopenjpeg2 libvpx
+                opus snappy icu ffmpeg re2 lcms2 libopenjpeg2 libvpx openh264
             )
             foreach(slib ${systemLibs})
                 extend_gn_list(gnArgArg
@@ -484,6 +483,10 @@ foreach(arch ${archs})
                    CONDITION Perl_FOUND
             )
             endif()
+            extend_gn_list(gnArgArg
+                ARGS angle_enable_gl
+                CONDITION QT_FEATURE_opengl
+            )
             extend_gn_list(gnArgArg
                 ARGS use_system_libxslt
                 CONDITION QT_FEATURE_webengine_system_libxml
@@ -537,6 +540,10 @@ foreach(arch ${archs})
                 CONDITION QT_FEATURE_webengine_ozone_x11
             )
             extend_gn_list(gnArgArg
+                ARGS angle_use_x11_glx
+                CONDITION QT_FEATURE_webengine_ozone_x11 AND QT_FEATURE_xcb_glx_plugin
+            )
+             extend_gn_list(gnArgArg
                 ARGS rtc_use_x11
                 CONDITION QT_FEATURE_webengine_ozone_x11 AND QT_FEATURE_webengine_webrtc
             )

@@ -4,6 +4,7 @@
 #include "qsamplecache_p.h"
 
 #include <QtConcurrent/qtconcurrentrun.h>
+#include <QtCore/qapplicationstatic.h>
 #include <QtCore/qcoreapplication.h>
 #include <QtCore/qdebug.h>
 #include <QtCore/qeventloop.h>
@@ -29,27 +30,57 @@ Q_STATIC_LOGGING_CATEGORY(qLcSampleCache, "qt.multimedia.samplecache")
 
 QT_BEGIN_NAMESPACE
 
-QSampleCache::QSampleCache(QObject *parent)
-    : QObject(parent)
+Q_APPLICATION_STATIC(QSampleCache, sampleCache)
+
+QSampleCache *QSampleCache::instance()
+{
+    return sampleCache();
+}
+
+#if QT_CONFIG(thread)
+QThreadPool *QSampleCache::threadPool()
+{
+#ifdef Q_OS_WASM
+    return QThreadPool::globalInstance();
+#else
+    return &m_threadPool;
+#endif
+}
+#endif
+
+QSampleCache::QSampleCache(QObject *parent) : QObject(parent)
 {
 #if QT_CONFIG(thread)
+    if (!thread()->isMainThread())
+        moveToThread(qApp->thread());
+
+#  if !defined(Q_OS_WASM)
     // we limit the number of loader threads to avoid thread explosion
     static constexpr int loaderThreadLimit = 8;
+    m_threadPool.setObjectName("QSampleCachePool");
     m_threadPool.setMaxThreadCount(loaderThreadLimit);
     m_threadPool.setExpiryTimeout(15);
     m_threadPool.setThreadPriority(QThread::LowPriority);
     m_threadPool.setServiceLevel(QThread::QualityOfService::Eco);
 
-    if (!thread()->isMainThread()) {
-        this->moveToThread(qApp->thread());
-        m_threadPool.moveToThread(qApp->thread());
-    }
-#endif
+    qAddPostRoutine([] {
+        // HACK: we need to stop the thread pool before qApp is nulled, otherwise some threads might still try construct
+        // some Q_APPLICATION_STATIC instances, causing assertion failures inside QNetworkAccessManager
+        Q_ASSERT(qApp && "QApplication is still valid");
+
+        QSampleCache *instance = sampleCache();
+
+        instance->m_threadPool.clear();
+        instance->m_threadPool.waitForDone();
+    });
+
+#  endif // Q_OS_WASM
+#endif // QT_CONFIG(thread)
 }
 
 QSampleCache::~QSampleCache()
 {
-#if QT_CONFIG(thread)
+#if QT_CONFIG(thread) && !defined(Q_OS_WASM)
     m_threadPool.clear();
     m_threadPool.waitForDone();
 #endif
@@ -67,12 +98,12 @@ QSampleCache::~QSampleCache()
     }
 }
 
-QSampleCache::SampleLoadResult QSampleCache::loadSample(QByteArray data)
+QSampleCache::SampleLoadResult QSampleCache::loadSample(QSpan<const char> data)
 {
     using namespace QtPrivate;
 
     drwav wavParser;
-    bool success = drwav_init_memory(&wavParser, data.constData(), data.size(), nullptr);
+    bool success = drwav_init_memory(&wavParser, data.data(), data.size(), nullptr);
     if (!success)
         return std::nullopt;
 
@@ -179,7 +210,7 @@ QSampleCache::loadSample(const QUrl &url, std::optional<SampleSourceType> forceS
     if (data.isEmpty() || errorOccurred)
         return std::nullopt;
 
-    return loadSample(std::move(data));
+    return loadSample(data);
 }
 
 #endif
@@ -217,7 +248,7 @@ QFuture<QSampleCache::SampleLoadResult> QSampleCache::loadSampleAsync(const QUrl
             return future;
         }
 
-        fulfilPromise(loadSample(std::move(data)));
+        fulfilPromise(loadSample(data));
         return future;
     }
 
@@ -245,7 +276,7 @@ QFuture<QSampleCache::SampleLoadResult> QSampleCache::loadSampleAsync(const QUrl
         if (data.isEmpty())
             promise->addResult(std::nullopt);
         else
-            promise->addResult(loadSample(std::move(data)));
+            promise->addResult(loadSample(data));
         promise->finish();
         reply->deleteLater(); // we cannot delete immediately
     });
@@ -293,14 +324,15 @@ QFuture<SharedSamplePtr> QSampleCache::requestSampleFuture(const QUrl &url)
     SharedSamplePtr sample = std::make_shared<QSample>(url, this);
     m_pendingSamples.emplace(url, std::pair{ sample, QList<SharedSamplePromise>{ promise } });
 
+    QFuture<SampleLoadResult> futureResult = [&] {
 #if QT_CONFIG(thread)
-    QFuture<SampleLoadResult> futureResult =
-            QtConcurrent::run(&m_threadPool, [url, type = m_sampleSourceType] {
-        return loadSample(url, type);
-    });
-#else
-    QFuture<SampleLoadResult> futureResult = loadSampleAsync(url);
+        if (threadPool()->maxThreadCount() > 0)
+            return QtConcurrent::run(threadPool(), [url, type = m_sampleSourceType] {
+                return loadSample(url, type);
+            });
 #endif
+        return loadSampleAsync(url);
+    }();
 
     futureResult.then(this,
                       [this, url, sample = std::move(sample)](SampleLoadResult loadResult) mutable {

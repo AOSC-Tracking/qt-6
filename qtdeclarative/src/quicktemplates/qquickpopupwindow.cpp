@@ -158,6 +158,12 @@ void QQuickPopupWindowPrivate::setVisible(bool visible)
         s_grabbedWindow = nullptr;
     }
 
+#if QT_CONFIG(wayland)
+    // The parent control geoemtry is used by the wayland compositor when flipping menus and comboboxes.
+    if (auto waylandWindow = dynamic_cast<QNativeInterface::Private::QWaylandWindow *>(platformWindow); waylandWindow && visible)
+        waylandWindow->setParentControlGeometry(q->parentControlGeometry());
+#endif
+
     QQuickWindowQmlImplPrivate::setVisible(visible);
 
     // Similar logic to grabForPopup(QWidget *popup)
@@ -325,6 +331,15 @@ bool QQuickPopupWindowPrivate::filterPopupSpecialCases(QEvent *event)
 bool QQuickPopupWindow::event(QEvent *e)
 {
     Q_D(QQuickPopupWindow);
+#if QT_CONFIG(wayland)
+    if (e->type() == QEvent::PlatformSurface && static_cast<QPlatformSurfaceEvent *>(e)->surfaceEventType() == QPlatformSurfaceEvent::SurfaceCreated) {
+        if (auto *waylandWindow = dynamic_cast<QNativeInterface::Private::QWaylandWindow *>(handle())) {
+            waylandWindow->setExtendedWindowType(QQuickPopupPrivate::get(d->m_popup)->extendedWindowType);
+            waylandWindow->setParentControlGeometry(parentControlGeometry());
+        }
+    }
+#endif
+
     if (d->filterPopupSpecialCases(e))
         return true;
 
@@ -409,17 +424,46 @@ void QQuickPopupWindow::handlePopupPositionChangeFromWindowSystem(const QPoint &
 
 void QQuickPopupWindow::implicitWidthChanged()
 {
-    Q_D(const QQuickPopupWindow);
-    if (auto popup = d->m_popup)
-        setWidth(popup->implicitWidth());
+    Q_D(QQuickPopupWindow);
+    if (auto popup = d->m_popup) {
+        auto *popupPrivate = QQuickPopupPrivate::get(popup);
+        // Include window insets so that it works for styles like FluentWinUI3
+        // that have insets.
+        // Use qCeil to avoid sub-pixel truncation that causes text wrapping
+        // (see QTBUG-130683). This matches the initial sizing logic in
+        // QQuickPopupPrivate::adjustPopupItemParentAndWindow().
+        const QMarginsF insets = popupPrivate->windowInsets();
+        setWidth(qCeil(popup->implicitWidth() + insets.left() + insets.right()));
+        d->m_popupItem->setWidth(popup->implicitWidth());
+        popupPrivate->reposition();
+    }
 }
 
 void QQuickPopupWindow::implicitHeightChanged()
 {
-    Q_D(const QQuickPopupWindow);
-    if (auto popup = d->m_popup)
-        setHeight(popup->implicitHeight());
+    Q_D(QQuickPopupWindow);
+    if (auto popup = d->m_popup) {
+        auto *popupPrivate = QQuickPopupPrivate::get(popup);
+        const QMarginsF insets = popupPrivate->windowInsets();
+        setHeight(qCeil(popup->implicitHeight() + insets.top() + insets.bottom()));
+        d->m_popupItem->setHeight(popup->implicitHeight());
+        popupPrivate->reposition();
+    }
 }
+
+#if QT_CONFIG(wayland)
+QRect QQuickPopupWindow::parentControlGeometry() const
+{
+    const QQuickItem *parent = popup()->parentItem();
+    // Menus have an overlap property that we want to honor,
+    // as long as it's not wider than half the width of the parent item.
+    const qreal overlap = popup()->property("overlap").toReal();
+    QRectF parentItemBoundingRect = parent->boundingRect();
+    const QPointF parentItemMappedPosition = parent->mapToScene(parentItemBoundingRect.topLeft());
+    return { qFloor(parentItemMappedPosition.x() + overlap), qFloor(parentItemMappedPosition.y()),
+             qCeil(qMax<qreal>(qAbs(parentItemBoundingRect.width() - overlap * 2), parentItemBoundingRect.width() / 4)), qCeil(parentItemBoundingRect.height()) };
+}
+#endif
 
 QT_END_NAMESPACE
 

@@ -569,7 +569,7 @@ class QtPositioning implements LocationListener
         protected void addSatelliteInfoListener()
         {
             try {
-                locationManager.registerGnssStatusCallback(gnssListener);
+                locationManager.registerGnssStatusCallback(gnssListener, null);
             } catch(Exception e) {
                 e.printStackTrace();
             }
@@ -636,6 +636,9 @@ class QtPositioning implements LocationListener
         }
     }
 
+    // This method is deprecated starting from API Level 29, but for older
+    // versions it should still be implemented!
+    @SuppressWarnings("deprecation")
     @Override
     public void onStatusChanged(String provider, int status, Bundle extras) {}
 

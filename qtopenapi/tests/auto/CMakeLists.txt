@@ -10,10 +10,12 @@ if(TARGET ${QT_CMAKE_EXPORT_NAMESPACE}::QtOpenAPIGeneratorJar
         AND TARGET Qt::OpenApiCommon
     )
     add_subdirectory(compression)
+    add_subdirectory(generator-additional-properties)
     add_subdirectory(linking_several_clients)
     if(TARGET Qt::Gui)
         add_subdirectory(mediatype)
     endif()
+    add_subdirectory(models)
     add_subdirectory(openapi2.0)
     add_subdirectory(operation-parameters)
     add_subdirectory(petstore)

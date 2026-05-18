@@ -13,7 +13,8 @@
     The \e {Graph Printing} example demonstrates how to print or export to PDF
     2D and 3D graphs.
 
-    \image graphprinting-example.png
+    \image graphprinting-example.webp
+           {2D line graph with PDF export and print controls}
 
     \include examples-run.qdocinc
 
@@ -35,16 +36,24 @@
                     \snippet common/graphprinting/graphprinter.cpp 0
                 \li Sets up image processing.
 
-                    The function creates a \l QPainter referring to the previously
-                    created \l QPdfWriter.
+                    The static helper \c paintImage function draws the image
+                    captured from QML onto an instance of the
+                    \l QPaintDevice class:
+
+
+                    The function creates a \l QPainter referring to the device.
 
                     To ensure the graph is printed correctly, it is scaled to the
-                    painter's viewport size with the original aspect ratio
+                    painter's viewport size with the original aspect ratio.
 
                     The painter's rendering hint is set to lossless image rendering.
                     After this, the function draws the image to the PDF file.
 
                     \snippet common/graphprinting/graphprinter.cpp 1
+
+                    Since \l QPdfWriter and \l QPrinter inherit \l QPaintDevice,
+                    the helper function can be called from the \c generatePDF function
+                    and the \c print function explained below.
             \endlist
 
             The function returns a status message to be displayed in the application's
@@ -74,31 +83,25 @@
     The 2D and 3D graphs are laid out in a Stacklayout. Users can navigate it
     with a TabBar.
 
-    \snippet common/graphprinting/qml/graphprinting/main.qml 0
+    \snippet common/graphprinting/qml/graphprinting/Main.qml 0
 
-    The FolderDialog component is used to select a folder for saving the
-    exported file. This component has no visual representation in the
+    The FileDialog component is used to choose the PDF file to be written.
+    This component has no visual representation in the
     application layout, but its API is accessible from the current QML file.
 
-    The \inlineimage common/graphprinting/qml/graphprinting/folder.svg button invokes a folder dialog.
-
-    \snippet common/graphprinting/qml/graphprinting/main.qml 1.1
-    \dots 0
-    \snippet common/graphprinting/qml/graphprinting/main.qml 1.2
-    \dots
-    \snippet common/graphprinting/qml/graphprinting/main.qml 1.3
+    \snippet common/graphprinting/qml/graphprinting/Main.qml 1.1
 
     A custom printing dialog is created for selecting a printer, and is triggered
     with the \inlineimage common/graphprinting/qml/graphprinting/print.svg button.
     The Dialog retrieves the list of available printers and displays them in a
     list view.
 
-    \snippet common/graphprinting/qml/graphprinting/main.qml 2.1
+    \snippet common/graphprinting/qml/graphprinting/Main.qml 2.1
     \dots 0
-    \snippet common/graphprinting/qml/graphprinting/main.qml 2.2
+    \snippet common/graphprinting/qml/graphprinting/Main.qml 2.2
 
     The \inlineimage common/graphprinting/qml/graphprinting/documents.svg button triggers the
-    PDF export, if a folder has been already selected.
+    PDF export.
 
     When either PDF export or printing is triggered, the following code is executed:
 
@@ -109,15 +112,15 @@
             \c generatePDF or \c print function in the \c GraphPrinter class.
 
             PDF export:
-            \snippet common/graphprinting/qml/graphprinting/main.qml 3.1
+            \snippet common/graphprinting/qml/graphprinting/Main.qml 3.1
 
             Print:
-            \snippet common/graphprinting/qml/graphprinting/main.qml 3.2
+            \snippet common/graphprinting/qml/graphprinting/Main.qml 3.2
 
             For the size, the code makes the image render at 4x the actual
             resolution. For 3D graphs, the item must also be expanded
             for the duration of printing:
 
-            \snippet common/graphprinting/qml/graphprinting/main.qml 3.3
+            \snippet common/graphprinting/qml/graphprinting/Main.qml 3.3
     \endlist
 */

@@ -148,7 +148,7 @@ signals:
 
 // ************* QQStyleKitBorderProperties ****************
 
-class QQStyleKitBorderProperties : public QQStyleKitPropertyGroup
+class Q_LABSSTYLEKIT_EXPORT QQStyleKitBorderProperties : public QQStyleKitPropertyGroup
 {
     Q_OBJECT
     Q_PROPERTY(qreal width READ width WRITE setWidth NOTIFY widthChanged FINAL)
@@ -546,7 +546,7 @@ signals:
  * only be read), and if so, offer a storage for storing those values. That storage is typically
  * a map that stores _only_ the properties that are written to, and nothing else.
  */
-class QQStyleKitControlProperties : public QQStyleKitPropertyGroup
+class Q_LABSSTYLEKIT_EXPORT QQStyleKitControlProperties : public QQStyleKitPropertyGroup
 {
     Q_OBJECT
     Q_PROPERTY(qreal spacing READ spacing WRITE setSpacing NOTIFY spacingChanged FINAL)
@@ -560,8 +560,9 @@ class QQStyleKitControlProperties : public QQStyleKitPropertyGroup
     Q_PROPERTY(QQStyleKitIndicatorWithSubTypes *indicator READ indicator NOTIFY indicatorChanged FINAL)
     Q_PROPERTY(QQStyleKitTextProperties *text READ text NOTIFY textChanged FINAL)
     Q_PROPERTY(QQuickTransition *transition READ transition WRITE setTransition NOTIFY transitionChanged FINAL)
-    // This type is merged with ControlState, from a QML API point of view
-    QML_ANONYMOUS
+
+    QML_UNCREATABLE("This component can only be instantiated by StyleKit")
+    QML_NAMED_ELEMENT(ControlStyleProperties)
 
 public:
     QQStyleKitControlProperties(QQSK::PropertyGroup group, QObject *parent = nullptr);

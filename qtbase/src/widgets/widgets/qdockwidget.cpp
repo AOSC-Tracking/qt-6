@@ -782,7 +782,7 @@ void QDockWidgetPrivate::startDrag(DragScope scope)
     }
 
     if (state->ctrlDrag)
-        layout->restore();
+        layout->restore(QInternal::KeepSavedState);
 
     state->dragging = true;
 
@@ -829,7 +829,7 @@ void QDockWidgetPrivate::endDrag(EndDragMode mode)
                     delete state->widgetItem;
                     state->widgetItem = nullptr;
                 }
-                mwLayout->restore();
+                mwLayout->restore(QInternal::KeepSavedState);
                 QDockWidgetLayout *dwLayout = qobject_cast<QDockWidgetLayout*>(layout);
                 if (!dwLayout->nativeWindowDeco()) {
                     // get rid of the X11BypassWindowManager window flag and activate the resizer
@@ -1609,6 +1609,8 @@ void QDockWidget::closeEvent(QCloseEvent *event)
     const QMainWindow *win = qobject_cast<QMainWindow*>(parentWidget());
     const bool canClose = (d->features & DockWidgetClosable)
                        || (!win || !win->isVisible());
+    if (canClose)
+        d->closed = true;
     event->setAccepted(canClose);
 }
 
@@ -1664,6 +1666,7 @@ bool QDockWidget::event(QEvent *event)
         break;
     case QEvent::Show: {
         d->toggleViewAction->setChecked(true);
+        d->closed = false;
         QPoint parentTopLeft(0, 0);
         if (isWindow()) {
             const QScreen *screen = d->associatedScreen();

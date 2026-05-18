@@ -96,10 +96,13 @@ private slots:
     void linkInteraction_data();
     void linkInteraction();
 
+    void styledTextLinkInColumnLayout();
+
     void implicitSize_data();
     void implicitSize();
     void implicitSizeChangeRewrap();
     void implicitSizeMaxLineCount();
+    void implicitWidthAfterWidthChange();
     void dependentImplicitSizes();
     void contentSize();
     void implicitSizeBinding_data();
@@ -171,6 +174,10 @@ private slots:
 
     void textObjectRespectsDpr_data();
     void textObjectRespectsDpr();
+    void clearTruncated();
+
+    void textObjectBaselineAlignment();
+    void textObjectBaselineVsBottomAlignment();
 
 private:
     QStringList standard;
@@ -1080,7 +1087,7 @@ void tst_qquicktext::hAlignImplicitWidth()
     QQuickView view(testFileUrl("hAlignImplicitWidth.qml"));
     view.setFlags(view.flags() | Qt::WindowStaysOnTopHint); // Prevent being obscured by other windows.
     view.show();
-    view.requestActivate();
+    QVERIFY(QTest::qWaitForWindowActive(&view));
     QVERIFY(QTest::qWaitForWindowExposed(&view));
 
     QQuickText *text = view.rootObject()->findChild<QQuickText*>("textItem");
@@ -1580,7 +1587,6 @@ void tst_qquicktext::underline()
 {
     QQuickView view(testFileUrl("underline.qml"));
     view.show();
-    view.requestActivate();
     QVERIFY(QTest::qWaitForWindowActive(&view));
     QQuickText *textObject = view.rootObject()->findChild<QQuickText*>("myText");
     QVERIFY(textObject != nullptr);
@@ -1593,7 +1599,6 @@ void tst_qquicktext::overline()
 {
     QQuickView view(testFileUrl("overline.qml"));
     view.show();
-    view.requestActivate();
     QVERIFY(QTest::qWaitForWindowActive(&view));
     QQuickText *textObject = view.rootObject()->findChild<QQuickText*>("myText");
     QVERIFY(textObject != nullptr);
@@ -1606,7 +1611,6 @@ void tst_qquicktext::strikeout()
 {
     QQuickView view(testFileUrl("strikeout.qml"));
     view.show();
-    view.requestActivate();
     QVERIFY(QTest::qWaitForWindowActive(&view));
     QQuickText *textObject = view.rootObject()->findChild<QQuickText*>("myText");
     QVERIFY(textObject != nullptr);
@@ -2175,6 +2179,35 @@ void tst_qquicktext::linkInteraction()
     QCOMPARE(textObject->linkAt(-1, -1), QString());
 }
 
+// QTBUG-131441: styled text link detection is incorrect when Text
+// is in ColumnLayout with Layout.fillWidth and non-left alignment
+void tst_qquicktext::styledTextLinkInColumnLayout()
+{
+    QQuickView view;
+    QVERIFY(QQuickTest::showView(view, testFileUrl("styledTextLinkInColumnLayout.qml")));
+
+    QQuickText *textItem = view.rootObject()->findChild<QQuickText *>("styledTextLink");
+    QVERIFY(textItem);
+    QVERIFY(textItem->width() > textItem->contentWidth());
+
+    const QString plainText("this text has a link in it");
+    const TextMetrics metrics(plainText);
+    const QSizeF bounds(textItem->width(), textItem->height());
+    const int linkCharPos = plainText.indexOf("link") + 2; // middle of "link"
+    const QRectF linkRect = metrics.characterRectangle(linkCharPos, Qt::AlignHCenter, Qt::AlignTop, bounds);
+    const QString expectedLink = "http://qt-project.org/test";
+
+    QCOMPARE(textItem->linkAt(linkRect.center().x(), linkRect.center().y()), expectedLink);
+    QCOMPARE(textItem->linkAt(textItem->width() - 10, linkRect.center().y()), QString());
+
+    // Verify that onLinkHovered actually fires by hovering over the link
+    QQuickText *hoveredLinkText = view.rootObject()->findChild<QQuickText *>("hoveredLink");
+    QVERIFY(hoveredLinkText);
+    const QPoint linkCenter = textItem->mapToScene(linkRect.center()).toPoint();
+    QTest::mouseMove(&view, linkCenter);
+    QTRY_COMPARE(hoveredLinkText->text(), expectedLink);
+}
+
 void tst_qquicktext::baseUrl()
 {
     QUrl localUrl("file:///tests/text.qml");
@@ -2455,6 +2488,44 @@ void tst_qquicktext::implicitSizeMaxLineCount()
     QCOMPARE_EQ(textObject->implicitWidth(), referenceWidth);
 }
 
+// implicitWidth should not grow after width is constrained and then released
+void tst_qquicktext::implicitWidthAfterWidthChange()
+{
+    // Test that implicitWidth remains stable when the item width is constrained
+    // and then released, for StyledText with <br> tags, maximumLineCount, wrap, and elide.
+    QScopedPointer<QQuickText> textObject(new QQuickText);
+    textObject->setTextFormat(QQuickText::StyledText);
+    textObject->setText(QStringLiteral("First line<br>Second line<br>"
+                                       "11111111111111111111111111111111111111111111111111111111111"
+                                       "11111111111111111111111111111111111111111"));
+    textObject->setMaximumLineCount(2);
+    textObject->setWrapMode(QQuickText::Wrap);
+    textObject->setElideMode(QQuickText::ElideRight);
+    textObject->componentComplete();
+
+    // Get the unconstrained implicitWidth
+    const qreal originalImplicitWidth = textObject->implicitWidth();
+    QVERIFY(originalImplicitWidth > 0);
+
+    // Constrain the width to something narrow enough to trigger wrapping
+    const qreal narrowWidth = originalImplicitWidth * 0.3;
+    textObject->setWidth(narrowWidth);
+
+    // The implicitWidth should not change just because we constrained the width
+    const qreal constrainedImplicitWidth = textObject->implicitWidth();
+    QCOMPARE_EQ(constrainedImplicitWidth, originalImplicitWidth);
+
+    // Now widen the width back
+    textObject->setWidth(originalImplicitWidth * 2);
+    const qreal widenedImplicitWidth = textObject->implicitWidth();
+    QCOMPARE_EQ(widenedImplicitWidth, originalImplicitWidth);
+
+    // Release the width constraint entirely
+    textObject->resetWidth();
+    const qreal afterImplicitWidth = textObject->implicitWidth();
+    QCOMPARE_EQ(afterImplicitWidth, originalImplicitWidth);
+}
+
 void tst_qquicktext::dependentImplicitSizes()
 {
     QQmlComponent component(&engine, testFile("implicitSizes.qml"));
@@ -2550,6 +2621,9 @@ void tst_qquicktext::contentSize()
     QVERIFY(textObject->contentWidth() <= textObject->width());
     QVERIFY(textObject->contentHeight() < textObject->height());
     QCOMPARE(spySize.size(), 3);
+    #if (defined(Q_CC_MSVC) && Q_CC_MSVC > 1920) || defined(Q_CC_MINGW)
+        QEXPECT_FAIL("", "QTBUG-88646", Continue);
+    #endif
     QCOMPARE(spyWidth.size(), 3);
     QCOMPARE(spyHeight.size(), 2);
     int spyCount = 3;
@@ -2568,6 +2642,9 @@ void tst_qquicktext::contentSize()
     QVERIFY(textObject->contentWidth() > textObject->width());
     QVERIFY(textObject->contentHeight() > textObject->height());
     QCOMPARE(spySize.size(), ++spyCount);
+    #if (defined(Q_CC_MSVC) && Q_CC_MSVC > 1920) || defined(Q_CC_MINGW)
+        QEXPECT_FAIL("", "QTBUG-88646", Continue);
+    #endif
     QCOMPARE(spyWidth.size(), spyCount);
     QCOMPARE(spyHeight.size(), 3);
 }
@@ -3169,7 +3246,6 @@ void tst_qquicktext::lineLaidOutRelayout()
     QScopedPointer<QQuickView> window(createView(testFile("lineLayoutRelayout.qml")));
 
     window->show();
-    window->requestActivate();
     QVERIFY(QTest::qWaitForWindowActive(window.data()));
 
     QQuickText *myText = window->rootObject()->findChild<QQuickText*>("myText");
@@ -3201,7 +3277,6 @@ void tst_qquicktext::lineLaidOutFontUpdate()
     QScopedPointer<QQuickView> window(createView(testFile("lineLayoutFontUpdate.qml")));
 
     window->show();
-    window->requestActivate();
     QVERIFY(QTest::qWaitForWindowActive(window.data()));
 
     auto *myText = window->rootObject()->findChild<QQuickText*>("exampleText");
@@ -4613,7 +4688,6 @@ void tst_qquicktext::htmlLists()
     textObject->setText(text);
 
     view->show();
-    view->requestActivate();
     QVERIFY(QTest::qWaitForWindowActive(view.get()));
 
     QCOMPARE(textPrivate->extra->doc->lineCount(), nbLines);
@@ -5095,6 +5169,192 @@ void tst_qquicktext::textObjectRespectsDpr()
 
     QCOMPARE(customTextObject.drawnDpr, devicePixelRatio);
     QCOMPARE(customTextObject.drawnRect.size(), customTextObject.intrinsicSize(textDocument, 0, {}));
+}
+
+class ColoredTextObject : public QObject, public QTextObjectInterface
+{
+    Q_OBJECT
+    Q_INTERFACES(QTextObjectInterface)
+
+public:
+    using QObject::QObject;
+
+    QSizeF intrinsicSize(QTextDocument *, int, const QTextFormat &) override
+    {
+        return {20, 20};
+    }
+
+    void drawObject(QPainter *painter, const QRectF &rect, QTextDocument *,
+                    int, const QTextFormat &) override
+    {
+        painter->fillRect(rect, Qt::red);
+    }
+};
+
+static int findFirstRedPixelY(const QImage &img, int startY, int endY)
+{
+    for (int y = startY; y < endY; ++y) {
+        for (int x = 0; x < img.width(); ++x) {
+            const QColor c = img.pixelColor(x, y);
+            if (c.red() > 200 && c.green() < 50 && c.blue() < 50)
+                return y;
+        }
+    }
+    return -1;
+}
+
+void tst_qquicktext::textObjectBaselineAlignment()
+{
+    SKIP_IF_NO_WINDOW_GRAB;
+
+    QScopedPointer<QQuickView> window(new QQuickView);
+    window->setSource(testFileUrl("textObjectBaselineAlignment.qml"));
+    QTRY_COMPARE(window->status(), QQuickView::Ready);
+    window->show();
+    QVERIFY(QTest::qWaitForWindowExposed(window.data()));
+
+    auto *baselineText = window->rootObject()->findChild<QQuickText *>("baselineText");
+    auto *bottomText = window->rootObject()->findChild<QQuickText *>("bottomText");
+    auto *topText = window->rootObject()->findChild<QQuickText *>("topText");
+    QVERIFY(baselineText);
+    QVERIFY(bottomText);
+    QVERIFY(topText);
+
+    auto insertObject = [](QQuickText *text, QTextCharFormat::VerticalAlignment alignment,
+                           ColoredTextObject *obj) {
+        auto *textPrivate = QQuickTextPrivate::get(text);
+        auto *textDocument = textPrivate->extra->doc;
+        auto *documentLayout = textDocument->documentLayout();
+
+        documentLayout->registerHandler(QTextCharFormat::UserObject, obj);
+
+        QTextCursor cursor(textDocument);
+        QTextCharFormat format;
+        format.setObjectType(QTextCharFormat::UserObject);
+        format.setVerticalAlignment(alignment);
+        cursor.insertText(QString(QChar::ObjectReplacementCharacter), format);
+
+        text->invalidate();
+    };
+
+    const qreal dpr = window->devicePixelRatio();
+    const int regionHeight = int(100 * dpr);
+
+    ColoredTextObject baselineObj, bottomObj, topObj;
+    insertObject(baselineText, QTextCharFormat::AlignBaseline, &baselineObj);
+    insertObject(bottomText, QTextCharFormat::AlignBottom, &bottomObj);
+    insertObject(topText, QTextCharFormat::AlignTop, &topObj);
+
+    // Wait for all objects to be rendered
+    QImage grab;
+    QTRY_VERIFY_WITH_TIMEOUT([&]() {
+        grab = window->grabWindow();
+        return findFirstRedPixelY(grab, 0, regionHeight) >= 0
+            && findFirstRedPixelY(grab, regionHeight, 2 * regionHeight) >= 0
+            && findFirstRedPixelY(grab, 2 * regionHeight, 3 * regionHeight) >= 0;
+    }(), 5000);
+
+    // Find Y position of the red object relative to each Text item's region
+    const int baselineY = findFirstRedPixelY(grab, 0, regionHeight);
+    const int bottomY = findFirstRedPixelY(grab, regionHeight, 2 * regionHeight) - regionHeight;
+    const int topY = findFirstRedPixelY(grab, 2 * regionHeight, 3 * regionHeight) - 2 * regionHeight;
+
+    QVERIFY2(baselineY >= 0, "AlignBaseline object not found in grab");
+    QVERIFY2(bottomY >= 0, "AlignBottom object not found in grab");
+    QVERIFY2(topY >= 0, "AlignTop object not found in grab");
+
+    // With a single font size, AlignBaseline and AlignBottom produce
+    // approximately the same position. They may differ by 1px due to
+    // QFontMetrics (integer) vs QFixed rounding in line descent.
+    QVERIFY2(qAbs(baselineY - bottomY) <= 1,
+             qPrintable(QString("AlignBaseline (%1) and AlignBottom (%2) should be within 1px")
+                        .arg(baselineY).arg(bottomY)));
+
+    // Sanity check: AlignTop should differ from AlignBottom/AlignBaseline
+    QVERIFY2(topY != bottomY, "AlignTop should differ from AlignBottom");
+}
+
+void tst_qquicktext::textObjectBaselineVsBottomAlignment()
+{
+    SKIP_IF_NO_WINDOW_GRAB;
+
+    QScopedPointer<QQuickView> window(new QQuickView);
+    window->setSource(testFileUrl("textObjectMixedFontAlignment.qml"));
+    QTRY_COMPARE(window->status(), QQuickView::Ready);
+    window->show();
+    QVERIFY(QTest::qWaitForWindowExposed(window.data()));
+
+    auto *baselineText = window->rootObject()->findChild<QQuickText *>("baselineText");
+    auto *bottomText = window->rootObject()->findChild<QQuickText *>("bottomText");
+    QVERIFY(baselineText);
+    QVERIFY(bottomText);
+
+    // Insert inline objects with a small font (pixelSize 12) into text items
+    // that use a large font (pixelSize 50). This makes line.descent() (from
+    // the 50px text) much larger than QFontMetrics(format.font()).descent()
+    // (from the 12px object format), so AlignBaseline and AlignBottom must
+    // produce different Y positions.
+    auto insertObject = [](QQuickText *text, QTextCharFormat::VerticalAlignment alignment,
+                           ColoredTextObject *obj) {
+        auto *textPrivate = QQuickTextPrivate::get(text);
+        auto *textDocument = textPrivate->extra->doc;
+        auto *documentLayout = textDocument->documentLayout();
+
+        documentLayout->registerHandler(QTextCharFormat::UserObject, obj);
+
+        QTextCursor cursor(textDocument);
+        QTextCharFormat format;
+        format.setObjectType(QTextCharFormat::UserObject);
+        format.setVerticalAlignment(alignment);
+        QFont f;
+        f.setPixelSize(12);
+        format.setFont(f);
+        cursor.insertText(QString(QChar::ObjectReplacementCharacter), format);
+
+        text->invalidate();
+    };
+
+    const qreal dpr = window->devicePixelRatio();
+    const int regionHeight = int(100 * dpr);
+
+    ColoredTextObject baselineObj, bottomObj;
+    insertObject(baselineText, QTextCharFormat::AlignBaseline, &baselineObj);
+    insertObject(bottomText, QTextCharFormat::AlignBottom, &bottomObj);
+
+    QImage grab;
+    QTRY_VERIFY_WITH_TIMEOUT([&]() {
+        grab = window->grabWindow();
+        return findFirstRedPixelY(grab, 0, regionHeight) >= 0
+            && findFirstRedPixelY(grab, regionHeight, 2 * regionHeight) >= 0;
+    }(), 5000);
+
+    const int baselineY = findFirstRedPixelY(grab, 0, regionHeight);
+    const int bottomY = findFirstRedPixelY(grab, regionHeight, 2 * regionHeight) - regionHeight;
+
+    QVERIFY2(baselineY >= 0, "AlignBaseline object not found in grab");
+    QVERIFY2(bottomY >= 0, "AlignBottom object not found in grab");
+
+    // With mixed font sizes, AlignBaseline (uses font descent) and
+    // AlignBottom (uses line descent) must differ
+    QVERIFY2(baselineY != bottomY,
+             qPrintable(QString("AlignBaseline (%1) and AlignBottom (%2) should differ "
+                                "with mixed font sizes").arg(baselineY).arg(bottomY)));
+
+    // AlignBottom should be lower (larger Y) since line.descent() > font descent
+    QVERIFY2(bottomY > baselineY,
+             qPrintable(QString("AlignBottom (%1) should be below AlignBaseline (%2)")
+                        .arg(bottomY).arg(baselineY)));
+}
+
+void tst_qquicktext::clearTruncated()
+{
+    QQmlComponent component(&engine, testFile("ellipsisText.qml"));
+    QScopedPointer<QObject> object(component.create());
+    QQuickText *text = qobject_cast<QQuickText *>(object.data());
+    QVERIFY(text);
+    QVERIFY(text->truncated());
+    text->setText("");
+    QVERIFY(!text->truncated());
 }
 
 QT_END_NAMESPACE

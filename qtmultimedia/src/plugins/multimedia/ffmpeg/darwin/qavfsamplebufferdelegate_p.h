@@ -41,12 +41,12 @@ struct QAVFSampleBufferDelegateTransform {
 using QAVFSampleBufferDelegateTransformProvider = std::function<QAVFSampleBufferDelegateTransform(
     const AVCaptureConnection *)>;
 
-}
+} // namespace QFFmpeg
 
 QT_END_NAMESPACE
 
 // This type is used by screencapture and camera-capture.
-@interface QAVFSampleBufferDelegate : NSObject <AVCaptureVideoDataOutputSampleBufferDelegate>
+@interface QT_MANGLE_NAMESPACE(QAVFSampleBufferDelegate) : NSObject <AVCaptureVideoDataOutputSampleBufferDelegate>
 
 // These parameters are called during the captureOutput callback.
 //
@@ -74,5 +74,15 @@ QT_END_NAMESPACE
 - (void)setVideoFormatFrameRate:(qreal)frameRate;
 
 @end
+
+QT_BEGIN_NAMESPACE
+
+namespace QFFmpeg {
+
+using QAVFSampleBufferDelegate = QT_MANGLE_NAMESPACE(QAVFSampleBufferDelegate);
+
+} // namespace QFFmpeg
+
+QT_END_NAMESPACE
 
 #endif

@@ -4,8 +4,7 @@
 #include "../client/testapi.h"
 
 #include <QtCore/qobject.h>
-#include <QtCore/QProcess>
-#include <QtCore/QThread>
+#include <QtCore/qprocess.h>
 #include <QtTest/qtest.h>
 
 using namespace Qt::StringLiterals;

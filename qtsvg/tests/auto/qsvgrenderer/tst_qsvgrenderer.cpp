@@ -2,20 +2,23 @@
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
 
 
-#include <QtTest/QtTest>
+#include <QtTest/QTest>
 
 #include <qguiapplication.h>
 #include <qdebug.h>
 #include <qsvgrenderer.h>
 #include <qsvggenerator.h>
+#include <QBuffer>
+#include <QByteArray>
+#include <QFile>
+#include <QImage>
 #include <QPainter>
 #include <QPen>
 #include <QPicture>
+#include <QRgb>
+#include <QRectF>
+#include <QTimer>
 #include <QXmlStreamReader>
-
-#ifndef SRCDIR
-#define SRCDIR
-#endif
 
 using namespace Qt::Literals::StringLiterals;
 
@@ -81,6 +84,7 @@ private slots:
     void tSpanLineBreak();
     void animated();
     void notAnimated();
+    void notAnimatedOption();
     void testMaskElement();
     void testSymbol();
     void testMarker();
@@ -101,8 +105,10 @@ private slots:
 
 #ifndef QT_NO_COMPRESS
     void testGzLoading();
+#  ifdef QT_BUILD_INTERNAL
     void testGzHelper_data();
     void testGzHelper();
+#  endif
 #endif
 
 private:
@@ -923,11 +929,10 @@ void tst_QSvgRenderer::testGzLoading()
     QVERIFY(autoDetectGzData.isValid());
 }
 
-#ifdef QT_BUILD_INTERNAL
+#  ifdef QT_BUILD_INTERNAL
 QT_BEGIN_NAMESPACE
 QByteArray qt_inflateGZipDataFrom(QIODevice *device);
 QT_END_NAMESPACE
-#endif
 
 void tst_QSvgRenderer::testGzHelper_data()
 {
@@ -959,7 +964,6 @@ void tst_QSvgRenderer::testGzHelper_data()
 
 void tst_QSvgRenderer::testGzHelper()
 {
-#ifdef QT_BUILD_INTERNAL
     QFETCH(QByteArray, in);
     QFETCH(QByteArray, out);
 
@@ -968,9 +972,9 @@ void tst_QSvgRenderer::testGzHelper()
     QVERIFY(buffer.isReadable());
     QByteArray result = qt_inflateGZipDataFrom(&buffer);
     QCOMPARE(result, out);
-#endif
 }
-#endif
+#  endif // #ifdef QT_BUILD_INTERNAL
+#endif // #ifndef QT_NO_COMPRESS
 
 void tst_QSvgRenderer::fillRule()
 {
@@ -1808,10 +1812,10 @@ void tst_QSvgRenderer::glyphWarnings()
 
     QFETCH(QString, missingGlyphAttributes);
     QFETCH(QString, secondElement);
-    QFETCH(QByteArrayList, warnings);
+    QFETCH(const QByteArrayList, warnings);
 
     for (const auto &w: warnings)
-        QTest::ignoreMessage(QtWarningMsg, w);
+        QTest::ignoreMessage(QtWarningMsg, w.constData());
     QSvgRenderer renderer(svgTemplate.arg(missingGlyphAttributes).arg(secondElement).toUtf8());
     QVERIFY(renderer.isValid());
 }
@@ -1867,6 +1871,17 @@ void tst_QSvgRenderer::ossFuzzRender_data()
     // runtime error: signed integer overflow: -2147483648 + -1 cannot be represented in type 'int'
     QTest::newRow("excessive moveto in path") // id=406541912
             << R"(<svg><path stroke="#000" d="M- 7e8t9 ."/><marker id="c"/><use href=" c"/></svg>)"_ba;
+    // Bad-cast to QSvgMarker from QSvgLine -> Heap-buffer-overflow
+    QTest::newRow("line-as-marker") // id=496327371
+            << R"-(<svg><line x1="4" id="lledr" marker-end="url(#lledr)" stroke="#00f"/></svg>)-"_ba;
+    QTest::newRow("line-as-mask") // modeled after 496327371 to test similar problem, needs UBSAN
+            << R"-(<svg>
+                     <defs>
+                      <line x1="4" id="line"/>
+                      <mask id="mask" width="2" height="2" mask="url(#line)"/>
+                     </defs>
+                     <rect width="2" height="2" mask="url(#mask)"/>
+                   </svg>)-"_ba;
 }
 
 void tst_QSvgRenderer::ossFuzzRender()
@@ -2175,6 +2190,14 @@ void tst_QSvgRenderer::notAnimated()
     renderer.setAnimationEnabled(false);
     QVERIFY(renderer.load(QByteArray(animatedSvgContents)));
     QVERIFY(!renderer.isAnimationEnabled());
+}
+
+void tst_QSvgRenderer::notAnimatedOption()
+{
+    QSvgRenderer renderer;
+    renderer.setOptions(QtSvg::Option::DisableAnimations);
+    // Shouldn't crash accessing the animator when it's disabled.
+    QVERIFY(renderer.load(QByteArray(animatedSvgContents)));
 }
 
 void tst_QSvgRenderer::testPatternElement()

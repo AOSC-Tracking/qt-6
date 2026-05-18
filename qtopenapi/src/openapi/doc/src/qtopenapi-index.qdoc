@@ -16,7 +16,7 @@
     autogenerate Qt HTTP clients in C++ using \l{Qt Network} APIs such as
     \l QRestAccessManager.
 
-    \note Qt OpenAPI in \QtVer is in \e{Technical Preview}, excluding its
+    \note Qt OpenAPI in \QtVer is in \e{Technology Preview}, excluding its
     API from \l[QtDoc]{Compatibility promises}{Qt's compatibility promises}.
 
     \section1 Using the module

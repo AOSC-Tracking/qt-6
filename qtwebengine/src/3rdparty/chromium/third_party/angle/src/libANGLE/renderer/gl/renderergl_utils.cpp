@@ -2184,6 +2184,11 @@ void GenerateCaps(const FunctionsGL *functions,
         // Restore previous state
         functions->blendColor(oldColor[0], oldColor[1], oldColor[2], oldColor[3]);
     }
+
+    if (features.limitMaxBufferSizeTo1gb.enabled)
+    {
+        limitations->bufferSizeLimit = 1 << 30;
+    }
 }
 
 bool GetSystemInfoVendorIDAndDeviceID(const FunctionsGL *functions,
@@ -2677,6 +2682,10 @@ void InitializeFeatures(const FunctionsGL *functions, angle::FeaturesGL *feature
     // exposed.
     ANGLE_FEATURE_CONDITION(features, bgraTexImageFormatsBroken, IsQualcomm(vendor));
 
+    // glGenerateMipmap may silently fail on mesa, leaving mips that are expected to be recreated to
+    // match the base level in their original shape, hidden from ANGLE and its validation.
+    ANGLE_FEATURE_CONDITION(features, recreateMipmapLevelsBeforeGenerate, isMesa);
+
     // https://github.com/flutter/flutter/issues/47164
     // https://github.com/flutter/flutter/issues/47804
     // Some devices expose the QCOM tiled memory extension string but don't actually provide the
@@ -2698,6 +2707,9 @@ void InitializeFeatures(const FunctionsGL *functions, angle::FeaturesGL *feature
     // number of samples in currently bound FBO and require to reset sample
     // coverage each time FBO changes.
     ANGLE_FEATURE_CONDITION(features, resetSampleCoverageOnFBOChange, isQualcomm);
+
+    // Mac Intel drivers are unable to allocate buffers larger than ~1gb
+    ANGLE_FEATURE_CONDITION(features, limitMaxBufferSizeTo1gb, isApple && isIntel);
 }
 
 void InitializeFrontendFeatures(const FunctionsGL *functions, angle::FrontendFeatures *features)

@@ -4,8 +4,7 @@
 #include "../client/fakeapi.h"
 
 #include <QtCore/qobject.h>
-#include <QtCore/QProcess>
-#include <QtCore/QThread>
+#include <QtCore/qprocess.h>
 #include <QtNetwork/qnetworkrequestfactory.h>
 #include <QtNetwork/qrestaccessmanager.h>
 #include <QtTest/qtest.h>

@@ -142,7 +142,7 @@ private:
     QWasmVideoOutput::WasmVideoMode m_currentVideoMode = QWasmVideoOutput::VideoDisplay;
     QMediaPlayer::MediaStatus m_currentMediaStatus;
     qreal m_currentBufferedValue;
-    std::unique_ptr<JsMediaInputStream> m_mediaInputStream;
+    JsMediaInputStream *m_mediaInputStream;
 
     QScopedPointer<QWasmEventHandler> m_timeUpdateEvent;
     QScopedPointer<QWasmEventHandler> m_playEvent;
@@ -164,6 +164,9 @@ private:
     QScopedPointer<QWasmEventHandler> m_progressChangeEvent;
     QScopedPointer<QWasmEventHandler> m_pauseChangeEvent;
     QScopedPointer<QWasmEventHandler> m_beforeUnloadEvent;
+
+    std::string m_cameraId;
+    QMetaObject::Connection m_connection;
 };
 
 QT_END_NAMESPACE

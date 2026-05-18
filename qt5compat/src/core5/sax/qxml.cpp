@@ -2,11 +2,6 @@
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 // Qt-Security score:critical reason:data-parser
 
-#include "qglobal.h"
-
-// Disable warning about use of deprecated QXmlStreamLocator in QScopedPointer<>
-QT_WARNING_DISABLE_MSVC(4996)
-
 #include "qxml.h"
 #include "qxml_p.h"
 #if QT_CONFIG(textcodec)
@@ -221,22 +216,13 @@ public:
     QString encodingDeclChars;
     bool lookingForEncodingDecl;
 };
+
 class QXmlParseExceptionPrivate
 {
 public:
-    QXmlParseExceptionPrivate()
-        : column(-1), line(-1)
-    {
-    }
-    QXmlParseExceptionPrivate(const QXmlParseExceptionPrivate &other)
-        : msg(other.msg), column(other.column), line(other.line),
-          pub(other.pub), sys(other.sys)
-    {
-    }
-
     QString msg;
-    int column;
-    int line;
+    int column = -1;
+    int line = -1;
     QString pub;
     QString sys;
 

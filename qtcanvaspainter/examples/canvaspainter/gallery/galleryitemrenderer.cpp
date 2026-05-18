@@ -63,7 +63,7 @@ void GalleryItemRenderer::initializeResources(QCanvasPainter *painter)
 //![initialize]
 
 //![synchronize]
-void GalleryItemRenderer::synchronize(QCanvasPainterItem *item)
+void GalleryItemRenderer::synchronizeData(QCanvasPainterItem *item)
 {
     // Setting values here synchronized
     GalleryItem *realItem = static_cast<GalleryItem*>(item);

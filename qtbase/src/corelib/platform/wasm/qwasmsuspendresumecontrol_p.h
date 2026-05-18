@@ -1,5 +1,6 @@
 // Copyright (C) 2025 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #ifndef QWASMSUSPENDRESUMECONTROL_P_H
 #define QWASMSUSPENDRESUMECONTROL_P_H
@@ -54,7 +55,6 @@ public:
 private:
     friend void qtSendPendingEvents();
 
-    static QWasmSuspendResumeControl *s_suspendResumeControl;
     std::map<int, std::function<void(emscripten::val)>> m_eventHandlers;
     std::function<bool(int)> m_eventFilter = [](int) { return true; };
     emscripten::val m_currentEvent = emscripten::val::undefined();

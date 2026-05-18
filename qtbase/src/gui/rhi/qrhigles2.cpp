@@ -780,10 +780,16 @@ bool QRhiGles2::create(QRhi::Flags flags)
         ctx->setFormat(requestedFormat);
         if (maybeShareContext) {
             ctx->setShareContext(maybeShareContext);
-            ctx->setScreen(maybeShareContext->screen());
+            if (maybeWindow)
+                ctx->setScreen(maybeWindow->screen());
+            else
+                ctx->setScreen(maybeShareContext->screen());
         } else if (QOpenGLContext *shareContext = QOpenGLContext::globalShareContext()) {
             ctx->setShareContext(shareContext);
-            ctx->setScreen(shareContext->screen());
+            if (maybeWindow)
+                ctx->setScreen(maybeWindow->screen());
+            else
+                ctx->setScreen(shareContext->screen());
         } else if (maybeWindow) {
             ctx->setScreen(maybeWindow->screen());
         }
@@ -1971,8 +1977,10 @@ void QRhiGles2::setShaderResources(QRhiCommandBuffer *cb, QRhiShaderResourceBind
             case QRhiShaderResourceBinding::SampledTexture:
             case QRhiShaderResourceBinding::Texture:
                 for (int elem = 0; elem < b->u.stex.count; ++elem) {
+                    QGles2Texture *texD = QRHI_RES(QGles2Texture, b->u.stex.texSamplers[elem].tex);
+                    sanityCheckResourceOwnership(texD);
                     trackedRegisterTexture(&passResTracker,
-                                           QRHI_RES(QGles2Texture, b->u.stex.texSamplers[elem].tex),
+                                           texD,
                                            QRhiPassResourceTracker::TexSample,
                                            QRhiPassResourceTracker::toPassTrackerTextureStage(b->stage));
                 }
@@ -1982,6 +1990,7 @@ void QRhiGles2::setShaderResources(QRhiCommandBuffer *cb, QRhiShaderResourceBind
             case QRhiShaderResourceBinding::ImageLoadStore:
             {
                 QGles2Texture *texD = QRHI_RES(QGles2Texture, b->u.simage.tex);
+                sanityCheckResourceOwnership(texD);
                 QRhiPassResourceTracker::TextureAccess access;
                 if (b->type == QRhiShaderResourceBinding::ImageLoad)
                     access = QRhiPassResourceTracker::TexStorageLoad;
@@ -1998,6 +2007,7 @@ void QRhiGles2::setShaderResources(QRhiCommandBuffer *cb, QRhiShaderResourceBind
             case QRhiShaderResourceBinding::BufferLoadStore:
             {
                 QGles2Buffer *bufD = QRHI_RES(QGles2Buffer, b->u.sbuf.buf);
+                sanityCheckResourceOwnership(bufD);
                 QRhiPassResourceTracker::BufferAccess access;
                 if (b->type == QRhiShaderResourceBinding::BufferLoad)
                     access = QRhiPassResourceTracker::BufStorageLoad;

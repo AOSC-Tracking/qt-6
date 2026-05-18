@@ -160,7 +160,8 @@ Item {
                 }
             }
             Switch {
-                text: "FBO renderTarget (QPainter)"
+                text: "OpenGL FBO renderTarget (QPainter)"
+                enabled: GraphicsInfo.api === GraphicsInfo.OpenGL
                 checked: mainWindow.settingFBORendering
                 onCheckedChanged: {
                     mainWindow.settingFBORendering = checked;

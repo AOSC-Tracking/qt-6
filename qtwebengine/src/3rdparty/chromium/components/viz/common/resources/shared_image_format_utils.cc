@@ -10,6 +10,7 @@
 #include "base/check_op.h"
 #include "base/logging.h"
 #include "base/notreached.h"
+#include "components/viz/common/resources/shared_image_format.h"
 #include "third_party/skia/include/core/SkColorType.h"
 #include "ui/gfx/buffer_types.h"
 
@@ -239,6 +240,47 @@ SharedImageFormat GetSharedImageFormat(gfx::BufferFormat buffer_format) {
       return MultiPlaneFormat::kP010;
   }
   NOTREACHED();
+}
+
+std::optional<size_t> SharedMemoryRowSizeForSharedImageFormat(
+    SharedImageFormat format,
+    int plane_index,
+    int width) {
+  if (!format.IsValidPlaneIndex(plane_index)) {
+    return std::nullopt;
+  }
+
+  if (format.is_single_plane()) {
+    CHECK_NE(format, SinglePlaneFormat::kETC1);
+    DCHECK_EQ(plane_index, 0);
+
+    base::CheckedNumeric<size_t> bytes_per_row = format.BytesPerPixel();
+    bytes_per_row *= width;
+
+    // Row size must be aligned to 4 bytes.
+    bytes_per_row += 3;
+   bytes_per_row -= bytes_per_row % 4;
+    if (!bytes_per_row.IsValid()) {
+      return std::nullopt;
+    }
+
+    return bytes_per_row.ValueOrDie();
+  }
+
+  int plane_width =
+      format.GetPlaneSize(plane_index, gfx::Size(width, 0)).width();
+  int num_channels = format.NumChannelsInPlane(plane_index);
+
+  base::CheckedNumeric<size_t> bytes_per_row =
+      format.MultiplanarStorageBytesPerChannel();
+  bytes_per_row *= num_channels;
+  bytes_per_row *= plane_width;
+
+  if (!bytes_per_row.IsValid()) {
+    return std::nullopt;
+  }
+
+  return bytes_per_row.ValueOrDie();
 }
 
 // static

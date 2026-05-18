@@ -163,7 +163,9 @@ QWidget *QFormBuilder::createWidget(const QString &widgetName, QWidget *parentWi
 #define DECLARE_WIDGET(W, C) else if (!qstrcmp(widgetNameC, #W)) { Q_ASSERT(w == 0); w = new W(parentWidget); }
 #define DECLARE_WIDGET_1(W, C) else if (!qstrcmp(widgetNameC, #W)) { Q_ASSERT(w == 0); w = new W(0, parentWidget); }
 
+// AXVION DISABLE Style Qt-Generic-NoIrregularInclude Required functionality
 #include "widgets.table"
+// AXIVION ENABLE Style Qt-Generic-NoIrregularInclude
 
 #undef DECLARE_COMPAT_WIDGET
 #undef DECLARE_LAYOUT
@@ -296,7 +298,7 @@ void QFormBuilder::createConnections(DomConnections *ui_connections, QWidget *wi
         sig.prepend("2");
         QByteArray sl = c->elementSlot().toUtf8();
         sl.prepend("1");
-        QObject::connect(sender, sig, receiver, sl);
+        QObject::connect(sender, sig.constData(), receiver, sl.constData());
     }
 }
 
@@ -477,7 +479,7 @@ void QFormBuilder::applyProperties(QObject *o, const QList<DomProperty*> &proper
             // ### special-casing for Line (QFrame) -- try to fix me
             o->setProperty("frameShape", v); // v is of QFrame::Shape enum
         } else {
-            o->setProperty(attributeName.toUtf8(), v);
+            o->setProperty(attributeName.toUtf8().constData(), v);
         }
     }
 }

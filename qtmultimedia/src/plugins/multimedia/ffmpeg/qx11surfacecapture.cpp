@@ -24,6 +24,7 @@
 #include <X11/extensions/Xrandr.h>
 
 #include <optional>
+#include <utility>
 
 QT_BEGIN_NAMESPACE
 
@@ -334,14 +335,14 @@ private:
     int m_yOffset = 0;
     std::unique_ptr<Display, decltype(&XCloseDisplay)> m_display{ nullptr, &XCloseDisplay };
     std::unique_ptr<XImage, decltype(&destroyXImage)> m_xImage{ nullptr, &destroyXImage };
-    XShmSegmentInfo m_shmInfo;
+    XShmSegmentInfo m_shmInfo{};
     bool m_attached = false;
     VisualID m_visualID = None;
     QVideoFrameFormat m_format;
 };
 
 QX11SurfaceCapture::QX11SurfaceCapture(Source initialSource)
-    : QPlatformSurfaceCapture(initialSource)
+    : QPlatformSurfaceCapture(std::move(initialSource))
 {
     // For debug
     //  XSetErrorHandler([](Display *, XErrorEvent * e) {
@@ -364,7 +365,9 @@ bool QX11SurfaceCapture::setActiveInternal(bool active)
     if (m_grabber)
         m_grabber.reset();
     else
-        std::visit([this](auto source) { activate(source); }, source());
+        std::visit([this](const auto &source) {
+            activate(source);
+        }, source());
 
     return static_cast<bool>(m_grabber) == active;
 }
@@ -375,7 +378,7 @@ void QX11SurfaceCapture::activate(ScreenSource screen)
         m_grabber = Grabber::create(*this, screen);
 }
 
-void QX11SurfaceCapture::activate(WindowSource window)
+void QX11SurfaceCapture::activate(const WindowSource &window)
 {
     auto handle = QCapturableWindowPrivate::handle(window);
     m_grabber = Grabber::create(*this, handle ? handle->id : 0);

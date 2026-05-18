@@ -87,9 +87,9 @@ QScreenCapture::QScreenCapture(QObject *parent)
         connect(platformCapture, &QPlatformSurfaceCapture::errorChanged, this,
                 &QScreenCapture::errorChanged);
         connect(platformCapture, &QPlatformSurfaceCapture::errorOccurred, this,
-                [this](QPlatformSurfaceCapture::Error error, QString errorString) {
-                    emit errorOccurred(toScreenCaptureError(error), errorString);
-                });
+                [this](QPlatformSurfaceCapture::Error error, const QString &errorString) {
+            emit errorOccurred(toScreenCaptureError(error), errorString);
+        });
 
         connect(platformCapture,
                 qOverload<QPlatformSurfaceCapture::ScreenSource>(
@@ -164,11 +164,17 @@ bool QScreenCapture::isActive() const
 /*!
     \qmlproperty Screen QtMultimedia::ScreenCapture::screen
     Describes the screen for capturing.
+
+    If null \c Screen is set, the primary screen will be selected
+    when the \c ScreenCapture instance gets activated.
 */
 
 /*!
     \property QScreenCapture::screen
     \brief the screen for capturing.
+
+    If null \l QScreen is set, \l QGuiApplication::primaryScreen will be selected
+    when the \c QScreenCapture instance gets activated.
 */
 
 void QScreenCapture::setScreen(QScreen *screen)

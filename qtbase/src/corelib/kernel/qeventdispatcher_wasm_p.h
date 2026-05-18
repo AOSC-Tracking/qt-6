@@ -1,5 +1,6 @@
 // Copyright (C) 2021 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #ifndef QEVENTDISPATCHER_WASM_P_H
 #define QEVENTDISPATCHER_WASM_P_H
@@ -87,8 +88,8 @@ private:
     void updateNativeTimer();
 
     static QEventDispatcherWasm *g_mainThreadEventDispatcher;
-    static std::shared_ptr<QWasmSuspendResumeControl> g_mainThreadSuspendResumeControl;
-
+    static std::shared_ptr<QWasmSuspendResumeControl> g_customMainThreadSuspendResumeControl;
+    static QWasmSuspendResumeControl *g_mainThreadSuspendResumeControl;
     bool m_interrupted = false;
     bool m_wakeup = false;
 

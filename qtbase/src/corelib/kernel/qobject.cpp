@@ -2,6 +2,7 @@
 // Copyright (C) 2016 Intel Corporation.
 // Copyright (C) 2013 Olivier Goffart <ogoffart@woboq.com>
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "qobject.h"
 #include "qobject_p.h"
@@ -4862,12 +4863,6 @@ QDebug operator<<(QDebug dbg, const QObject *o)
     in a QVariant, you can convert them to strings. Likewise, passing them to
     QDebug will print out their names.
 
-    Mind that the enum values are stored as signed \c int in the meta object system.
-    Registering enumerations with values outside the range of values valid for \c int
-    will lead to overflows and potentially undefined behavior when accessing them through
-    the meta object system. QML, for example, does access registered enumerations through
-    the meta object system.
-
     \sa {Qt's Property System}
 */
 
@@ -4928,12 +4923,6 @@ QDebug operator<<(QDebug dbg, const QObject *o)
     Q_DECLARE_METATYPE(). This will enable useful features; for example, if
     used in a QVariant, you can convert them to strings. Likewise, passing them
     to QDebug will print out their names.
-
-    Mind that the enum values are stored as signed \c int in the meta object system.
-    Registering enumerations with values outside the range of values valid for \c int
-    will lead to overflows and potentially undefined behavior when accessing them through
-    the meta object system. QML, for example, does access registered enumerations through
-    the meta object system.
 
     \sa {Qt's Property System}
 */
@@ -5572,7 +5561,7 @@ bool QObject::disconnect(const QMetaObject::Connection &connection)
     if (!c)
         return false;
     const bool disconnected = QObjectPrivate::removeConnection(c);
-    const_cast<QMetaObject::Connection &>(connection).d_ptr = nullptr;
+    connection.d_ptr = nullptr;
     c->deref(); // has been removed from the QMetaObject::Connection object
     return disconnected;
 }

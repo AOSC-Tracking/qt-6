@@ -88,10 +88,11 @@ private:
 
     // device monitor
     PwRegistryHandle m_registry;
-    struct spa_hook m_registryListener{};
+    spa_hook m_registryListener{};
     std::unique_ptr<QAudioDeviceMonitor> m_deviceMonitor;
 
     void startDeviceMonitor();
+    void stopDeviceMonitor();
     static void objectAddedCb(void *data, uint32_t id, uint32_t permissions, const char *type,
                               uint32_t version, const struct spa_dict *props);
     static void objectRemovedCb(void *data, uint32_t id);
@@ -101,6 +102,7 @@ private:
 
     // default metadata object
     void startListenDefaultMetadataObject(ObjectId, uint32_t version);
+    void stopListenDefaultMetadataObject();
     struct MetadataRecord
     {
         const char *key;
@@ -111,7 +113,7 @@ private:
     int handleDefaultMetadataObjectEvent(ObjectId subject, const MetadataRecord &);
 
     PwMetadataHandle m_defaultMetadataObject;
-    struct spa_hook m_defaultMetadataObjectListener{};
+    spa_hook m_defaultMetadataObjectListener{};
 
     QMutex m_activeStreamMutex;
     std::set<std::shared_ptr<QPipewireAudioStream>> m_activeStreams;

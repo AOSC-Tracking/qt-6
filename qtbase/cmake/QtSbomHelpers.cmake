@@ -103,7 +103,7 @@ function(qt_internal_sbom_get_project_spdx_id out_var)
     set(result "")
 
     if(QT_GENERATE_SBOM)
-        get_cmake_property(project_spdx_id _qt_internal_sbom_project_spdx_id)
+        _qt_internal_sbom_get_current_project_spdx_id(project_spdx_id)
         if(project_spdx_id)
             set(result "${project_spdx_id}")
         endif()
@@ -127,7 +127,7 @@ function(qt_internal_sbom_get_external_document_ref_spdx_id project_name out_var
 
     if(QT_GENERATE_SBOM)
         string(TOLOWER "${project_name}" project_name_lowercase)
-        _qt_internal_sbom_get_external_document_ref_spdx_id("${project_name_lowercase}" result)
+        _qt_internal_sbom_compute_external_document_ref_spdx_id("${project_name_lowercase}" result)
     endif()
 
     set(${out_var} "${result}" PARENT_SCOPE)
@@ -242,12 +242,12 @@ function(qt_internal_add_sbom_summary_info)
 
         qt_internal_is_sbom_option_enabled(QT_SBOM_GENERATE_CYDX_V1_6 value)
         qt_internal_get_sbom_option_required_suffix(QT_SBOM_REQUIRE_GENERATE_CYDX_V1_6 suffix)
-        qt_configure_add_summary_entry(ARGS "Generate CyloneDX v1.6"
+        qt_configure_add_summary_entry(ARGS "Generate CycloneDX v1.6"
             TYPE "message" MESSAGE "${value}${suffix}")
 
         qt_internal_is_sbom_option_enabled(QT_SBOM_VERIFY_CYDX_V1_6 value)
         qt_internal_get_sbom_option_required_suffix(QT_SBOM_REQUIRE_VERIFY_CYDX_V1_6 suffix)
-        qt_configure_add_summary_entry(ARGS "Verify   CyloneDX v1.6"
+        qt_configure_add_summary_entry(ARGS "Verify   CycloneDX v1.6"
             TYPE "message" MESSAGE "${value}${suffix}")
 
         # Python interpreter info.

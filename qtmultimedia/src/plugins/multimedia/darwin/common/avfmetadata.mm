@@ -11,6 +11,7 @@
 #include <QtCore/qlocale.h>
 #include <QtCore/qurl.h>
 #include <QtCore/private/qcore_mac_p.h>
+#include <QtCore/qsemaphore.h>
 #include <QImage>
 #include <QtMultimedia/qvideoframe.h>
 
@@ -21,6 +22,8 @@
 #import <CoreFoundation/CoreFoundation.h>
 
 QT_USE_NAMESPACE
+
+using namespace std::chrono_literals;
 
 struct AVMetadataIDs {
     AVMetadataIdentifier common;
@@ -162,6 +165,8 @@ static std::optional<QMediaMetaData::Key> toKey(AVMetadataItem *item)
             return QMediaMetaData::Author;
         } else if ([commonKey isEqualToString:AVMetadataCommonKeyArtist]) {
             return QMediaMetaData::ContributingArtist;
+        } else if ([commonKey isEqualToString:AVMetadataCommonKeyArtwork]) {
+            return QMediaMetaData::CoverArtImage;
         }
     }
 
@@ -203,7 +208,7 @@ static std::optional<QMediaMetaData::Key> toKey(AVMetadataItem *item)
             idForKey = keyToAVMetaDataID[key].isoUserData;
             break;
         default:
-            break;
+            continue;
         }
 
         if ([identifier isEqualToString:idForKey])
@@ -222,6 +227,42 @@ static QMediaMetaData fromAVMetadata(NSArray *metadataItems)
         if (!key)
             continue;
 
+        // Handle artwork (binary image data)
+        if (*key == QMediaMetaData::ThumbnailImage || *key == QMediaMetaData::CoverArtImage) {
+            NSData *data = [item dataValue];
+            if (data) {
+                QImage image;
+                image.loadFromData(QByteArray::fromNSData(data));
+                if (!image.isNull())
+                    metadata.insert(*key, image);
+            }
+            continue;
+        }
+
+        // Handle dates — prefer dateValue over stringValue, as some
+        // items (e.g. creation time from MP4 mvhd) have no stringValue
+        if (*key == QMediaMetaData::Date) {
+            NSDate *dateValue = [item dateValue];
+            if (dateValue) {
+                QDateTime dt = QDateTime::fromNSDate(dateValue);
+                if (dt.isValid()) {
+                    metadata.insert(*key, dt);
+                    continue;
+                }
+            }
+            // Fall through to try stringValue as ISO 8601
+            const QString str = QString::fromNSString([item stringValue]);
+            if (!str.isNull()) {
+                QDateTime dt = QDateTime::fromString(str, Qt::ISODate);
+                if (dt.isValid()) {
+                    metadata.insert(*key, dt);
+                    continue;
+                }
+                metadata.insert(*key, str);
+            }
+            continue;
+        }
+
         const QString value = QString::fromNSString([item stringValue]);
         if (!value.isNull())
             metadata.insert(*key, value);
@@ -236,10 +277,74 @@ QMediaMetaData AVFMetaData::fromAsset(AVAsset *asset)
 #endif
     QMediaMetaData metadata = fromAVMetadata([asset metadata]);
 
+    // On macOS 15 and below, [asset metadata] returns an empty array for certain
+    // formats (e.g. MP3 with ID3 tags), while [asset commonMetadata] still provides
+    // the data. Merge commonMetadata to fill any gaps.
+    {
+        QMediaMetaData common = fromAVMetadata([asset commonMetadata]);
+        for (auto key : common.keys()) {
+            if (metadata.value(key).isNull())
+                metadata.insert(key, common.value(key));
+        }
+    }
+
     // add duration
     const CMTime time = [asset duration];
     const qint64 duration =  static_cast<qint64>(float(time.value) / float(time.timescale) * 1000.0f);
     metadata.insert(QMediaMetaData::Duration, duration);
+
+    // add creation date from asset if not already extracted from metadata items
+    // (e.g. MP4 mvhd creation_time is only available via asset.creationDate)
+    if (metadata.value(QMediaMetaData::Date).isNull()) {
+        AVMetadataItem *creationDate = asset.creationDate;
+        if (creationDate) {
+            NSDate *dateValue = creationDate.dateValue;
+            if (dateValue) {
+                QDateTime dt = QDateTime::fromNSDate(dateValue);
+                if (dt.isValid())
+                    metadata.insert(QMediaMetaData::Date, dt);
+            }
+        }
+    }
+
+    std::optional<QtVideo::Rotation> rotationData;
+    std::optional<QSize> resolutionData;
+    QSemaphore sem(0);
+    [asset loadTracksWithMediaType:AVMediaTypeVideo
+                 completionHandler:[&](NSArray<AVAssetTrack *> *tracks, NSError *error) {
+        if (!error && tracks && tracks.count > 0) {
+            // only check the first video track
+            AVAssetTrack *videoTrack = tracks[0];
+
+            // add orientation
+            QtVideo::Rotation rotation;
+            bool mirrored = false;
+            AVFMediaPlayer::videoOrientationForAssetTrack(videoTrack, rotation, mirrored);
+            rotationData = rotation;
+
+            // add resolution (coded frame size, without PAR adjustment)
+            NSArray *formatDescriptions = [videoTrack formatDescriptions];
+            if (formatDescriptions.count > 0) {
+                const auto *desc = (__bridge CMVideoFormatDescriptionRef)formatDescriptions[0];
+                CMVideoDimensions dims = CMVideoFormatDescriptionGetDimensions(desc);
+                if (dims.width > 0 && dims.height > 0)
+                    resolutionData = QSize(dims.width, dims.height);
+            }
+        }
+        sem.release();
+    }];
+
+    if (!sem.try_acquire_for(5s)) {
+        qWarning() << "Timed out waiting for video tracks to load, proceeding without orientation "
+                      "metadata.";
+        return metadata;
+    }
+
+    if (rotationData)
+        metadata.insert(QMediaMetaData::Orientation, int(*rotationData));
+
+    if (resolutionData)
+        metadata.insert(QMediaMetaData::Resolution, *resolutionData);
 
     return metadata;
 }
@@ -277,7 +382,8 @@ QMediaMetaData AVFMetaData::fromAssetTrack(AVAssetTrack *asset)
             for (id formatDescription in formatDescriptions) {
                 NSDictionary *extensions = (__bridge NSDictionary *)CMFormatDescriptionGetExtensions((CMFormatDescriptionRef)formatDescription);
                 NSString *transferFunction = extensions[(__bridge NSString *)kCMFormatDescriptionExtension_TransferFunction];
-                if ([transferFunction isEqualToString:(__bridge NSString *)kCVImageBufferTransferFunction_SMPTE_ST_2084_PQ]) {
+                if ([transferFunction isEqualToString:(__bridge NSString *)kCVImageBufferTransferFunction_SMPTE_ST_2084_PQ]
+                    || [transferFunction isEqualToString:(__bridge NSString *)kCVImageBufferTransferFunction_ITU_R_2100_HLG]) {
                     hasHdrContent = true;
                     break;
                 }
@@ -397,4 +503,3 @@ NSMutableArray<AVMetadataItem *> *AVFMetaData::toAVMetadataForFormat(QMediaMetaD
     }
     return avMetaDataArr;
 }
-

@@ -7,7 +7,6 @@
 #include <QtMultimedia/qaudiosink.h>
 #include <QtCore/private/qobject_p.h>
 
-#include <resonance_audio.h>
 
 QT_BEGIN_NAMESPACE
 
@@ -34,10 +33,24 @@ public:
 
 /*!
     Creates a listener for the spatial audio engine for \a engine.
+
+    \note Must be called with a valid QAudioEngine
  */
 QAudioListener::QAudioListener(QAudioEngine *engine) : QObject(*new QAudioListenerPrivate)
 {
-    setEngine(engine);
+    Q_D(QAudioListener);
+
+    d->engine = engine;
+    if (d->engine) {
+        auto *ed = QAudioEnginePrivate::get(d->engine);
+        bool hasListener = ed->listenerPosition().has_value();
+        if (hasListener) {
+            qWarning() << "Ignoring attempt to add a second listener to the spatial audio engine.";
+            d->engine = nullptr;
+        } else {
+            ed->setListenerPosition(d->pos);
+        }
+    }
 }
 
 /*!
@@ -45,8 +58,13 @@ QAudioListener::QAudioListener(QAudioEngine *engine) : QObject(*new QAudioListen
  */
 QAudioListener::~QAudioListener()
 {
-    // Unregister this listener from the engine
-    setEngine(nullptr);
+    Q_D(QAudioListener);
+
+    if (d->engine) {
+        auto *ed = QAudioEnginePrivate::get(d->engine);
+        ed->setListenerPosition(std::nullopt);
+    }
+    d->engine = nullptr;
 }
 
 /*!
@@ -59,18 +77,11 @@ void QAudioListener::setPosition(QVector3D pos)
 {
     Q_D(QAudioListener);
 
+    d->pos = pos;
     auto *ep = QAudioEnginePrivate::get(d->engine);
     if (!ep)
         return;
-    pos *= ep->distanceScale;
-    if (d->pos == pos)
-        return;
-
-    d->pos = pos;
-    if (ep && ep->resonanceAudio->api) {
-        ep->resonanceAudio->api->SetHeadPosition(pos.x(), pos.y(), pos.z());
-        ep->listenerPositionDirty = true;
-    }
+    ep->setListenerPosition(pos);
 }
 
 /*!
@@ -79,11 +90,7 @@ void QAudioListener::setPosition(QVector3D pos)
 QVector3D QAudioListener::position() const
 {
     Q_D(const QAudioListener);
-    auto *ep = QAudioEnginePrivate::get(d->engine);
-    if (!ep)
-        return QVector3D();
-
-    return d->pos / ep->distanceScale;
+    return d->pos;
 }
 
 /*!
@@ -94,8 +101,8 @@ void QAudioListener::setRotation(const QQuaternion &q)
     Q_D(QAudioListener);
     d->rotation = q;
     auto *ep = QAudioEnginePrivate::get(d->engine);
-    if (ep && ep->resonanceAudio->api)
-        ep->resonanceAudio->api->SetHeadRotation(d->rotation.x(), d->rotation.y(), d->rotation.z(), d->rotation.scalar());
+    if (ep)
+        ep->setListenerRotation(q);
 }
 
 /*!
@@ -105,28 +112,6 @@ QQuaternion QAudioListener::rotation() const
 {
     Q_D(const QAudioListener);
     return d->rotation;
-}
-
-/*!
-    \internal
- */
-void QAudioListener::setEngine(QAudioEngine *engine)
-{
-    Q_D(QAudioListener);
-    if (d->engine) {
-        auto *ed = QAudioEnginePrivate::get(d->engine);
-        ed->listener = nullptr;
-    }
-    d->engine = engine;
-    if (d->engine) {
-        auto *ed = QAudioEnginePrivate::get(d->engine);
-        if (ed->listener) {
-            qWarning() << "Ignoring attempt to add a second listener to the spatial audio engine.";
-            d->engine = nullptr;
-            return;
-        }
-        ed->listener = this;
-    }
 }
 
 /*!

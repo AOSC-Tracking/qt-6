@@ -410,14 +410,19 @@ void QQuickSearchFieldPrivate::createdItem(int index, QObject *object)
 void QQuickSearchFieldPrivate::suggestionCountChanged()
 {
     Q_Q(QQuickSearchField);
-    if (q->suggestionCount() == 0)
-        setCurrentItemAtIndex(-1, NoActivate);
+
+    if (q->suggestionCount() == 0) {
+        setCurrentIndex(-1);
+        setHighlightedIndex(-1, NoHighlight);
+        emit q->suggestionCountChanged();
+        return;
+    }
+
     // If the suggestionModel has been updated and the current text matches an item in
     // the model, update currentIndex and highlightedIndex to the index of that item.
     if (!text.isEmpty()) {
         for (int idx = 0; idx < q->suggestionCount(); ++idx) {
-            QString t = textAt(idx);
-            if (t == text) {
+            if (textAt(idx) == text) {
                 setCurrentItemAtIndex(idx, NoActivate);
                 updateHighlightedIndex();
                 break;
@@ -588,8 +593,10 @@ void QQuickSearchFieldPrivate::updateText()
 void QQuickSearchFieldPrivate::updateDisplayText()
 {
     Q_Q(QQuickSearchField);
-    const QString currentText = textAt(currentIndex);
+    if (currentIndex < 0)
+        return;
 
+    const QString currentText = textAt(currentIndex);
     if (text != currentText)
         q->setText(currentText);
 }
@@ -1021,6 +1028,9 @@ void QQuickSearchField::setPopup(QQuickPopup *popup)
     }
 
     if (popup) {
+#if QT_CONFIG(wayland)
+        QQuickPopupPrivate::get(popup)->extendedWindowType = QNativeInterface::Private::QWaylandWindow::ComboBox;
+#endif
         QQuickPopupPrivate::get(popup)->allowVerticalFlip = true;
         popup->setClosePolicy(QQuickPopup::CloseOnEscape | QQuickPopup::CloseOnPressOutsideParent);
         QObjectPrivate::connect(popup, &QQuickPopup::visibleChanged, d,
@@ -1090,9 +1100,10 @@ bool QQuickSearchField::eventFilter(QObject *object, QEvent *event)
     switch (event->type()) {
     case QEvent::MouseButtonRelease: {
         QQuickTextInput *input = qobject_cast<QQuickTextInput *>(d->contentItem);
-        if (input->hasFocus()) {
-            if (!d->text.isEmpty() && !d->isPopupVisible() && (d->delegateModel && d->delegateModel->count() > 0))
-                d->showPopup();
+        if (input->hasFocus() && !d->text.isEmpty() && !d->isPopupVisible()
+                && (d->delegateModel && d->delegateModel->count() > 0)
+                && static_cast<QMouseEvent*>(event)->button() == Qt::LeftButton) {
+            d->showPopup();
         }
         break;
     }
@@ -1107,6 +1118,7 @@ bool QQuickSearchField::eventFilter(QObject *object, QEvent *event)
     default:
         break;
     }
+
     return QQuickControl::eventFilter(object, event);
 }
 
@@ -1115,10 +1127,21 @@ void QQuickSearchField::focusInEvent(QFocusEvent *event)
     Q_D(QQuickSearchField);
     QQuickControl::focusInEvent(event);
 
-    if ((event->reason() == Qt::TabFocusReason || event->reason() == Qt::BacktabFocusReason
-         || event->reason() == Qt::ShortcutFocusReason)
-        && d->contentItem)
-        d->contentItem->forceActiveFocus(event->reason());
+    if (!d->contentItem)
+        return;
+
+    const auto reason = event->reason();
+    switch (reason) {
+    case Qt::TabFocusReason:
+    case Qt::BacktabFocusReason:
+    case Qt::ShortcutFocusReason:
+    case Qt::OtherFocusReason:
+        if (reason != Qt::OtherFocusReason || !d->isPopupVisible())
+            d->contentItem->forceActiveFocus(reason);
+        break;
+    default:
+        break;
+    }
 }
 
 void QQuickSearchField::focusOutEvent(QFocusEvent *event)
@@ -1169,16 +1192,18 @@ void QQuickSearchField::keyPressEvent(QKeyEvent *event)
     Q_D(QQuickSearchField);
 
     const auto key = event->key();
+    const bool hasModel = !d->suggestionModel.isNull();
+    const bool hasText = !d->text.isEmpty();
 
-    if (!d->suggestionModel.isNull() && !d->text.isEmpty()) {
-        switch (key) {
+    switch (key) {
         case Qt::Key_Escape:
         case Qt::Key_Back:
             if (d->isPopupVisible()) {
                 d->hidePopup(false);
                 event->accept();
-            } else {
+            } else if (hasText) {
                 setText(QString());
+                event->accept();
             }
             break;
         case Qt::Key_Return:
@@ -1190,27 +1215,32 @@ void QQuickSearchField::keyPressEvent(QKeyEvent *event)
             event->accept();
             break;
         case Qt::Key_Up:
-            d->decreaseCurrentIndex();
-            event->accept();
+            if (hasModel && hasText) {
+                d->decreaseCurrentIndex();
+                event->accept();
+            }
             break;
         case Qt::Key_Down:
-            d->increaseCurrentIndex();
-            event->accept();
+            if (hasModel && hasText) {
+                d->increaseCurrentIndex();
+                event->accept();
+            }
             break;
         case Qt::Key_Home:
-            if (d->isPopupVisible())
+            if (d->isPopupVisible()) {
                 d->setHighlightedIndex(0, Highlight);
-            event->accept();
+                event->accept();
+            }
             break;
         case Qt::Key_End:
-            if (d->isPopupVisible())
+            if (d->isPopupVisible()) {
                 d->setHighlightedIndex(suggestionCount() - 1, Highlight);
-            event->accept();
+                event->accept();
+            }
             break;
         default:
             QQuickControl::keyPressEvent(event);
             break;
-        }
     }
 }
 

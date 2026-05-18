@@ -1,5 +1,6 @@
 // Copyright (C) 2013 BlackBerry Limited. All rights reserved.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #undef QT_NO_FOREACH // this file contains unported legacy Q_FOREACH uses
 
@@ -31,13 +32,16 @@
 
 #if QT_CONFIG(qqnx_pps)
 #  include "qqnxbuttoneventnotifier.h"
-#  include "qqnxclipboard.h"
 #endif
 
 #if QT_CONFIG(qqnx_imf)
 #  include "qqnxinputcontext_imf.h"
 #else
 #  include "qqnxinputcontext_noimf.h"
+#endif
+
+#if !defined(QT_NO_CLIPBOARD)
+#  include "qqnxclipboard.h"
 #endif
 
 #include <qpa/qplatforminputcontextfactory_p.h>
@@ -445,11 +449,9 @@ QPlatformNativeInterface *QQnxIntegration::nativeInterface() const
 QPlatformClipboard *QQnxIntegration::clipboard() const
 {
     qCDebug(lcQpaQnx) << Q_FUNC_INFO;
-
-#if QT_CONFIG(qqnx_pps)
     if (!m_clipboard)
         m_clipboard = new QQnxClipboard;
-#endif
+
     return m_clipboard;
 }
 #endif

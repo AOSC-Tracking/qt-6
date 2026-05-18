@@ -1,5 +1,6 @@
 // Copyright (C) 2011 - 2013 BlackBerry Limited. All rights reserved.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #ifndef QQNXWINDOW_H
 #define QQNXWINDOW_H
@@ -77,6 +78,9 @@ public:
 
     void setWindowTitle(const QString &title);
 
+    void requestUpdate() override;
+    void handlePostEvent();
+
 protected:
     virtual int pixelFormat() const = 0;
     virtual void resetBuffers() = 0;
@@ -129,6 +133,11 @@ private:
         DesktopNotifyPosition = 0x2,
         DesktopNotifyVisible = 0x2
     };
+
+    QAtomicInt m_waitingForPost = 0;
+    QAtomicInt m_fallbackQueued = 0;
+    bool m_postEventRegistered = false;
+    QSharedPointer<bool> m_alive { new bool(true) };
 };
 
 QT_END_NAMESPACE

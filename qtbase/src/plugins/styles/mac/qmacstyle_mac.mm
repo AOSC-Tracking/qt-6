@@ -25,6 +25,7 @@
 #include <QtGui/qpainterpath.h>
 #include <QtGui/qstylehints.h>
 #include <QtGui/private/qcoregraphics_p.h>
+#include <QtGui/private/qappleiconengine_p.h>
 #include <QtGui/qpa/qplatformfontdatabase.h>
 #include <QtGui/qpa/qplatformtheme.h>
 
@@ -3188,6 +3189,21 @@ QPixmap QMacStyle::standardPixmap(StandardPixmap standardPixmap, const QStyleOpt
     return icon.pixmap(QSize(size, size), dpr);
 }
 
+QIcon QMacStyle::standardIcon(StandardPixmap standardIcon, const QStyleOption *option,
+                                 const QWidget *widget) const
+{
+    switch (standardIcon) {
+    case SP_ToolBarHorizontalExtensionButton:
+        return QAppleIconEngine::fromTheme("chevron.forward.2");
+    case SP_ToolBarVerticalExtensionButton:
+        return QAppleIconEngine::fromTheme("chevron.down.2");
+    default:
+        break;
+    }
+
+    return QCommonStyle::standardIcon(standardIcon, option, widget);
+}
+
 void QMacStyle::drawPrimitive(PrimitiveElement pe, const QStyleOption *opt, QPainter *p,
                               const QWidget *w) const
 {
@@ -4379,8 +4395,12 @@ void QMacStyle::drawControl(ControlElement ce, const QStyleOption *opt, QPainter
                         myTab.palette.setColor(foregroundRole, Qt::white);
 
             if (myTab.documentMode && isDarkMode()) {
-                bool active = (myTab.state & State_Selected) && (myTab.state & State_Active);
-                myTab.palette.setColor(foregroundRole, active ? Qt::white : Qt::gray);
+                if (const auto *tabBar = qobject_cast<const QTabBar *>(w)) {
+                    if (!tabBar->tabTextColor(myTab.tabIndex).isValid()) {
+                        bool active = (myTab.state & State_Selected) && (myTab.state & State_Active);
+                        myTab.palette.setColor(foregroundRole, active ? Qt::white : Qt::gray);
+                    }
+                }
             }
 
             int heightOffset = 0;

@@ -131,9 +131,22 @@ endfunction()
 
 function(configure_gn_toolchain name cpu v8Cpu toolchainIn toolchainOut)
     set(GN_TOOLCHAIN ${name})
+
+    foreach(x C CXX)
+       set(GN_${x}_COMPILER "${CMAKE_${x}_COMPILER}")
+       if(CMAKE_${x}_COMPILER_ARG1)
+         set(GN_${x}_COMPILER "${CMAKE_${x}_COMPILER} ${CMAKE_${x}_COMPILER_ARG1}")
+       endif()
+    endforeach()
+
     get_gn_os(GN_OS)
     get_gn_is_clang(GN_IS_CLANG)
     get_gn_is_mingw(GN_IS_MINGW)
+    if(QT_FEATURE_webengine_pass_extra_cmake_flags)
+        set(GN_EXTRA_C_FLAGS "${CMAKE_C_FLAGS}")
+        set(GN_EXTRA_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
+    endif()
+
     set(GN_CPU ${cpu})
     set(GN_V8_CPU ${v8Cpu})
     configure_file(${toolchainIn} ${toolchainOut}/BUILD.gn @ONLY)
@@ -151,14 +164,7 @@ function(create_pkg_config_wrapper wrapperName wrapperCmd)
 endfunction()
 
 function(extract_cflag result cflag)
-    set(i 1)
-    while(NOT "x${CMAKE_CXX_COMPILER_ARG${i}}" STREQUAL "x")
-        list(APPEND cflags ${CMAKE_CXX_COMPILER_ARG${i}})
-        math(EXPR i "${i} + 1")
-    endwhile()
-    list(APPEND cflags ${CMAKE_C_FLAGS} ${CMAKE_CXX_FLAGS})
-    string(REPLACE ";" " " cflags "${cflags}")
-    message(DEBUG "Found cflags: ${cflags}")
+    set(cflags "${CMAKE_C_FLAGS} ${CMAKE_C_COMPILER_ARG1}")
     if(cflags MATCHES "-${cflag}=([^ ]+)")
         set(${result} ${CMAKE_MATCH_1} PARENT_SCOPE)
         return()
@@ -260,22 +266,25 @@ macro(append_build_type_setup)
     )
     if (QT_FEATURE_webengine_rust_build)
       list(APPEND gnArgArg
+          toolchain_supports_rust_thin_lto=false # depends on unstable flag -Zsplit-lto-unit
           enable_rust=true
           enable_rust_cxx=true
           enable_tetanus=false # assuming stable rust
           enable_chromium_prelude=false)
 
-      get_filename_component(rustBasePath ${Rustc_EXECUTABLE} DIRECTORY)
+      get_filename_component(bindgenBasePath ${QWEBindgen_EXECUTABLE} DIRECTORY)
+      get_filename_component(bindgenBasePath ${bindgenBasePath} DIRECTORY)
+      list(APPEND gnArgArg rust_bindgen_root="${bindgenBasePath}")
+      get_filename_component(rustBasePath ${QWERustc_EXECUTABLE} DIRECTORY)
       get_filename_component(rustBasePath ${rustBasePath} DIRECTORY)
-      list(APPEND gnArgArg rust_bindgen_root="${rustBasePath}")
       list(APPEND gnArgArg rust_sysroot_absolute="${rustBasePath}")
-      list(APPEND gnArgArg rustc_version="${Rust_VERSION}")
+      list(APPEND gnArgArg rustc_version="${QWERust_VERSION}")
 
       # adler2 known to be absent in 1.85 and present in 1.89
-      if("${Rust_VERSION}" VERSION_LESS "1.87.0")
+      if("${QWERust_VERSION}" VERSION_LESS "1.87.0")
           list(APPEND gnArgArg use_adler2=false)
-          # v8_enable_temporal_support is known to build with 1.85 and not with 1.75
-          if("${Rust_VERSION}" VERSION_LESS "1.84.0")
+          # v8_enable_temporal_support is known to build with 1.84 and not with 1.75
+          if("${QWERust_VERSION}" VERSION_LESS "1.84.0")
               list(APPEND gnArgArg v8_enable_temporal_support=false)
           endif()
       endif()

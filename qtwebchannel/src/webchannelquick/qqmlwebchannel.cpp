@@ -3,8 +3,6 @@
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 // Qt-Security score:significant reason:default
 
-#undef QT_NO_FOREACH // this file contains unported legacy Q_FOREACH uses
-
 #include "qqmlwebchannel.h"
 #include <QtWebChannel/qwebchannelabstracttransport.h>
 #include <QtWebChannel/private/qwebchannel_p.h>
@@ -233,10 +231,9 @@ QObject *QQmlWebChannel::registeredObjects_at(QQmlListProperty<QObject> *prop, q
 void QQmlWebChannel::registeredObjects_clear(QQmlListProperty<QObject> *prop)
 {
     QQmlWebChannel *channel = static_cast<QQmlWebChannel *>(prop->object);
-    foreach (QObject *object, channel->d_func()->registeredObjects) {
+    const auto moved = std::exchange(channel->d_func()->registeredObjects, {}); // precautionary
+    for (QObject *object : moved)
         channel->deregisterObject(object);
-    }
-    return channel->d_func()->registeredObjects.clear();
 }
 
 /*!
@@ -273,9 +270,12 @@ QObject *QQmlWebChannel::transports_at(QQmlListProperty<QObject> *prop, qsizetyp
 void QQmlWebChannel::transports_clear(QQmlListProperty<QObject> *prop)
 {
     QWebChannel *channel = static_cast<QWebChannel *>(prop->object);
-    foreach (QWebChannelAbstractTransport *transport, channel->d_func()->transports) {
+    // Need to take a copy (incl. forced detach :():
+    // - disconnectFrom() modifies `transport`, and
+    // - if we were to use a consume loop, disconnectFrom() wouldn't actually disconnect
+    const auto copy = channel->d_func()->transports;
+    for (QWebChannelAbstractTransport *transport : copy)
         channel->disconnectFrom(transport);
-    }
     Q_ASSERT(channel->d_func()->transports.isEmpty());
 }
 

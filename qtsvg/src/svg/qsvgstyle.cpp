@@ -379,7 +379,8 @@ QSvgSolidColorStyle::QSvgSolidColorStyle(const QColor &color)
 }
 
 QSvgGradientStyle::QSvgGradientStyle(QGradient *grad)
-    : m_gradient(grad), m_gradientStopsSet(false)
+    : m_gradient(grad)
+    , m_gradientStopsSet(false)
 {
 }
 
@@ -706,7 +707,7 @@ void QSvgAnimatedStyle::apply(QPainter *p, const QSvgNode *node, QSvgExtraStates
         return;
 
     QSvgStyleState currentStyle = m_static;
-    for (auto anim : nodeAnims) {
+    for (const QSvgAbstractAnimation *anim : std::as_const(nodeAnims)) {
         if (!anim->isActive())
             continue;
 

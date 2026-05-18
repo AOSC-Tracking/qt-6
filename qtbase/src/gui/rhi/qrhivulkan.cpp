@@ -3496,7 +3496,7 @@ inline void qrhivk_accumulateComputeResource(T *writtenResources, QRhiResource *
     }
     auto it = writtenResources->find(resource);
     if (it != writtenResources->end())
-        it->first |= access;
+        it->second.accessFlags |= access;
     else if (bindingType == storeTypeVal || bindingType == loadStoreTypeVal)
         writtenResources->insert(resource, { access, true });
 }
@@ -3514,13 +3514,12 @@ void QRhiVulkan::dispatch(QRhiCommandBuffer *cb, int x, int y, int z)
         // The key in the writtenResources map indicates that the resource was
         // written in a previous dispatch, whereas the value accumulates the
         // access mask in the current one.
-        for (auto &accessAndIsNewFlag : cbD->computePassState.writtenResources)
-            accessAndIsNewFlag = { 0, false };
+        for (auto [res, accessAndIsNewFlag] : cbD->computePassState.writtenResources)
+            accessAndIsNewFlag = { 0, false }; // note: accessAndIsNewFlag is a reference
 
         QVkShaderResourceBindings *srbD = QRHI_RES(QVkShaderResourceBindings, cbD->currentComputeSrb);
-        const int bindingCount = srbD->m_bindings.size();
-        for (int i = 0; i < bindingCount; ++i) {
-            const QRhiShaderResourceBinding::Data *b = shaderResourceBindingData(srbD->m_bindings.at(i));
+        for (auto &binding : srbD->m_bindings) {
+            const QRhiShaderResourceBinding::Data *b = shaderResourceBindingData(binding);
             switch (b->type) {
             case QRhiShaderResourceBinding::ImageLoad:
             case QRhiShaderResourceBinding::ImageStore:
@@ -3548,8 +3547,8 @@ void QRhiVulkan::dispatch(QRhiCommandBuffer *cb, int x, int y, int z)
         }
 
         for (auto it = cbD->computePassState.writtenResources.begin(); it != cbD->computePassState.writtenResources.end(); ) {
-            const int accessInThisDispatch = it->first;
-            const bool isNewInThisDispatch = it->second;
+            const VkAccessFlags accessInThisDispatch = it->second.accessFlags;
+            const bool isNewInThisDispatch = it->second.isNew;
             if (accessInThisDispatch && !isNewInThisDispatch) {
                 if (it.key()->resourceType() == QRhiResource::Texture) {
                     QVkTexture *texD = QRHI_RES(QVkTexture, it.key());
@@ -5717,6 +5716,9 @@ void QRhiVulkan::setGraphicsPipeline(QRhiCommandBuffer *cb, QRhiGraphicsPipeline
         cbD->currentGraphicsPipeline = ps;
         cbD->currentComputePipeline = nullptr;
         cbD->currentPipelineGeneration = psD->generation;
+
+        if (cbD->hasCustomScissorSet && !psD->m_flags.testFlag(QRhiGraphicsPipeline::UsesScissor))
+            setDefaultScissor(cbD);
     }
 
     psD->lastActiveFrameSlot = currentFrameSlot;
@@ -5756,6 +5758,7 @@ void QRhiVulkan::setShaderResources(QRhiCommandBuffer *cb, QRhiShaderResourceBin
         {
             QVkBuffer *bufD = QRHI_RES(QVkBuffer, b->u.ubuf.buf);
             Q_ASSERT(bufD->m_usage.testFlag(QRhiBuffer::UniformBuffer));
+            sanityCheckResourceOwnership(bufD);
 
             if (bufD->m_type == QRhiBuffer::Dynamic)
                 executeBufferHostWritesForSlot(bufD, currentFrameSlot);
@@ -5792,6 +5795,8 @@ void QRhiVulkan::setShaderResources(QRhiCommandBuffer *cb, QRhiShaderResourceBin
                 // images and samplers, so tex or sampler (but not both) can be
                 // null here.
                 Q_ASSERT(texD || samplerD);
+                sanityCheckResourceOwnership(texD);
+                sanityCheckResourceOwnership(samplerD);
                 if (texD) {
                     texD->lastActiveFrameSlot = currentFrameSlot;
                     trackedRegisterTexture(&passResTracker, texD,
@@ -5823,6 +5828,7 @@ void QRhiVulkan::setShaderResources(QRhiCommandBuffer *cb, QRhiShaderResourceBin
         case QRhiShaderResourceBinding::ImageLoadStore:
         {
             QVkTexture *texD = QRHI_RES(QVkTexture, b->u.simage.tex);
+            sanityCheckResourceOwnership(texD);
             Q_ASSERT(texD->m_flags.testFlag(QRhiTexture::UsedWithLoadStore));
             texD->lastActiveFrameSlot = currentFrameSlot;
             QRhiPassResourceTracker::TextureAccess access;
@@ -5862,6 +5868,7 @@ void QRhiVulkan::setShaderResources(QRhiCommandBuffer *cb, QRhiShaderResourceBin
         {
             QVkBuffer *bufD = QRHI_RES(QVkBuffer, b->u.sbuf.buf);
             Q_ASSERT(bufD->m_usage.testFlag(QRhiBuffer::StorageBuffer));
+            sanityCheckResourceOwnership(bufD);
 
             if (bufD->m_type == QRhiBuffer::Dynamic)
                 executeBufferHostWritesForSlot(bufD, currentFrameSlot);
@@ -6083,6 +6090,39 @@ void QRhiVulkan::setVertexInput(QRhiCommandBuffer *cb,
     }
 }
 
+void QRhiVulkan::setDefaultScissor(QVkCommandBuffer *cbD)
+{
+    cbD->hasCustomScissorSet = false;
+
+    const QSize outputSize = cbD->currentTarget->pixelSize();
+    std::array<float, 4> vp = cbD->currentViewport.viewport();
+    float x = 0, y = 0, w = 0, h = 0;
+
+    if (qFuzzyIsNull(vp[2]) && qFuzzyIsNull(vp[3])) {
+        x = 0;
+        y = 0;
+        w = outputSize.width();
+        h = outputSize.height();
+    } else {
+        // x,y is top-left in VkRect2D but bottom-left in QRhiScissor
+        qrhi_toTopLeftRenderTargetRect<Bounded>(outputSize, vp, &x, &y, &w, &h);
+    }
+
+    QVkCommandBuffer::Command &cmd(cbD->commands.get());
+    VkRect2D *s = &cmd.args.setScissor.scissor;
+    s->offset.x = int32_t(x);
+    s->offset.y = int32_t(y);
+    s->extent.width = uint32_t(w);
+    s->extent.height = uint32_t(h);
+
+    if (cbD->passUsesSecondaryCb) {
+        df->vkCmdSetScissor(cbD->activeSecondaryCbStack.last(), 0, 1, s);
+        cbD->commands.unget();
+    } else {
+        cmd.cmd = QVkCommandBuffer::Command::SetScissor;
+    }
+}
+
 void QRhiVulkan::setViewport(QRhiCommandBuffer *cb, const QRhiViewport &viewport)
 {
     QVkCommandBuffer *cbD = QRHI_RES(QVkCommandBuffer, cb);
@@ -6110,22 +6150,11 @@ void QRhiVulkan::setViewport(QRhiCommandBuffer *cb, const QRhiViewport &viewport
         cmd.cmd = QVkCommandBuffer::Command::SetViewport;
     }
 
+    cbD->currentViewport = viewport;
     if (cbD->currentGraphicsPipeline
-        && !QRHI_RES(QVkGraphicsPipeline, cbD->currentGraphicsPipeline)->m_flags.testFlag(QRhiGraphicsPipeline::UsesScissor))
+        && !cbD->currentGraphicsPipeline->flags().testFlag(QRhiGraphicsPipeline::UsesScissor))
     {
-        QVkCommandBuffer::Command &cmd(cbD->commands.get());
-        VkRect2D *s = &cmd.args.setScissor.scissor;
-        qrhi_toTopLeftRenderTargetRect<Bounded>(outputSize, viewport.viewport(), &x, &y, &w, &h);
-        s->offset.x = int32_t(x);
-        s->offset.y = int32_t(y);
-        s->extent.width = uint32_t(w);
-        s->extent.height = uint32_t(h);
-        if (cbD->passUsesSecondaryCb) {
-            df->vkCmdSetScissor(cbD->activeSecondaryCbStack.last(), 0, 1, s);
-            cbD->commands.unget();
-        } else {
-            cmd.cmd = QVkCommandBuffer::Command::SetScissor;
-        }
+        setDefaultScissor(cbD);
     }
 }
 
@@ -6156,6 +6185,8 @@ void QRhiVulkan::setScissor(QRhiCommandBuffer *cb, const QRhiScissor &scissor)
     } else {
         cmd.cmd = QVkCommandBuffer::Command::SetScissor;
     }
+
+    cbD->hasCustomScissorSet = true;
 }
 
 void QRhiVulkan::setBlendConstants(QRhiCommandBuffer *cb, const QColor &c)
@@ -8225,10 +8256,11 @@ bool QVkShaderResourceBindings::create()
         }
     }
 
-    QVarLengthArray<VkDescriptorSetLayoutBinding, 4> vkbindings;
+    QVarLengthArray<VkDescriptorSetLayoutBinding, BINDING_PREALLOC> vkbindings;
+    vkbindings.reserve(sortedBindings.size());
     for (const QRhiShaderResourceBinding &binding : std::as_const(sortedBindings)) {
         const QRhiShaderResourceBinding::Data *b = QRhiImplementation::shaderResourceBindingData(binding);
-        VkDescriptorSetLayoutBinding vkbinding = {};
+        VkDescriptorSetLayoutBinding &vkbinding = vkbindings.emplace_back();
         vkbinding.binding = uint32_t(b->binding);
         vkbinding.descriptorType = toVkDescriptorType(b);
         if (b->type == QRhiShaderResourceBinding::SampledTexture || b->type == QRhiShaderResourceBinding::Texture)
@@ -8236,7 +8268,6 @@ bool QVkShaderResourceBindings::create()
         else
             vkbinding.descriptorCount = 1;
         vkbinding.stageFlags = toVkShaderStageFlags(b->stage);
-        vkbindings.append(vkbinding);
     }
 
     VkDescriptorSetLayoutCreateInfo layoutInfo = {};
@@ -8787,7 +8818,7 @@ static inline bool hdrFormatMatchesVkSurfaceFormat(QRhiSwapChain::Format f, cons
         return s.format == VK_FORMAT_R16G16B16A16_SFLOAT
                 && s.colorSpace == VK_COLOR_SPACE_EXTENDED_SRGB_LINEAR_EXT;
     case QRhiSwapChain::HDR10:
-        return (s.format == VK_FORMAT_A2B10G10R10_UNORM_PACK32 || s.format == VK_FORMAT_A2R10G10B10_UNORM_PACK32)
+        return s.format == VK_FORMAT_A2B10G10R10_UNORM_PACK32
                 && s.colorSpace == VK_COLOR_SPACE_HDR10_ST2084_EXT;
     case QRhiSwapChain::HDRExtendedDisplayP3Linear:
         return s.format == VK_FORMAT_R16G16B16A16_SFLOAT
@@ -8906,36 +8937,80 @@ bool QVkSwapChain::ensureSurface()
     quint32 formatCount = 0;
     rhiD->vkGetPhysicalDeviceSurfaceFormatsKHR(rhiD->physDev, surface, &formatCount, nullptr);
     QList<VkSurfaceFormatKHR> formats(formatCount);
-    if (formatCount)
-        rhiD->vkGetPhysicalDeviceSurfaceFormatsKHR(rhiD->physDev, surface, &formatCount, formats.data());
+    rhiD->vkGetPhysicalDeviceSurfaceFormatsKHR(rhiD->physDev, surface, &formatCount,
+                                               formats.data());
 
-    // See if there is a better match than the default BGRA8 format. (but if
-    // not, we will stick to the default)
+    // Initially select the first available format, will only be used as a worst-case fallback
+    colorFormat = formats.constFirst().format;
+    colorSpace = formats.constFirst().colorSpace;
+
+    // See if we can find the preferred SDR format
     const bool srgbRequested = m_flags.testFlag(sRGB);
-    for (int i = 0; i < int(formatCount); ++i) {
-        if (formats[i].format != VK_FORMAT_UNDEFINED) {
-            bool ok = srgbRequested == isSrgbFormat(formats[i].format);
-            if (m_format != SDR)
-                ok &= hdrFormatMatchesVkSurfaceFormat(m_format, formats[i]);
+    bool foundBestFormat = false;
+    if (m_format == SDR) {
+        for (int i = 0; i < int(formatCount); ++i) {
+            bool ok;
+            if (srgbRequested) {
+                ok = defaultSrgbColorFormat == formats[i].format;
+            } else {
+                ok = defaultColorFormat == formats[i].format;
+            }
             if (ok) {
+                foundBestFormat = true;
                 colorFormat = formats[i].format;
                 colorSpace = formats[i].colorSpace;
-#if QT_CONFIG(wayland)
-                // On Wayland, only one color management surface can be created at a time without
-                // triggering a protocol error, and we create one ourselves in some situations.
-                // To avoid this problem, use VK_COLOR_SPACE_PASS_THROUGH_EXT when supported,
-                // so that the driver doesn't create a color management surface as well.
-                const bool hasPassThrough = std::any_of(formats.begin(), formats.end(), [this](const VkSurfaceFormatKHR &fmt) {
-                    return fmt.format == colorFormat && fmt.colorSpace == VK_COLOR_SPACE_PASS_THROUGH_EXT;
-                });
-                if (hasPassThrough) {
-                    colorSpace = VK_COLOR_SPACE_PASS_THROUGH_EXT;
-                }
-#endif
                 break;
             }
         }
     }
+
+    // Otherwise pick one that fits our requirements:
+    if (!foundBestFormat && (m_format != SDR || srgbRequested)) {
+        for (int i = 0; i < int(formatCount); ++i) {
+            bool ok = false;
+            if (m_format != SDR) {
+                ok = hdrFormatMatchesVkSurfaceFormat(m_format, formats[i]);
+            } else if (srgbRequested) {
+                ok = isSrgbFormat(formats[i].format);
+            }
+            if (ok) {
+                colorFormat = formats[i].format;
+                colorSpace = formats[i].colorSpace;
+                break;
+            }
+        }
+    }
+
+    // Although this should be rare, warn when we fail to select a suitable format
+    if (m_format != SDR) {
+        VkSurfaceFormatKHR format{};
+        format.format = colorFormat;
+        format.colorSpace = colorSpace;
+        if (!hdrFormatMatchesVkSurfaceFormat(m_format, format)) {
+            qWarning("Failed to select a suitable VkFormat for HDR, using format %d as fallback",
+                     colorFormat);
+        }
+    } else {
+        if (srgbRequested && !isSrgbFormat(colorFormat)) {
+            qWarning("Failed to select a suitable VkFormat for sRGB, using format %d as fallback",
+                     colorFormat);
+        }
+    }
+
+#if QT_CONFIG(wayland)
+    // On Wayland, only one color management surface can be created at a time without
+    // triggering a protocol error, and we create one ourselves in some situations.
+    // To avoid this problem, use VK_COLOR_SPACE_PASS_THROUGH_EXT when supported,
+    // so that the driver doesn't create a color management surface as well.
+    const bool hasPassThrough =
+            std::any_of(formats.begin(), formats.end(), [this](const VkSurfaceFormatKHR &fmt) {
+                return fmt.format == colorFormat
+                        && fmt.colorSpace == VK_COLOR_SPACE_PASS_THROUGH_EXT;
+            });
+    if (hasPassThrough) {
+        colorSpace = VK_COLOR_SPACE_PASS_THROUGH_EXT;
+    }
+#endif
 
     samples = rhiD->effectiveSampleCountBits(m_sampleCount);
 

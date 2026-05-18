@@ -1,6 +1,7 @@
 // Copyright (C) 2022 The Qt Company Ltd.
 // Copyright (C) 2016 Intel Corporation.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #if 0
 #pragma qt_class(QtCompilerDetection)
@@ -1195,7 +1196,8 @@
 #  define QT_WARNING_DISABLE_INTEL(number)
 #  define QT_WARNING_DISABLE_CLANG(text)
 #  define QT_WARNING_DISABLE_GCC(text)
-#  define QT_WARNING_DISABLE_DEPRECATED         QT_WARNING_DISABLE_MSVC(4996)
+#  define QT_WARNING_DISABLE_DEPRECATED         QT_WARNING_DISABLE_MSVC(4996) \
+                                                QT_WARNING_DISABLE_MSVC(4995)
 #  define QT_WARNING_DISABLE_FLOAT_COMPARE
 #  define QT_WARNING_DISABLE_INVALID_OFFSETOF
 #elif defined(Q_CC_CLANG)
@@ -1205,7 +1207,13 @@
 #  define QT_WARNING_DISABLE_GCC(text)
 #  define QT_WARNING_DISABLE_INTEL(number)
 #  define QT_WARNING_DISABLE_MSVC(number)
-#  define QT_WARNING_DISABLE_DEPRECATED         QT_WARNING_DISABLE_CLANG("-Wdeprecated-declarations")
+# if defined(__has_warning) && __has_warning("-Wdeprecated-pragma")
+#  define QT_WARNING_DISABLE_DEPRECATED_MACRO  QT_WARNING_DISABLE_CLANG("-Wdeprecated-pragma")
+# else
+#  define QT_WARNING_DISABLE_DEPRECATED_MACRO
+# endif
+#  define QT_WARNING_DISABLE_DEPRECATED         QT_WARNING_DISABLE_CLANG("-Wdeprecated-declarations") \
+                                                QT_WARNING_DISABLE_DEPRECATED_MACRO
 #  define QT_WARNING_DISABLE_FLOAT_COMPARE      QT_WARNING_DISABLE_CLANG("-Wfloat-equal")
 #  define QT_WARNING_DISABLE_INVALID_OFFSETOF   QT_WARNING_DISABLE_CLANG("-Winvalid-offsetof")
 #elif defined(Q_CC_GNU) && (__GNUC__ * 100 + __GNUC_MINOR__ >= 406)
@@ -1327,9 +1335,8 @@
 #endif // __cplusplus
 
 #if defined(__cplusplus) && defined(Q_CC_MSVC) && !defined(Q_CC_CLANG)
-#  if Q_CC_MSVC < 1927
-     // Check below only works with 16.7 or newer
-#    error "Qt requires at least Visual Studio 2019 version 16.7 (VC++ version 14.27). Please upgrade."
+#  if Q_CC_MSVC < 1930
+#    error "Qt requires at least Visual Studio 2022 (MSVC version 19.30 or newer). Please upgrade."
 #  endif
 
 // On MSVC we require /permissive- set by user code. Check that we are

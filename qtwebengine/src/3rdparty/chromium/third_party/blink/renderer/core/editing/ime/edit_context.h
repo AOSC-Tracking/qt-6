@@ -177,6 +177,14 @@ class CORE_EXPORT EditContext final : public EventTarget,
   // For English typing.
   bool InsertText(const WebString& text);
 
+  // Clamps `selection_start_` and `selection_end_` to be within `text_` length.
+  // This is necessary because `updateText` can shorten the text buffer without
+  // adjusting selection offsets leaving stale offsets that exceed the `text_`
+  // length. Must be called before delete operations to prevent out-of-bounds
+  // access.
+  // TODO(crbug.com/379170477): This can be removed when `updateText` adjusts
+  // the selection offsets to stay within `text_` bounds.
+  void EnsureSelectionWithinTextBounds();
   void DeleteBackward();
   void DeleteForward();
   void DeleteWordBackward();

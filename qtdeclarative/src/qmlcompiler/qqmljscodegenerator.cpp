@@ -4286,14 +4286,14 @@ QString QQmlJSCodeGenerator::convertStored(
 
 
     if (from == jsPrimitiveType) {
-        if (to == m_typeResolver->realType())
-            return variable + u".toDouble()"_s;
         if (to == boolType)
             return variable + u".toBoolean()"_s;
         if (to == m_typeResolver->int64Type() || to == m_typeResolver->uint64Type())
             return u"%1(%2.toDouble())"_s.arg(to->internalName(), variable);
         if (m_typeResolver->isIntegral(to))
             return u"%1(%2.toInteger())"_s.arg(to->internalName(), variable);
+        if (m_typeResolver->isNumeric(to))
+            return u"%1(%2.toDouble())"_s.arg(to->internalName(), variable);
         if (to == m_typeResolver->stringType())
             return variable + u".toString()"_s;
         if (to == jsValueType)
@@ -4435,8 +4435,18 @@ QString QQmlJSCodeGenerator::convertStored(
     } else if (const auto ctor = m_typeResolver->selectConstructor(to, from, &isExtension);
                ctor.isValid()) {
         const auto argumentTypes = ctor.parameters();
-        return (isExtension ? to->extensionType().scope->internalName() : to->internalName())
-                + u"("_s + convertStored(from, argumentTypes[0].type(), variable) + u")"_s;
+        const QString argument = convertStored(from, argumentTypes[0].type(), variable);
+        if (isExtension) {
+            // We typically use private inheritance for the foreign/extension trick.
+            // Therefore we need to jump through some hoops to extract the actual value here.
+            return u"[](auto &&arg) { "
+                    "%1 wrapper(std::forward<decltype(arg)>(arg)); "
+                    "return %2(reinterpret_cast<%2 &>(wrapper)); "
+                    "}(%3)"_s.arg(
+                           to->extensionType().scope->internalName(), to->internalName(), argument);
+        }
+
+        return u"%1(%2)"_s.arg(to->internalName(), argument);
     }
 
     if (to == m_typeResolver->stringType()

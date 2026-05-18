@@ -655,6 +655,7 @@ void tst_QDockWidget::visibilityChanged()
     QDockWidget dw;
     QSignalSpy spy(&dw, SIGNAL(visibilityChanged(bool)));
 
+    mw.setWindowFlag(Qt::FramelessWindowHint);
     mw.addDockWidget(Qt::LeftDockWidgetArea, &dw);
     mw.show();
 
@@ -917,7 +918,7 @@ void tst_QDockWidget::dockLocationChanged()
     QCOMPARE(dockLocation(&spy), Qt::TopDockWidgetArea);
     spy.clear();
 
-    QByteArray ba = mw.saveState();
+    const QByteArray &ba = mw.saveState();
     mw.restoreState(ba);
     QCOMPARE(spy.size(), 1);
     QCOMPARE(dockLocation(&spy), Qt::TopDockWidgetArea);
@@ -984,6 +985,8 @@ void tst_QDockWidget::restoreStateOfFloating()
     QMainWindow mw;
     QDockWidget *dock = createTestDock(mw);
     mw.addDockWidget(Qt::TopDockWidgetArea, dock);
+    mw.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&mw));
     QVERIFY(!dock->isFloating());
     QByteArray ba = mw.saveState();
     dock->setFloating(true);
@@ -2084,6 +2087,48 @@ void tst_QDockWidget::saveAndRestore()
         isFloating2 = d2->isFloating();
     }
 
+    // Test save / restore consistency (QTBUG-142797)
+    {
+        constexpr auto compare = [](const QList<QDockWidget *> actual, std::initializer_list<QDockWidget *> expected) {
+            const auto expectedSize = static_cast<int>(expected.size());
+            if (actual.size() != expectedSize) {
+                qCDebug(lcTestDockWidget) << "expected size:" << expectedSize << "actual size:" << actual.size();
+                return false;
+            }
+            for (auto *widget : expected) {
+                if (!actual.contains(widget)) {
+                    qCDebug(lcTestDockWidget) << "expected:" << expected << "actual:" << actual;
+                    return false;
+                }
+            }
+            return true;
+        };
+
+        QPointer<QDockWidget> d1;
+        QPointer<QDockWidget> d2;
+        QPointer<QWidget> cent;
+        QMainWindow* mainWindow;
+        QList<int> path1;
+        QList<int> path2;
+        qCreateFloatingTabs(mainWindow, cent, d1, d2, path1, path2);
+        auto *d3 = new QDockWidget;
+        d3->setObjectName("D3");
+        mainWindow->addDockWidget(Qt::LeftDockWidgetArea, d3);
+        d3->setFloating(true);
+        QTRY_VERIFY(d3->isFloating());
+        QPointer<QDockWidgetGroupWindow> groupWindow = mainWindow->findChild<QDockWidgetGroupWindow *>();
+        QVERIFY(groupWindow);
+        QVERIFY(compare(groupWindow->dockWidgets(), {d1, d2}));
+        d3->close();
+        QVERIFY(!d3->toggleViewAction()->isChecked());
+        const auto &ba = mainWindow->saveState();
+        mainWindow->restoreState(ba);
+        QTRY_VERIFY(!groupWindow);
+        groupWindow = mainWindow->findChild<QDockWidgetGroupWindow *>();
+        QVERIFY(compare(groupWindow->dockWidgets(), {d1, d2}));
+        QVERIFY(!d3->toggleViewAction()->isChecked()); // d3 must still be closed after restore
+    }
+
     // Create a mainwindow with a central widget and two dock widgets.
     // Assign different properties to each dock widgets.
     // Write properties to a byte array.
@@ -2115,6 +2160,35 @@ void tst_QDockWidget::saveAndRestore()
         QTRY_VERIFY(d2->isFloating());
         QCOMPARE(d1->isFloating(), isFloating1);
         QCOMPARE(d2->isFloating(), isFloating2);
+    }
+
+    // MainWindow is child of another toplevel window
+    {
+        QWidget topLevel;
+        auto *layout = new QVBoxLayout(&topLevel);
+
+        auto *tabs = new QTabWidget(&topLevel);
+        layout->addWidget(tabs);
+
+        // Tab 1: Save Settings button
+        auto *tab1 = new QWidget;
+        tabs->addTab(tab1, "Front");
+
+        // Tab 2: QMainWindow with a left dock widget
+        auto *tab2 = new QMainWindow;
+        auto *dock = new QDockWidget("Dock1", tab2);
+        dock->setObjectName("dock1");
+        tab2->addDockWidget(Qt::LeftDockWidgetArea, dock);
+        tab2->setCentralWidget(new QWidget);
+        tabs->addTab(tab2, "Main");
+
+        topLevel.resize(400, 400);
+        topLevel.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&topLevel));
+        tab2->restoreState(tab2->saveState());
+        tabs->setCurrentIndex(1);
+        QTRY_VERIFY(dock->isVisible());
+        QVERIFY(!dock->isFloating());
     }
 
     // Create a new main window, central window and two dock widgets.

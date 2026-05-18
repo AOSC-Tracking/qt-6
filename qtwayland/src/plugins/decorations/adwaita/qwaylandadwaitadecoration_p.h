@@ -7,7 +7,17 @@
 
 #include <QtWaylandClient/private/qwaylandabstractdecoration_p.h>
 
+#include <QtGui/qcolor.h>
+#include <QtGui/qfont.h>
+#include <QtGui/qstatictext.h>
+
 #include <QtCore/QDateTime>
+#include <QtCore/qflags.h>
+#include <QtCore/qmap.h>
+#include <QtCore/qpoint.h>
+#include <QtCore/qstring.h>
+
+#include <memory>
 
 QT_BEGIN_NAMESPACE
 

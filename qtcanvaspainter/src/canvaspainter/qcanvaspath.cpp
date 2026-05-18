@@ -46,9 +46,11 @@ QT_BEGIN_NAMESPACE
 
     A painter path is an object composed of a number of graphical building blocks,
     such as rectangles, ellipses, lines, and curves. QCanvasPath API matches to
-    QCanvasPainter path painting, making it easy to adjust code between paintind directly
+    QCanvasPainter path painting, making it easy to adjust code between painting directly
     or painting into a path. The main reason use QCanvasPath is to avoid recreating
-    the (static) paths and be able to cache the paths GPU buffers.
+    paths that are static and used in every frame of the rendering, and to possibly enable
+    the caching of the path-related rendering data (such, as the vertex and index data
+    generated from it), instead of regenerating it every time the path is filled or stroked.
 
     Compared to QPainterPath, QCanvasPath is more optimized for rendering with fewer
     features for comparing or adjusting the paths. In particular:
@@ -63,38 +65,119 @@ QT_BEGIN_NAMESPACE
     \l{https://developer.mozilla.org/en-US/docs/Web/API/Path2D} {Path2D},
     with some additions and the API matching to QCanvasPainter.
 
-    \section1 PathGroups and caching
+    \section1 Path Groups and Caching
 
     Painting paths through QCanvasPath allows the engine to cache the path
     geometry (vertices). This improves the performance of static paths,
-    while potentially increasing GPU memory consumption.
+    while potentially increasing CPU and GPU memory consumption.
 
     When painting paths using \l{QCanvasPainter::}{fill()} or \l{QCanvasPainter::}{stroke()}
     that take \l QCanvasPath as a parameter, it is possible to set a \c pathGroup
-    as a second parameter. This defines the GPU buffer where the path is cached.
-    By default, \c pathGroup is \c 0, meaning that the first buffer is used.
-    Setting the \c pathGroup to \c -1 means that the path does not allocate its own
-    buffer, and the same dynamic buffer is used as with direct painting using
-    beginPath() followed by commands and fill/stroke.
+    as a second parameter.
 
-    Arranging paths into path groups allows efficient optimization of the rendering
-    performance and the GPU memory usage. Paths that belong together and often change
-    at the same time should be in the same group for optimal buffer usage.
+    By default, \c pathGroup is \c -1, which means that the path data will not
+    be attempted to be cached, and so rendering happens mostly identically to
+    when doing direct painting using beginPath(), followed by path definition
+    commands, and finally a fill or stroke.
 
-    When the path changes, its geometry (vertex buffer) is automatically updated.
+    Setting \c pathGroup to a value of \c 0 or any higher number will enable the
+    caching and reuse of the path's generated geometry. Arranging paths into
+    path groups allows efficient optimization of the rendering performance and
+    memory usage. Paths that belong together and often change at the
+    same time should be in the same group for optimal results.
+
+    When the path changes, its data, even if it was cached, is automatically updated.
     Things that cause a geometry update of the path group are:
     \list
     \li Clearing the path elements or adding new elements.
-    \li Changing the stroke line width (\l{QCanvasPainter::setLineWidth()}).
-    \li Adjusting antialiasing amount (\l{QCanvasPainter::setAntialias()}).
-    \li Changing line cap or line join type (\l{QCanvasPainter::setLineCap()}, \l{QCanvasPainter::setLineJoin()}).
+    \li Changing the stroke line width (\l{QCanvasPainter::setLineWidth()}, relevant for strokes).
+    \li Adjusting antialiasing amount (\l{QCanvasPainter::setAntialias()}, relevant both for fills and strokes).
+    \li Changing line cap or line join type (\l{QCanvasPainter::setLineCap()}, \l{QCanvasPainter::setLineJoin()}, relevant for strokes).
+    \li Adjusting \l{QCanvasPainter::setRenderHint()}{render hints} (relevant both for fills and strokes).
     \endlist
 
     Note that changing the state transform (\l{QCanvasPainter::transform()}, \l{QCanvasPainter::rotate()} etc.)
     does not invalidate the path, so moving/scaling/rotating a cached path is very efficient.
 
-    In cases where the path does not need to be painted anymore, or the application
-    should release GPU memory, the cache can be released by calling
+    As an example, consider a QCanvasPath \c p with a very large number of
+    commands in it. Stroking or filling this path \c p can be an expensive
+    operation due to the amount of work performed on the CPU side. The vertex
+    data may be regenerated and uploaded into GPU buffers for each of those
+    stroke or fill operation, in every frame. That is not ideal when the path is
+    static and all we want is to draw it again and again in every frame as
+    efficiently as possible.
+
+    When a path group is specifed, for example replacing \c{stroke(p)} with
+    \c{stroke(p, 5)}, then the renderer has the option to maintain dedicated
+    vertex and index buffers for path \c p, and any other path that has the same
+    group (\c 5) specified in a stroke or fill command.
+
+    Assuming that path \c p (the commands in the QCanvasPath) do not change,
+    repeatedly filling or stroking this path will become a cheap operation,
+    because all data is already there in the GPU buffers dedicated to path group
+    \c 5. Transforming is also cheap, since with cached path groups
+    transformations happen in the vertex shader, not on the geometry itself.
+
+    In the following code snippet, when \c m_path is complex enough, its
+    commands do not change, and it is stroked with the same stroke width,
+    antialiasing amount, etc. in every frame, then the following can be
+    significantly more efficient than not using path groups:
+
+    \code
+    // m_path is QCanvasPath with lots of commands in it
+    const int pathGroup = 5;
+
+    // in every frame:
+      painter->stroke(m_path, pathGroup);
+      // ... other draw commands
+      painter->translate(100, 0);
+      painter->stroke(*m_path, pathGroup);
+      // ... other draw commands
+    \endcode
+
+    When stroking \c m_path the second, third, and later times, the rendering
+    will be very cheap compared to not using path groups, because no path
+    geometry processing will need to happen on the CPU side. Changing the
+    transform by applying a translation does not invalidate the cached path
+    group data, hence the translated stroke() call is just as fast.
+
+    What happens if one of the relevant states listed above change? For example,
+    if the path is drawn with two different stroke widths:
+
+    \code
+    // m_path is QCanvasPath with lots of commands in it
+    const int pathGroup = 5;
+
+    // in every frame:
+      painter->setStrokeWidth(4);
+      painter->stroke(m_path, pathGroup);
+      // ... other draw commands
+      painter->translate(100, 0);
+      painter->setStrokeWidth(8);
+      painter->stroke(*m_path, pathGroup);
+      // ... other draw commands
+    \endcode
+
+    This is still very efficient, since the path vertex data will be cached and
+    reused for both stroke width 4 and 8, but the resource usage will increase
+    slightly, since the GPU buffer for path group \c 5 will now contain both the
+    stroke width 4 and 8 version of the path geometry.
+
+    One way to think of path groups is a caching mechanism where the path group
+    value is treated as the first level cache key, while the QCanvasPath object,
+    the antialiasing amount, the render hints, and, in case of stroking, the
+    stroke width, line cap, and line join form the second level cache key
+    (within the path group).
+
+    Changing the path commands (the elements in the QCanvasPath) is always
+    expensive, because that will always lead to rebuilding the associated data
+    on the CPU and GPU side. As a somewhat extreme example, if a QCanvasPath
+    changes its commands in every frame, then there is no point in using path
+    groups (and QCanvasPath, even) for that particular path, as there are no
+    benefits compared to direct path drawing via QCanvasPainter functions.
+
+    In cases where the path group will not be used anymore in drawing, or the application
+    wants to free up memory as much as possible, the cache can be released by calling
     \l{QCanvasPainter::removePathGroup()}. This isn't usually needed, as the cached paths
     are automatically released during the painter destructor.
 
@@ -744,6 +827,10 @@ void QCanvasPath::circle(float x, float y, float radius)
 /*!
     Sets the current sub-path \a winding to either \c QCanvasPainter::CounterClockWise (default)
     or \c QCanvasPainter::ClockWise. CounterClockWise draws solid subpaths while ClockWise draws holes.
+
+    \note This is a command, similar to lineTo, moveTo, etc., and therefore
+    setting the winding should be done before the rest of the commands to which
+    the changed winding is meant to be applied to.
 */
 void QCanvasPath::setPathWinding(QCanvasPainter::PathWinding winding)
 {

@@ -95,10 +95,11 @@ private slots:
     void conversionInDeadCode();
     void conversions();
     void convertPrimitiveToVar();
-    void convertQJSPrimitiveValueToIntegral();
+    void convertQJSPrimitiveValueToNumeric();
     void convertToOriginalReadAcumulatorForUnaryOperators();
     void cppMethodListReturnType();
     void cppValueTypeList();
+    void ctorArgumentConversion();
     void dateConstruction();
     void dateConversions();
     void deadContext_data();
@@ -195,6 +196,7 @@ private slots:
     void listIndices();
     void listLength();
     void listOfInvisible();
+    void listOfInlineComponent();
     void listPropertyAsModel();
     void listToString();
     void lotsOfRegisters();
@@ -1620,10 +1622,10 @@ void tst_QmlCppCodegen::convertPrimitiveToVar()
     QCOMPARE(o->property("offsetValue").toInt(), 41);
 }
 
-void tst_QmlCppCodegen::convertQJSPrimitiveValueToIntegral()
+void tst_QmlCppCodegen::convertQJSPrimitiveValueToNumeric()
 {
     QQmlEngine engine;
-    QQmlComponent c(&engine, QUrl(u"qrc:/qt/qml/TestTypes/convertQJSPrimitiveValueToIntegral.qml"_s));
+    QQmlComponent c(&engine, QUrl(u"qrc:/qt/qml/TestTypes/convertQJSPrimitiveValueToNumeric.qml"_s));
     QVERIFY2(c.isReady(), qPrintable(c.errorString()));
     QScopedPointer<QObject> o(c.create());
     QVERIFY(!o.isNull());
@@ -1662,6 +1664,16 @@ void tst_QmlCppCodegen::cppValueTypeList()
     QCOMPARE(object->property("b").toDouble(), 0.25);
     QMetaObject::invokeMethod(object.data(), "incB");
     QCOMPARE(object->property("b").toDouble(), 13.5);
+}
+
+void tst_QmlCppCodegen::ctorArgumentConversion()
+{
+    QQmlEngine engine;
+    QQmlComponent component(&engine, QUrl(u"qrc:/qt/qml/TestTypes/ctorArgumentConversion.qml"_s));
+    std::unique_ptr<QObject> object(component.create());
+    QVERIFY2(object, component.errorString().toUtf8().constData());
+    LocalWithLength w = object->property("w").value<LocalWithLength>();
+    QCOMPARE(w.length(), 4);
 }
 
 void tst_QmlCppCodegen::dateConstruction()
@@ -3833,6 +3845,19 @@ void tst_QmlCppCodegen::listOfInvisible()
     QScopedPointer<QObject> object(component.create());
     QVERIFY(!object.isNull());
     QCOMPARE(object->property("width").toDouble(), 27.0);
+}
+
+void tst_QmlCppCodegen::listOfInlineComponent()
+{
+    QQmlEngine engine;
+    QQmlComponent component(&engine, QUrl(u"qrc:/qt/qml/TestTypes/listOfInlineComponent.qml"_s));
+    QVERIFY2(component.isReady(), component.errorString().toUtf8());
+    QScopedPointer<QObject> object(component.create());
+    QVERIFY(!object.isNull());
+    const QVariant model = object->property("model");
+    QCOMPARE(model.metaType(), QMetaType::fromType<QQmlListReference>());
+    QQmlListReference ref = model.value<QQmlListReference>();
+    QCOMPARE(ref.count(), 0);
 }
 
 void tst_QmlCppCodegen::listPropertyAsModel()

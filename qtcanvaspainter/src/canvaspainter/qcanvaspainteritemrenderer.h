@@ -38,8 +38,15 @@ protected:
     virtual void initializeResources(QCanvasPainter *painter);
     virtual void prePaint(QCanvasPainter *painter);
     virtual void paint(QCanvasPainter *painter);
-    virtual void synchronize(QCanvasPainterItem *item);
+    virtual void synchronizeData(QCanvasPainterItem *item);
     virtual void initialize(QRhiCommandBuffer *cb) override;
+
+#if QT_VERSION < QT_VERSION_CHECK(6, 12, 0)
+    // Keep synchronize() working with Qt 6.11.x
+    virtual void synchronize(QCanvasPainterItem *item) {
+        Q_UNUSED(item);
+    }
+#endif
 
     void render(QRhiCommandBuffer *cb) override;
     void synchronize(QQuickRhiItem *item) override;

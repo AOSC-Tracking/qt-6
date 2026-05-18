@@ -23,6 +23,11 @@
 #include <QtNetwork/qhostaddress.h>
 #include <QtNetwork/qtcpserver.h>
 
+#include <QtCore/qbytearray.h>
+#include <QtCore/qhash.h>
+#include <QtCore/qmap.h>
+#include <QtCore/qurl.h>
+
 #include <utility>
 
 QT_BEGIN_NAMESPACE
@@ -83,7 +88,7 @@ private:
         QMap<QByteArray, QByteArray> headers;
     };
 
-    QMap<QTcpSocket *, QHttpRequest> clients;
+    QHash<QTcpSocket *, QHttpRequest> clients;
 
     QOAuthHttpServerReplyHandler *q_ptr;
 };

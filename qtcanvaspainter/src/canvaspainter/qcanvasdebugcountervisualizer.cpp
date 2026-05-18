@@ -46,7 +46,7 @@ void QCanvasDebugCounterVisualizer::paint(QCanvasPainter *painter, float width, 
     //float fontSize = qMin(QCanvasPainter::ptToPx(14), width*0.04f);
     float fontSize = 14.0f;
     float margin = fontSize * 0.2f;
-    float debugHeight = fontSize * 5.0f + margin * 3.0f;
+    float debugHeight = fontSize * 7.0f + margin * 3.0f;
     float debugWidth = qMin(width, 28 * fontSize);
     float debugY = height - debugHeight;
     // Note: Returning these state settings back
@@ -100,12 +100,14 @@ void QCanvasDebugCounterVisualizer::paint(QCanvasPainter *painter, float width, 
     painter->fillText(QString::number(debugCounters.triangleCount),
                       margin + 5.0f * cellWidth, textY);
     // Textures and timing info
-    textY = height - fontSize * 1.5f;
-    int textures = painter->activeImageCount();
-    int textureMem = painter->activeImageMemoryUsage();
-    QString debugText7 = QStringLiteral("IMAGES: %1, MEM: %2 kB, TIME: %3 ms")
-                             .arg(textures).arg(textureMem).arg(m_debugMsElapsed);
+    textY += (fontSize + margin) * 2;
+    QString debugText7 = QStringLiteral("IMAGES: %1 (%2 kB); TIME: %3 ms")
+                             .arg(debugCounters.imageCount).arg(debugCounters.imageMemoryUsage).arg(m_debugMsElapsed);
     painter->fillText(debugText7, margin, textY);
+    textY += fontSize + margin;
+    QString debugText8 = QStringLiteral("PATH CACHE: %1 groups, %2 subpaths (%3 kB)")
+                             .arg(debugCounters.pathGroupCount).arg(debugCounters.cachedSubpathCount).arg(debugCounters.cachedPathVertexDataSize / 1000);
+    painter->fillText(debugText8, margin, textY);
 }
 
 QT_END_NAMESPACE

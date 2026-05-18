@@ -270,6 +270,7 @@ public:
     const Type type;
     float instancingLodMin = -1;
     float instancingLodMax = -1;
+    bool isInstanced = false;
 
     QSSGRenderableObject(Type ty,
                          QSSGRenderableObjectFlags inFlags,
@@ -383,7 +384,7 @@ public:
             QRhiGraphicsPipeline *pipeline = nullptr;
             QRhiShaderResourceBindings *srb = nullptr;
         } motionVectorPass;
-        RhiPassData userPassData[16] {};
+        RhiPassData userPassData[QSSGUserRenderPassManager::maxUserPassSlots()] {};
     } rhiRenderData;
 
     QSSGSubsetRenderable(Type type,
@@ -464,6 +465,7 @@ using QSSGItem2DsView = QSSGDataView<QSSGRenderItem2D *>;
 using QSSGCamerasView = QSSGDataView<QSSGRenderCamera *>;
 using QSSGLightsView = QSSGDataView<QSSGRenderLight *>;
 using QSSGReflectionProbesView = QSSGDataView<QSSGRenderReflectionProbe *>;
+using QSSGNonCategorizedView = QSSGDataView<QSSGRenderNode *>;
 
 QT_END_NAMESPACE
 

@@ -96,7 +96,7 @@ private:
     QSize m_pendingSize;
 
     uint32_t m_lastAckedConfigure = UINT32_MAX;
-    QMap<uint32_t, QPair<uint, QRect> > m_pendingConfigures;
+    QMap<uint32_t, std::pair<uint, QRect> > m_pendingConfigures;
 
     QWaylandQtShellSurface::CapabilityFlags m_capabilities;
 

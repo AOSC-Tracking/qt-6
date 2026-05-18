@@ -55,12 +55,38 @@ struct FrameBufferPool::FrameBuffer {
   // Not using std::vector<uint8_t> as resize() calls take a really long time
   // for large buffers.
   BytesArray data;
-  BytesArray alpha_data;
   bool held_by_library = false;
   // Needs to be a counter since a frame buffer might be used multiple times.
   int held_by_frame = 0;
   base::TimeTicks last_use_time;
 };
+
+namespace {
+
+BytesArray AllocateMemory(size_t min_size,
+                          bool zero_initialize,
+                          bool force_error) {
+  if (force_error) {
+    return {};
+  }
+
+  uint8_t* data = nullptr;
+  const bool result =
+      zero_initialize
+          ? base::UncheckedCalloc(1u, min_size, reinterpret_cast<void**>(&data))
+          : base::UncheckedMalloc(min_size, reinterpret_cast<void**>(&data));
+
+  // Unclear why, but the docs indicate both that `data` will be null on
+  // failure, and also that the return value must not be discarded.
+  if (!result || !data) {
+    return {};
+  }
+
+  // SAFETY: We have just allocated `min_size` of memory for `data`.
+  return UNSAFE_BUFFERS(BytesArray::FromOwningPointer(data, min_size));
+}
+
+}  // namespace
 
 FrameBufferPool::FrameBufferPool(bool zero_initialize_memory)
     : zero_initialize_memory_(zero_initialize_memory),
@@ -97,35 +123,15 @@ base::span<uint8_t> FrameBufferPool::GetFrameBuffer(size_t min_size,
   frame_buffer->held_by_library = true;
   if (frame_buffer->data.size() < min_size) {
     // Free the existing |data| first so that the memory can be reused,
-    // if possible. Note that the new array is purposely not initialized.
+    // if possible.
     frame_buffer->data = {};
+    frame_buffer->data = AllocateMemory(min_size, zero_initialize_memory_,
+                                        force_allocation_error_);
 
-    uint8_t* data = nullptr;
-    if (!force_allocation_error_) {
-      bool result = false;
-      if (zero_initialize_memory_) {
-        result = base::UncheckedCalloc(1u, min_size,
-                                       reinterpret_cast<void**>(&data));
-      } else {
-        result =
-            base::UncheckedMalloc(min_size, reinterpret_cast<void**>(&data));
-      }
-
-      // Unclear why, but the docs indicate both that `data` will be null on
-      // failure, and also that the return value must not be discarded.
-      if (!result) {
-        data = nullptr;
-      }
-    }
-
-    if (!data) {
+    if (frame_buffer->data.empty()) {
       frame_buffers_.erase(it);
       return {};
     }
-
-    // SAFETY: We have just allocated `min_size` of memory for `data`.
-    frame_buffer->data =
-        UNSAFE_BUFFERS(BytesArray::FromOwningPointer(data, min_size));
   }
 
   // Provide the client with a private identifier.
@@ -145,31 +151,6 @@ void FrameBufferPool::ReleaseFrameBuffer(void* fb_priv) {
   if (!IsUsedLocked(frame_buffer)) {
     frame_buffer->last_use_time = tick_clock_->NowTicks();
   }
-}
-
-base::span<uint8_t> FrameBufferPool::AllocateAlphaPlaneForFrameBuffer(
-    size_t min_size,
-    void* fb_priv) {
-  base::AutoLock lock(lock_);
-  DCHECK(fb_priv);
-
-  auto* frame_buffer = static_cast<FrameBuffer*>(fb_priv);
-  DCHECK(IsUsedLocked(frame_buffer));
-  if (frame_buffer->alpha_data.size() < min_size) {
-    // Free the existing |alpha_data| first so that the memory can be reused,
-    // if possible. Note that the new array is purposely not initialized.
-    frame_buffer->alpha_data = {};
-    uint8_t* data = nullptr;
-    if (force_allocation_error_ ||
-        !base::UncheckedMalloc(min_size, reinterpret_cast<void**>(&data)) ||
-        !data) {
-      return {};
-    }
-    // SAFETY: We have just allocated `min_size` of memory for `data`.
-    frame_buffer->alpha_data =
-        UNSAFE_BUFFERS(BytesArray::FromOwningPointer(data, min_size));
-  }
-  return frame_buffer->alpha_data;
 }
 
 base::OnceClosure FrameBufferPool::CreateFrameCallback(void* fb_priv) {
@@ -209,10 +190,9 @@ bool FrameBufferPool::OnMemoryDump(
   size_t bytes_reserved = 0;
   for (const auto& frame_buffer : frame_buffers_) {
     if (IsUsedLocked(frame_buffer.get())) {
-      bytes_used += frame_buffer->data.size() + frame_buffer->alpha_data.size();
+      bytes_used += frame_buffer->data.size();
     }
-    bytes_reserved +=
-        frame_buffer->data.size() + frame_buffer->alpha_data.size();
+    bytes_reserved += frame_buffer->data.size();
   }
 
   memory_dump->AddScalar(base::trace_event::MemoryAllocatorDump::kNameSize,

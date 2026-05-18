@@ -156,7 +156,8 @@ public:
             return QString::fromUtf8(string);
         else if constexpr (std::is_same_v<String, const char *>)
             return QString::fromUtf8(string);
-        Q_UNREACHABLE_RETURN(QString());
+        else
+            static_assert(QtPrivate::type_dependent_false<String>::value, "unsupported string type");
     }
 
     template<typename String>
@@ -165,10 +166,11 @@ public:
         if constexpr (std::is_same_v<String, QString>)
             return string.toUtf8();
         else if constexpr (std::is_same_v<String, QByteArray>)
-            return string;
+            return string.nullTerminated();
         else if constexpr (std::is_same_v<String, const char *>)
             return QByteArray::fromRawData(string, qstrlen(string));
-        Q_UNREACHABLE_RETURN(QByteArray());
+        else
+            static_assert(QtPrivate::type_dependent_false<String>::value, "unsupported string type");
     }
 
     template<typename String>
@@ -183,10 +185,10 @@ public:
 
         const QMetaType::TypeFlags typeFlags = type.flags();
         if (typeFlags & QMetaType::PointerToQObject)
-            return row->value<QObject *>()->property(toUtf8(role));
+            return row->value<QObject *>()->property(toUtf8(role).constData());
 
         if (const QMetaObject *metaObject = metaObjectFromType(type)) {
-            const int propertyIndex = metaObject->indexOfProperty(toUtf8(role));
+            const int propertyIndex = metaObject->indexOfProperty(toUtf8(role).constData());
             if (propertyIndex >= 0)
                 return metaObject->property(propertyIndex).readOnGadget(row->constData());
         }
@@ -202,7 +204,7 @@ public:
                 return;
         }
 
-        createProperty(toUtf8(string), nullptr);
+        createProperty(toUtf8(string).constData(), nullptr);
     }
 
     void createMissingProperties(const QVariant *row)
@@ -235,9 +237,9 @@ public:
         } else if (type == QMetaType::fromType<QVariantHash>()) {
             static_cast<QVariantHash *>(row->data())->insert(toQString(role), value);
         } else if (type.flags() & QMetaType::PointerToQObject) {
-            row->value<QObject *>()->setProperty(toUtf8(role), value);
+            row->value<QObject *>()->setProperty(toUtf8(role).constData(), value);
         } else if (const QMetaObject *metaObject = metaObjectFromType(type)) {
-            const int propertyIndex = metaObject->indexOfProperty(toUtf8(role));
+            const int propertyIndex = metaObject->indexOfProperty(toUtf8(role).constData());
             if (propertyIndex >= 0)
                 metaObject->property(propertyIndex).writeOnGadget(row->data(), value);
         }

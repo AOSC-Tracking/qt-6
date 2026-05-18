@@ -421,13 +421,13 @@ qsizetype QGeoPolygon::holesCount() const
 *******************************************************************************/
 
 QGeoPolygonPrivate::QGeoPolygonPrivate()
-:   QGeoPathPrivate()
+:   QGeoPathPrivateBase()
 {
     type = QGeoShape::PolygonType;
 }
 
 QGeoPolygonPrivate::QGeoPolygonPrivate(const QList<QGeoCoordinate> &path)
-:   QGeoPathPrivate(path)
+:   QGeoPathPrivateBase(path)
 {
     type = QGeoShape::PolygonType;
 }
@@ -490,14 +490,11 @@ void QGeoPolygonPrivate::translate(double degreesLatitude, double degreesLongitu
 
 bool QGeoPolygonPrivate::operator==(const QGeoShapePrivate &other) const
 {
-    if (!QGeoShapePrivate::operator==(other)) // checks type
+    if (!QGeoPathPrivateBase::operator==(other)) // checks type
         return false;
 
-    const QGeoPolygonPrivate &otherPath = static_cast<const QGeoPolygonPrivate &>(other);
-    if (m_path.size() != otherPath.m_path.size()
-            || m_holesList.size() != otherPath.m_holesList.size())
-        return false;
-    return  m_path == otherPath.m_path && m_holesList == otherPath.m_holesList;
+    const QGeoPolygonPrivate &otherPolygon = static_cast<const QGeoPolygonPrivate &>(other);
+    return  m_holesList == otherPolygon.m_holesList;
 }
 
 size_t QGeoPolygonPrivate::hash(size_t seed) const
@@ -572,7 +569,8 @@ void QGeoPolygonPrivate::updateClipperPath()
     m_clipperDirty = false;
 
     QList<QDoubleVector2D> preservedPath;
-    for (const QGeoCoordinate &c : m_path) {
+    preservedPath.reserve(m_path.size());
+    for (const QGeoCoordinate &c : std::as_const(m_path)) {
         QDoubleVector2D crd = QWebMercator::coordToMercator(c);
         if (crd.x() < m_leftBoundWrapped)
             crd.setX(crd.x() + 1.0);
@@ -589,6 +587,7 @@ QGeoPolygonPrivateEager::QGeoPolygonPrivateEager() : QGeoPolygonPrivate()
 QGeoPolygonPrivateEager::QGeoPolygonPrivateEager(const QList<QGeoCoordinate> &path) : QGeoPolygonPrivate(path)
 {
     m_bboxDirty = false; // never dirty on the eager version
+    markDirty(); // calculate the cached values
 }
 
 QGeoPolygonPrivateEager::~QGeoPolygonPrivateEager()
@@ -598,7 +597,7 @@ QGeoPolygonPrivateEager::~QGeoPolygonPrivateEager()
 
 QGeoShapePrivate *QGeoPolygonPrivateEager::clone() const
 {
-    return new QGeoPolygonPrivate(*this);
+    return new QGeoPolygonPrivateEager(*this);
 }
 
 void QGeoPolygonPrivateEager::translate(double degreesLatitude, double degreesLongitude)
@@ -611,7 +610,9 @@ void QGeoPolygonPrivateEager::translate(double degreesLatitude, double degreesLo
 void QGeoPolygonPrivateEager::markDirty()
 {
     m_clipperDirty = true;
-    computeBoundingBox();
+    // do the calculations directly
+    computeBBox(m_path, m_deltaXs, m_minX, m_maxX, m_minLati, m_maxLati, m_bbox);
+    m_leftBoundWrapped = QWebMercator::coordToMercator(m_bbox.topLeft()).x();
 }
 
 void QGeoPolygonPrivateEager::addCoordinate(const QGeoCoordinate &coordinate)
@@ -625,8 +626,7 @@ void QGeoPolygonPrivateEager::addCoordinate(const QGeoCoordinate &coordinate)
 
 void QGeoPolygonPrivateEager::computeBoundingBox()
 {
-    computeBBox(m_path, m_deltaXs, m_minX, m_maxX, m_minLati, m_maxLati, m_bbox);
-    m_leftBoundWrapped = QWebMercator::coordToMercator(m_bbox.topLeft()).x();
+    Q_UNREACHABLE();
 }
 
 void QGeoPolygonPrivateEager::updateBoundingBox()

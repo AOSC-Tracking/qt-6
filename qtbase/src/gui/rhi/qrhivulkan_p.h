@@ -251,7 +251,7 @@ struct QVkShaderResourceBindings : public QRhiShaderResourceBindings
     bool create() override;
     void updateResources(UpdateFlags flags) override;
 
-    QVarLengthArray<QRhiShaderResourceBinding, 8> sortedBindings;
+    QVarLengthArray<QRhiShaderResourceBinding, BINDING_PREALLOC> sortedBindings;
     bool hasDynamicOffset = false;
     int poolIndex = -1;
     VkDescriptorSetLayout layout = VK_NULL_HANDLE;
@@ -291,7 +291,7 @@ struct QVkShaderResourceBindings : public QRhiShaderResourceBindings
             BoundStorageBufferData sbuf;
         };
     };
-    QVarLengthArray<BoundResourceData, 8> boundResourceData[QVK_FRAMES_IN_FLIGHT];
+    QVarLengthArray<BoundResourceData, BINDING_PREALLOC> boundResourceData[QVK_FRAMES_IN_FLIGHT];
 
     friend class QRhiVulkan;
 };
@@ -368,6 +368,8 @@ struct QVkCommandBuffer : public QRhiCommandBuffer
         memset(currentVertexOffsets, 0, sizeof(currentVertexOffsets));
         inExternal = false;
         hasShadingRateSet = false;
+        hasCustomScissorSet = false;
+        currentViewport = {};
     }
 
     PassType recordingPass;
@@ -390,9 +392,15 @@ struct QVkCommandBuffer : public QRhiCommandBuffer
     QVarLengthArray<VkCommandBuffer, 4> activeSecondaryCbStack;
     bool inExternal;
     bool hasShadingRateSet;
+    bool hasCustomScissorSet;
+    QRhiViewport currentViewport;
 
-    struct {
-        QHash<QRhiResource *, std::pair<VkAccessFlags, bool> > writtenResources;
+    struct ComputePassState {
+        struct AccessFlagsAndIsNew {
+            VkAccessFlags accessFlags;
+            bool isNew;
+        };
+        QVarLengthFlatMap<QRhiResource *, AccessFlagsAndIsNew, 12> writtenResources;
         void reset() {
             writtenResources.clear();
         }
@@ -604,6 +612,8 @@ struct QVkCommandBuffer : public QRhiCommandBuffer
     friend class QRhiVulkan;
 };
 
+Q_DECLARE_TYPEINFO(QVkCommandBuffer::ComputePassState::AccessFlagsAndIsNew, Q_RELOCATABLE_TYPE);
+
 struct QVkSwapChain : public QRhiSwapChain
 {
     QVkSwapChain(QRhiImplementation *rhi);
@@ -633,7 +643,9 @@ struct QVkSwapChain : public QRhiSwapChain
     int bufferCount = 0;
     VkSurfaceKHR surface = VK_NULL_HANDLE;
     VkSurfaceKHR lastConnectedSurface = VK_NULL_HANDLE;
-    VkFormat colorFormat = VK_FORMAT_B8G8R8A8_UNORM;
+    const VkFormat defaultColorFormat = VK_FORMAT_B8G8R8A8_UNORM;
+    const VkFormat defaultSrgbColorFormat = VK_FORMAT_B8G8R8A8_SRGB;
+    VkFormat colorFormat = VK_FORMAT_UNDEFINED;
     VkColorSpaceKHR colorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
     QVkRenderBuffer *ds = nullptr;
     VkSampleCountFlagBits samples = VK_SAMPLE_COUNT_1_BIT;
@@ -882,6 +894,7 @@ public:
     void ensureCommandPoolForNewFrame();
     double elapsedSecondsFromTimestamp(quint64 timestamp[2], bool *ok);
     void printExtraErrorInfo(VkResult err);
+    void setDefaultScissor(QVkCommandBuffer *cbD);
 
     QVulkanInstance *inst = nullptr;
     QWindow *maybeWindow = nullptr;

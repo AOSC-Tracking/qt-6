@@ -80,10 +80,6 @@ static void qt_add_rect(HRGN &winRegion, QRect r)
 static HRGN qt_hrgn_from_qregion(const QRegion &region)
 {
     HRGN hRegion = CreateRectRgn(0,0,0,0);
-    if (region.rectCount() == 1) {
-        qt_add_rect(hRegion, region.boundingRect());
-        return hRegion;
-    }
     for (const QRect &rect : region)
         qt_add_rect(hRegion, rect);
     return hRegion;
@@ -2930,7 +2926,7 @@ void QWindowsVistaStyle::drawControl(ControlElement element, const QStyleOption 
                 const auto size = proxy()->pixelMetric(PM_SmallIconSize, option, widget);
                 QRect pmr(QPoint(0, 0), QSize(size, size));
                 pmr.moveCenter(vCheckRect.center());
-                menuitem->icon.paint(painter, vCheckRect, Qt::AlignCenter, mode,
+                menuitem->icon.paint(painter, pmr, Qt::AlignCenter, mode,
                                      checked ? QIcon::On : QIcon::Off);
             }
 

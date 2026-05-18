@@ -18,13 +18,13 @@ void QWaylandQuickShellSurfaceItemPrivate::setShellSurface(QWaylandShellSurface 
         QObject::disconnect(m_shellSurface, &QWaylandShellSurface::modalChanged, q, nullptr);
     }
 
+    m_shellSurface = shellSurface;
+
     if (m_shellIntegration) {
         q->removeEventFilter(m_shellIntegration);
         delete m_shellIntegration;
         m_shellIntegration = nullptr;
     }
-
-    m_shellSurface = shellSurface;
 
     if (m_shellSurface) {
         m_shellIntegration = m_shellSurface->createIntegration(q);

@@ -43,7 +43,7 @@ QT_END_NAMESPACE
 **/
 #define {{prefix}}_ADD_EMPTY_OPERATION_IMPL(OPERATION, DEPRECATED)                      \
 public Q_SLOTS:                                                                         \
-DEPRECATED{{#makeOperationsVirtual}} virtual {{/makeOperationsVirtual}}void OPERATION() \
+DEPRECATED{{#makeOperationsVirtual}} virtual{{/makeOperationsVirtual}} void OPERATION() \
 {                                                                                       \
     OPERATION##WithDataImpl(nullptr, nullptr);                                          \
 }                                                                                       \
@@ -71,7 +71,7 @@ DEPRECATED void OPERATION(const ContextTypeForFunctor<Functor> *context, Functor
 **/
 #define {{prefix}}_ADD_NO_PARAMS_OPERATION_WITH_RESPONSE_IMPL(OPERATION, RESPONSE, DEPRECATED)       \
 public Q_SLOTS:                                                                                      \
-DEPRECATED{{#makeOperationsVirtual}} virtual {{/makeOperationsVirtual}}void OPERATION()              \
+DEPRECATED{{#makeOperationsVirtual}} virtual{{/makeOperationsVirtual}} void OPERATION()              \
 {                                                                                                    \
     OPERATION##WithDataImpl(nullptr, nullptr);                                                       \
 }                                                                                                    \
@@ -106,7 +106,7 @@ DEPRECATED void OPERATION(const ContextTypeForFunctor<Functor> *context, Functor
 **/
 #define {{prefix}}_ADD_OPERATION_IMPL(OPERATION, PARAMS, ARGS, RESPONSE, DEPRECATED)      \
 public Q_SLOTS:                                                                           \
-DEPRECATED{{#makeOperationsVirtual}} virtual {{/makeOperationsVirtual}}void OPERATION({{prefix}}_VA_LIST PARAMS) \
+DEPRECATED{{#makeOperationsVirtual}} virtual{{/makeOperationsVirtual}} void OPERATION({{prefix}}_VA_LIST PARAMS) \
 {                                                                                         \
     OPERATION##WithDataImpl({{prefix}}_VA_LIST ARGS, nullptr, nullptr);                   \
 }                                                                                         \
@@ -142,7 +142,7 @@ DEPRECATED void OPERATION({{prefix}}_VA_LIST PARAMS, const ContextTypeForFunctor
 **/
 #define {{prefix}}_ADD_OPERATION_WITH_NO_RESPONSE_IMPL(OPERATION, PARAMS, ARGS, DEPRECATED)                      \
 public Q_SLOTS:                                                                                                  \
-DEPRECATED{{#makeOperationsVirtual}} virtual {{/makeOperationsVirtual}}void OPERATION({{prefix}}_VA_LIST PARAMS) \
+DEPRECATED{{#makeOperationsVirtual}} virtual{{/makeOperationsVirtual}} void OPERATION({{prefix}}_VA_LIST PARAMS) \
 {                                                                                         \
     OPERATION##WithDataImpl({{prefix}}_VA_LIST ARGS, nullptr, nullptr);                   \
 }                                                                                         \

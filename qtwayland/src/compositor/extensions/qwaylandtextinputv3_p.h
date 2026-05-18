@@ -13,6 +13,8 @@
 #include <QtGui/QInputMethod>
 #include <QtWaylandCompositor/QWaylandSurface>
 
+#include <QtCore/qhash.h>
+
 //
 //  W A R N I N G
 //  -------------

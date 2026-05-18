@@ -1,5 +1,6 @@
 // Copyright (C) 2025 Qt Group
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 #include "qwasmlocalfileengine_p.h"
 #include <QtCore/QDebug>
 #include <QtCore/QUrl>
@@ -281,7 +282,9 @@ QAbstractFileEngine::FileFlags QWasmFileEngine::fileFlags(FileFlags type) const
     return type & (QAbstractFileEngine::FileFlag::ExistsFlag |
                     QAbstractFileEngine::FileFlag::FileType |
                     QAbstractFileEngine::FileFlag::ReadOwnerPerm |
-                    QAbstractFileEngine::FileFlag::WriteOwnerPerm);
+                    QAbstractFileEngine::FileFlag::WriteOwnerPerm |
+                    QAbstractFileEngine::FileFlag::ReadUserPerm |
+                    QAbstractFileEngine::FileFlag::WriteUserPerm);
 }
 
 bool QWasmFileEngine::setPermissions(uint perms)

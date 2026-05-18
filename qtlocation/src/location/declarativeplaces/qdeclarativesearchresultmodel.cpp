@@ -1,5 +1,6 @@
 // Copyright (C) 2022 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "qdeclarativesearchresultmodel_p.h"
 #include "qdeclarativeplace_p.h"
@@ -295,7 +296,7 @@ QT_BEGIN_NAMESPACE
 */
 
 /*!
-    \qmlmethod string PlaceSearchModel::errorString() const
+    \qmlmethod string PlaceSearchModel::errorString()
 
     This read-only property holds the textual presentation of the latest place search model error.
     If no error has occurred or if the model was cleared, an empty string is returned.

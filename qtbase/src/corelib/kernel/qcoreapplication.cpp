@@ -1,6 +1,7 @@
 // Copyright (C) 2021 The Qt Company Ltd.
 // Copyright (C) 2021 Intel Corporation.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "qcoreapplication.h"
 #include "qcoreapplication_p.h"
@@ -44,6 +45,10 @@
 #include <private/qlocking_p.h>
 #include <private/qhooks_p.h>
 #include <private/qnativeinterface_p.h>
+
+#ifdef Q_OS_WASM
+#include <private/qstdweb_p.h>
+#endif
 
 #if QT_CONFIG(permissions)
 #include <private/qpermissions_p.h>
@@ -827,11 +832,11 @@ void Q_TRACE_INSTRUMENT(qtcore) QCoreApplicationPrivate::init()
     // into account. If necessary, recompute right away and replay the manual changes on top of the
     // new lib paths.
     if (coreappdata->libPathsInitialized()) {
-        const QStringList appPaths = std::move(coreappdata->app_libpaths);
+        const QStringList appPaths = std::exchange(coreappdata->app_libpaths, {});
         Q_ASSERT(!coreappdata->libPathsInitialized());
 
         if (coreappdata->libPathsManuallySet()) {
-            const QStringList manualPaths = std::move(coreappdata->manual_libpaths);
+            const QStringList manualPaths = std::exchange(coreappdata->manual_libpaths, {});
             Q_ASSERT(!coreappdata->libPathsManuallySet());
 
             // Replay the delta. As paths can only be prepended to the front or removed from
@@ -1506,6 +1511,11 @@ void QCoreApplication::exit(int returnCode)
 {
     if (!self)
         return;
+
+#ifdef Q_OS_WASM
+    if (!qstdweb::haveAsyncify())
+        qFatal("Terminating since we don't have asyncify");
+#endif
     QCoreApplicationPrivate *d = self->d_func();
     if (!d->aboutToQuitEmitted) {
         emit self->aboutToQuit(QCoreApplication::QPrivateSignal());

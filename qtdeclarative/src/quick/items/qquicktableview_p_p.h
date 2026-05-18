@@ -40,6 +40,8 @@
 #include <QtQuick/private/qquickdroparea_p.h>
 #endif
 
+#include <vector>
+
 QT_BEGIN_NAMESPACE
 
 Q_DECLARE_LOGGING_CATEGORY(lcTableViewDelegateLifecycle)
@@ -51,6 +53,7 @@ static const int kEdgeIndexAtEnd = -3;
 
 class FxTableItem;
 class QQuickTableSectionSizeProviderPrivate;
+class QTypeRevision;
 
 /*! \internal
  *  TableView uses QQuickTableViewHoverHandler to track where the pointer is
@@ -478,8 +481,19 @@ public:
         int prevIndex = -1;
     };
 
-    QList<SectionData> visualIndices[Qt::Vertical];
-    QList<SectionData> logicalIndices[Qt::Vertical];
+    std::vector<SectionData> horizontalVisualIndices;
+    std::vector<SectionData> verticalVisualIndices;
+    std::vector<SectionData> horizontalLogicalIndices;
+    std::vector<SectionData> verticalLogicalIndices;
+
+    std::vector<SectionData> &visualIndicesForOrientation(Qt::Orientation orientation)
+    {
+        return orientation == Qt::Horizontal ? horizontalVisualIndices : verticalVisualIndices;
+    }
+    std::vector<SectionData> &logicalIndicesForOrientation(Qt::Orientation orientation)
+    {
+        return orientation == Qt::Horizontal ? horizontalLogicalIndices : verticalLogicalIndices;
+    }
 
     SectionState m_sectionState = SectionState::Idle;
 
@@ -595,6 +609,7 @@ public:
     virtual void itemPooledCallback(int modelIndex, QObject *object);
     virtual void itemReusedCallback(int modelIndex, QObject *object);
     virtual void modelUpdated(const QQmlChangeSet &changeSet, bool reset);
+    virtual void updateItemProperties(int flatIndex, QObject *object, bool init);
 
     virtual void syncWithPendingChanges();
     virtual void syncDelegate();
@@ -618,6 +633,7 @@ public:
     void columnsRemovedCallback(const QModelIndex &parent, int begin, int end);
     void layoutChangedCallback(const QList<QPersistentModelIndex> &parents, QAbstractItemModel::LayoutChangeHint hint);
     void modelResetCallback();
+    void dataChangedCallback(const QModelIndex &topLeft, const QModelIndex &bottomRight, const QList<int> &roles);
     bool compareModel(const QVariant& model1, const QVariant& model2) const;
 
     void positionViewAtRow(int row, Qt::Alignment alignment, qreal offset, const QRectF subRect = QRectF());
@@ -689,10 +705,10 @@ public:
     inline void setActivePointerHandler(QQuickTableViewPointerHandler *handler) { activePtrHandler = handler; }
     inline QQuickTableViewPointerHandler* activePointerHandler() const { return activePtrHandler; }
     // Row/Column reordering
-    void moveSection(int source , int destination, Qt::Orientations orientation);
+    void moveSection(int source , int destination, Qt::Orientation orientation);
     void initializeIndexMapping();
     void clearIndexMapping();
-    void clearSection(Qt::Orientations orientation);
+    void clearSection(Qt::Orientation orientation);
     virtual int logicalRowIndex(const int visualIndex) const;
     virtual int logicalColumnIndex(const int visualIndex) const;
     virtual int visualRowIndex(const int logicalIndex) const;

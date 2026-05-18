@@ -44,7 +44,6 @@
 #include "private/qstyle_p.h"
 #include "qfileinfo.h"
 #include "qscopeguard.h"
-#include <QtGui/private/qhighdpiscaling_p.h>
 #include <QtGui/qinputmethod.h>
 
 #if QT_CONFIG(graphicseffect)
@@ -943,8 +942,9 @@ void QWidgetPrivate::init(QWidget *parentWidget, Qt::WindowFlags f)
 
 #if QT_DEPRECATED_SINCE(6, 11)
     QT_IGNORE_DEPRECATIONS(
-    Q_ASSERT_X(!f.testFlag(Qt::WindowType::Desktop), Q_FUNC_INFO, "Qt::WindowType::Desktop is not allowed.");
-    if (f.testFlag(Qt::WindowType::Desktop))
+    const bool isDesktopWindow = (f & Qt::WindowType_Mask) == Qt::WindowType::Desktop;
+    Q_ASSERT_X(!isDesktopWindow, Q_FUNC_INFO, "Qt::WindowType::Desktop is not allowed.");
+    if (isDesktopWindow)
         f.setFlag(Qt::WindowType::Desktop, false);
     )
 #endif
@@ -10656,7 +10656,7 @@ void QWidgetPrivate::setWindowFlags(Qt::WindowFlags flags)
     Q_Q(QWidget);
 #if QT_DEPRECATED_SINCE(6, 11)
     QT_IGNORE_DEPRECATIONS(
-    if (flags.testFlag(Qt::WindowType::Desktop)) {
+    if ((flags & Qt::WindowType_Mask) == Qt::WindowType::Desktop) {
         qWarning() << "Qt::WindowType::Desktop has been deprecated in Qt 6. Ignoring.";
         flags.setFlag(Qt::WindowType::Desktop, false);
     }
@@ -10970,8 +10970,7 @@ void QWidget::setParent(QWidget *parent, Qt::WindowFlags f)
                     const auto windowStateBeforeDestroy = newParentWithWindow->windowState();
                     const auto visibilityBeforeDestroy = newParentWithWindow->isVisible();
                     const auto positionBeforeDestroy = newParentWithWindow->pos();
-                    newParentWithWindow->destroy();
-                    newParentWithWindow->create();
+                    newParentWithWindow->d_func()->recreate();
                     Q_ASSERT(newParentWithWindow->windowHandle());
                     newParentWithWindow->windowHandle()->setWindowStates(windowStateBeforeDestroy);
                     newParentWithWindow->move(positionBeforeDestroy);
@@ -13872,7 +13871,7 @@ bool QWidgetPrivate::isInFocusChain() const
 bool QWidgetPrivate::isFocusChainConsistent() const
 {
     Q_Q(const QWidget);
-    const bool skip = !QLoggingCategory("qt.widgets.focus").isDebugEnabled();
+    const bool skip = !lcWidgetFocus().isDebugEnabled();
     if (skip)
         return true;
 

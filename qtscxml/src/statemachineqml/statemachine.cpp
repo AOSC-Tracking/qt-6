@@ -1,5 +1,6 @@
 // Copyright (C) 2016 Ford Motor Company
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant
 
 #include "statemachine_p.h"
 
@@ -172,7 +173,7 @@ QBindable<QQmlListProperty<QObject>> StateMachine::bindableChildren() const
 
 
 /*!
-    \qmlmethod StateMachine::start()
+    \qmlmethod void StateMachine::start()
 
     Starts this state machine.  The machine will reset its configuration and
     transition to the initial state.  When a final top-level state (FinalState)
@@ -195,7 +196,7 @@ QBindable<QQmlListProperty<QObject>> StateMachine::bindableChildren() const
 */
 
 /*!
-    \qmlmethod StateMachine::stop()
+    \qmlmethod void StateMachine::stop()
 
     Stops this state machine.  The state machine will stop processing events
     and then emit the stopped signal.

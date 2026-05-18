@@ -229,7 +229,7 @@ public:
     [[nodiscard]] QByteArray sliced(qsizetype pos, qsizetype n) &&
     { verify(pos, n); return sliced_helper(*this, pos, n); }
     [[nodiscard]] QByteArray chopped(qsizetype len) &&
-    { verify(0, len); return std::move(*this).first(size() - len); }
+    { verify(0, len); chop(len); return std::move(*this); }
 #endif
 
     bool startsWith(QByteArrayView bv) const
@@ -795,14 +795,9 @@ public:
 
     explicit operator bool() const noexcept { return decodingStatus == QByteArray::Base64DecodingStatus::Ok; }
 
-#if defined(Q_COMPILER_REF_QUALIFIERS) && !defined(Q_QDOC)
     QByteArray &operator*() & noexcept { return decoded; }
     const QByteArray &operator*() const & noexcept { return decoded; }
     QByteArray &&operator*() && noexcept { return std::move(decoded); }
-#else
-    QByteArray &operator*() noexcept { return decoded; }
-    const QByteArray &operator*() const noexcept { return decoded; }
-#endif
 
     friend inline bool operator==(const QByteArray::FromBase64Result &lhs, const QByteArray::FromBase64Result &rhs) noexcept
     {

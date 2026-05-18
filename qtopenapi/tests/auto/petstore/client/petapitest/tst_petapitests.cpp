@@ -6,8 +6,7 @@
 #include "../client/userapi.h"
 
 #include <QtCore/qobject.h>
-#include <QtCore/QProcess>
-#include <QtCore/QThread>
+#include <QtCore/qprocess.h>
 #include <QtGui/qimage.h>
 #include <QtNetwork/qnetworkrequestfactory.h>
 #include <QtNetwork/qrestaccessmanager.h>
@@ -35,7 +34,7 @@ void startServerProcess()
 class PetApiTests : public QObject {
     Q_OBJECT
 
-    Pet createRandomPet(const QString &status = "freaky", const QString &name = "monster");
+    Pet createRandomPet(const QString &status = "sold", const QString &name = "monster");
     void connectAddPetApi(PetApi *petApi, bool &petCreated);
 
 private Q_SLOTS:
@@ -80,6 +79,7 @@ private:
 
 Pet PetApiTests::createRandomPet(const QString &status, const QString &name) {
     Pet pet;
+    const QList<QString> urls = {"https://text.com"};
     const qint64 id = static_cast<long long>(rand());
     pet.setName(name);
     pet.setId(id);
@@ -89,6 +89,12 @@ QT_WARNING_DISABLE_DEPRECATED
 QT_WARNING_POP
     pet.setAge(10);
     pet.setPatience(9);
+    pet.setPhotoUrls(urls);
+    // Server sends us category: {} (even before our changes it always sent it).
+    // Before we ignored such data, but now we distinguish 'no field' and 'empty field'.
+    // But our server doesn't distinguish it. So we need to add Category("{}")
+    // to fix client side tests.
+    pet.setCategory(Category("{}"));
     return pet;
 }
 
@@ -100,7 +106,7 @@ void PetApiTests::findPetsByStatusTest() {
     api.setPassword(password);
     api.setApiKey("api_key","special-key");
 
-    Pet randomPet = createRandomPet();
+    const Pet randomPet = createRandomPet();
     Pet availablePet = createRandomPet("available", "avaialble_pet");
     availablePet.setId(1111);
     Pet sold_pet = createRandomPet("sold", "sold_pet");
@@ -595,7 +601,7 @@ void PetApiTests::getPatientPetsTest()
     Pet pet1 = createRandomPet("sold", "Poops_Baraboops");
     pet1.setAge(100); // oddly old cat though
 
-    Pet pet2 = createRandomPet("notsold", "TheThing");
+    Pet pet2 = createRandomPet("sold", "TheThing");
     pet2.setAge(33); // also oddly old cat though
     pet2.setPatience(0);
 

@@ -1,5 +1,6 @@
 // Copyright (C) 2022 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "qgeotilespec_p.h"
 #include "qgeotilespec_p_p.h"
@@ -98,15 +99,9 @@ bool QGeoTileSpec::isLess(const QGeoTileSpec &rhs) const noexcept
     return (*(d.constData()) < *(rhs.d.constData()));
 }
 
-unsigned int qHash(const QGeoTileSpec &spec)
+size_t QGeoTileSpec::hash(size_t seed) const noexcept
 {
-    unsigned int result = (qHash(spec.plugin()) * 13) % 31;
-    result += ((spec.mapId() * 17) % 31) << 5;
-    result += ((spec.zoom() * 19) % 31) << 10;
-    result += ((spec.x() * 23) % 31) << 15;
-    result += ((spec.y() * 29) % 31) << 20;
-    result += (spec.version() % 3) << 25;
-    return result;
+    return d->hash(seed);
 }
 
 QDebug operator<< (QDebug dbg, const QGeoTileSpec &spec)

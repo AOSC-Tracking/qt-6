@@ -18,10 +18,14 @@ public slots:
     void setZoomFactor(qreal zoomFactor);
 
     void reset();
+    void retranslate();
 
 signals:
     void zoomModeChanged(QPdfView::ZoomMode zoomMode);
     void zoomFactorChanged(qreal zoomFactor);
+
+private:
+    void changeEvent(QEvent *event) override;
 
 private slots:
     void onCurrentTextChanged(const QString &text);

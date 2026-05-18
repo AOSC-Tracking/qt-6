@@ -2,6 +2,9 @@
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #include "qqstylekitvariation_p.h"
+#include "qqstylekitstyleandthemebase_p.h"
+#include "qqstylekitstyle_p.h"
+#include "qqstylekittheme_p.h"
 
 QT_BEGIN_NAMESPACE
 
@@ -122,28 +125,43 @@ QT_BEGIN_NAMESPACE
 /*!
     \qmlattachedproperty int StyleVariation::controlType
 
-    This property identifies the control type of the item it is attached to.
+    This property identifies the \l {StyleReader::controlType}{control type} of
+    the item it is attached to.
 
     StyleKit uses it to resolve \l {Type Variations}{type variations} for descendant
     controls — if a parent item's \c controlType matches a control type that has
     \l {ControlStyle::}{variations} defined in the \l Style, those variations apply
     to all descendant controls.
 
-    Built-in StyleKit controls set this property automatically. Custom controls
+    Built-in controls set this property automatically. Custom controls
     must set it explicitly to participate in type variation resolution.
 
-    \sa {ControlStyle::variations}{ControlStyle.variations}, StyleReader
+    \sa {ControlStyle::variations}{ControlStyle.variations},
+        {StyleReader::controlType}{StyleReader.controlType}
 */
-
-int QQStyleKitVariation::s_typeVariationCount = 0;
-int QQStyleKitVariationAttached::s_instanceVariationCount = 0;
 
 QQStyleKitVariation::QQStyleKitVariation(QObject *parent)
     : QQStyleKitControls(parent)
 {
-    /* As an optimization, keep track of how many type variations that are defined
-     * inside the style. That way we can skip looking for them later if s_typeVariationCount == 0. */
-    ++s_typeVariationCount;
+}
+
+void QQStyleKitVariation::componentComplete()
+{
+    QQStyleKitControls::componentComplete();
+
+    /* Whenever there is a Style or Theme change, the list of StyleVariations that affects a
+     * StyleReader needs to be rebuilt. And in order to know which StyleVariations that should
+     * be taken into consideration, we need to know which Style each StyleVariation belongs to. */
+    bool styleOrThemeFound = false;
+    for (QObject *current = parent(); current; current = current->parent()) {
+        if (auto *styleOrTheme = qobject_cast<QQStyleKitStyleAndThemeBase *>(current)) {
+            styleOrTheme->m_styleVariations.append(this);
+            styleOrThemeFound = true;
+            break;
+        }
+    }
+    if (!styleOrThemeFound)
+        qmlWarning(this) << "A StyleVariation needs to be a descendant of the Style it belongs to!";
 }
 
 QQStyleKitVariationAttached *QQStyleKitVariation::qmlAttachedProperties(QObject *object)
@@ -180,16 +198,11 @@ void QQStyleKitVariationAttached::setVariations(const QStringList &variations)
     if (m_variations == variations)
         return;
 
-    /* As an optimization, we count the number of instance variations set from the application.
-     * That way, if s_instanceVariationCount == 1, for example, and we found a variation while
-     * resolving the effective variations for a specific QQStyleReader, we can stop the search. */
-    s_instanceVariationCount++;
-
     m_variations = variations;
     emit variationsChanged();
 }
 
-QQStyleKitExtendableControlType QQStyleKitVariationAttached::controlType()
+QQStyleKitExtendableControlType QQStyleKitVariationAttached::controlType() const
 {
     return m_controlType;
 }
@@ -201,6 +214,39 @@ void QQStyleKitVariationAttached::setControlType(QQStyleKitExtendableControlType
 
     m_controlType = type;
     emit controlTypeChanged();
+}
+
+void QQStyleKitVariation::resetVariationsForStyle(QQStyleKitStyle *style)
+{
+    /* The usage context stored in a StyleVariation tells which Style or Theme uses it.
+     * After a theme change, we therefore need to rebuild this context list, since the
+     * old theme needs to be removed, and the new theme might need to be added.
+     * Since we also need to update which variations will now be effective for the existing
+     * StyleReaders, we simply clear the context here, and leave it to QQStyleKitPropertyResolver
+     * to rebuild both the effective variations and the context in one pass later.
+     * (QQStyleKitReader::resetReadersForStyle() will set the m_effectiveVariationsDirty
+     * flag, which will trigger the rebuild).
+     *
+     * As an optimization, we also update m_hasVariations to reflect whether any variations
+     * exist at all. If not, variations don't need to be taken into consideration during
+     * style property look-up. */
+    style->m_hasVariations = false;
+
+    for (QQStyleKitStyle *current = style; current; current = current->fallbackStyle()) {
+        if (!current->m_styleVariations.isEmpty()) {
+            style->m_hasVariations = true;
+            for (QQStyleKitVariation *variation : current->m_styleVariations)
+                variation->m_usageContext.clear();
+        }
+
+        if (QQStyleKitTheme *theme = current->theme()) {
+            if (!theme->m_styleVariations.isEmpty()) {
+                style->m_hasVariations = true;
+                for (QQStyleKitVariation *variation : theme->m_styleVariations)
+                    variation->m_usageContext.clear();
+            }
+        }
+    }
 }
 
 QT_END_NAMESPACE

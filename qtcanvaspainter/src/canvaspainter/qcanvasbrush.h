@@ -62,6 +62,7 @@ protected:
 private:
     QCPaint createPaint(QCanvasPainter *painter) const;
     friend class QCanvasPainter;
+    friend class QCanvasPainterPrivate;
 #ifndef QT_NO_DEBUG_STREAM
     friend Q_CANVASPAINTER_EXPORT QDebug operator<<(QDebug, const QCanvasBrush &);
 #endif

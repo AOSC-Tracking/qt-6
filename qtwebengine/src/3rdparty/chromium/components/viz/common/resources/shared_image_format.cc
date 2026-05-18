@@ -16,15 +16,6 @@
 namespace viz {
 namespace {
 
-static size_t ConvertBitsToBytes(size_t bits) {
-  size_t bytes = bits / 8;
-  // Don't add anything to `bits` to avoid potential overflow.
-  if ((bits & 7) != 0) {
-    ++bytes;
-  }
-  return bytes;
-}
-
 const char* SinglePlaneFormatToString(SharedImageFormat format) {
   CHECK(format.is_single_plane());
   if (format == SinglePlaneFormat::kRGBA_8888) {
@@ -63,18 +54,6 @@ const char* SinglePlaneFormatToString(SharedImageFormat format) {
     return "R_F16";
   }
   NOTREACHED();
-}
-
-uint64_t StorageBytesPerElement(SharedImageFormat::ChannelFormat channel) {
-  switch (channel) {
-    case SharedImageFormat::ChannelFormat::k8:
-      return 1;
-    // 10 bit formats like P010 still use 2 bytes per element.
-    case SharedImageFormat::ChannelFormat::k10:
-    case SharedImageFormat::ChannelFormat::k16:
-    case SharedImageFormat::ChannelFormat::k16F:
-      return 2;
-  }
 }
 
 const char* PlaneConfigToString(SharedImageFormat::PlaneConfig plane) {
@@ -160,14 +139,8 @@ std::optional<size_t> SharedImageFormat::MaybeEstimatedPlaneSizeInBytes(
   if (is_single_plane()) {
     DCHECK_EQ(plane_index, 0);
 
-    base::CheckedNumeric<size_t> bits_per_row = BitsPerPixel();
-    bits_per_row *= size.width();
-    if (!bits_per_row.IsValid()) {
-      return std::nullopt;
-    }
-
-    base::CheckedNumeric<size_t> estimated_bytes =
-        ConvertBitsToBytes(bits_per_row.ValueOrDie());
+    base::CheckedNumeric<size_t> estimated_bytes = BytesPerPixel();
+    estimated_bytes *= size.width();
     estimated_bytes *= size.height();
     if (!estimated_bytes.IsValid()) {
       return std::nullopt;
@@ -176,7 +149,7 @@ std::optional<size_t> SharedImageFormat::MaybeEstimatedPlaneSizeInBytes(
     return estimated_bytes.ValueOrDie();
   }
 
-  size_t bytes_per_element = StorageBytesPerElement(channel_format());
+  size_t bytes_per_element = MultiplanarStorageBytesPerChannel();
 
   gfx::Size plane_size = GetPlaneSize(plane_index, size);
 
@@ -275,6 +248,19 @@ int SharedImageFormat::NumChannelsInPlane(int plane_index) const {
       return plane_index == 1 ? 2 : 1;
   }
   NOTREACHED();
+}
+
+// For multiplanar formats.
+uint64_t SharedImageFormat::MultiplanarStorageBytesPerChannel() const {
+  switch (channel_format()) {
+    case ChannelFormat::k8:
+      return 1;
+    // 10 bit formats like P010 still use 2 bytes per element.
+    case ChannelFormat::k10:
+    case ChannelFormat::k16:
+    case ChannelFormat::k16F:
+      return 2;
+  }
 }
 
 // For multiplanar formats.
@@ -377,6 +363,37 @@ int SharedImageFormat::BitsPerPixel() const {
       return 8;
     case mojom::SingleplanarFormat::ETC1:
       return 4;
+  }
+  NOTREACHED();
+}
+
+int SharedImageFormat::BytesPerPixel() const {
+  CHECK(is_single_plane());
+  switch (singleplanar_format()) {
+    case mojom::SingleplanarFormat::RGBA_F16:
+      return 8;
+    case mojom::SingleplanarFormat::BGRA_8888:
+    case mojom::SingleplanarFormat::RGBA_8888:
+    case mojom::SingleplanarFormat::RGBX_8888:
+    case mojom::SingleplanarFormat::BGRX_8888:
+    case mojom::SingleplanarFormat::RGBA_1010102:
+    case mojom::SingleplanarFormat::BGRA_1010102:
+    case mojom::SingleplanarFormat::RG_1616:
+      return 4;
+    case mojom::SingleplanarFormat::RGBA_4444:
+    case mojom::SingleplanarFormat::LUMINANCE_F16:
+    case mojom::SingleplanarFormat::R_F16:
+    case mojom::SingleplanarFormat::R_16:
+    case mojom::SingleplanarFormat::BGR_565:
+    case mojom::SingleplanarFormat::RG_88:
+      return 2;
+    case mojom::SingleplanarFormat::ALPHA_8:
+    case mojom::SingleplanarFormat::R_8:
+      return 1;
+    case mojom::SingleplanarFormat::ETC1:
+      // ETC compression is blocked based and can't be expressed as bytes per
+      // pixel.
+      break;
   }
   NOTREACHED();
 }

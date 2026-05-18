@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 // we need ICC to define the prototype for _rdseed64_step
+// Qt-Security score:significant reason:default
 #define __INTEL_COMPILER_USE_INTRINSIC_PROTOTYPES
 #undef _FORTIFY_SOURCE      // otherwise, the always_inline from stdio.h fail to inline
 
@@ -10,6 +11,7 @@
 #include "qalgorithms.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #if defined(QT_NO_DEBUG) && !defined(NDEBUG)

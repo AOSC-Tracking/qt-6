@@ -21,7 +21,7 @@
 
 QT_BEGIN_NAMESPACE
 
-class Q_POSITIONING_EXPORT QGeoPolygonPrivate : public QGeoPathPrivate
+class Q_POSITIONING_EXPORT QGeoPolygonPrivate : public QGeoPathPrivateBase
 {
 public:
     QGeoPolygonPrivate();
@@ -29,24 +29,24 @@ public:
     ~QGeoPolygonPrivate();
 
 // QGeoShape API
-    virtual QGeoShapePrivate *clone() const override;
-    virtual bool isValid() const override;
-    virtual bool contains(const QGeoCoordinate &coordinate) const override;
-    virtual void translate(double degreesLatitude, double degreesLongitude) override;
-    virtual bool operator==(const QGeoShapePrivate &other) const override;
+    QGeoShapePrivate *clone() const override;
+    bool isValid() const override;
+    bool contains(const QGeoCoordinate &coordinate) const override;
+    void translate(double degreesLatitude, double degreesLongitude) override;
+    bool operator==(const QGeoShapePrivate &other) const override;
     size_t hash(size_t seed) const override;
 
-// QGeoPath API
-    virtual void markDirty() override;
+// QGeoPathPrivateBase API
+    void markDirty() override;
 
 // QGeoPolygonPrivate API
     qsizetype holesCount() const;
     bool polygonContains(const QGeoCoordinate &coordinate) const;
     const QList<QGeoCoordinate> holePath(qsizetype index) const;
 
-    virtual void addHole(const QList<QGeoCoordinate> &holePath);
-    virtual void removeHole(qsizetype index);
-    virtual void updateClipperPath();
+    void addHole(const QList<QGeoCoordinate> &holePath);
+    void removeHole(qsizetype index);
+    void updateClipperPath();
 
 // data members
     bool m_clipperDirty = true;
@@ -54,7 +54,7 @@ public:
     QClipperUtils m_clipperWrapper;
 };
 
-class Q_POSITIONING_EXPORT QGeoPolygonPrivateEager : public QGeoPolygonPrivate
+class Q_POSITIONING_EXPORT QGeoPolygonPrivateEager final : public QGeoPolygonPrivate
 {
 public:
     QGeoPolygonPrivateEager();
@@ -62,13 +62,13 @@ public:
     ~QGeoPolygonPrivateEager();
 
 // QGeoShape API
-    virtual QGeoShapePrivate *clone() const override;
-    virtual void translate(double degreesLatitude, double degreesLongitude) override;
+    QGeoShapePrivate *clone() const override;
+    void translate(double degreesLatitude, double degreesLongitude) override;
 
 // QGeoPath API
-    virtual void markDirty() override;
-    virtual void addCoordinate(const QGeoCoordinate &coordinate) override;
-    virtual void computeBoundingBox() override;
+    void markDirty() override;
+    void addCoordinate(const QGeoCoordinate &coordinate) override;
+    void computeBoundingBox() override;
 
 // QGeoPolygonPrivate API
 

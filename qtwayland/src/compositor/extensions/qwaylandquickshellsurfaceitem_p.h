@@ -43,7 +43,7 @@ public:
     void lower() override;
 
     QWaylandQuickShellIntegration *m_shellIntegration = nullptr;
-    QWaylandShellSurface *m_shellSurface = nullptr;
+    QPointer<QWaylandShellSurface> m_shellSurface;
     QQuickItem *m_moveItem = nullptr;
     bool m_autoCreatePopupItems = true;
     bool staysOnTop = false;

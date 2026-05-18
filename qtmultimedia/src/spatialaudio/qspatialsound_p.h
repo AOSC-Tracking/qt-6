@@ -16,33 +16,30 @@
 //
 
 #include <QtSpatialAudio/qspatialsound.h>
+
 #include <QtSpatialAudio/private/qambientsound_p.h>
-#include <QtSpatialAudio/private/qaudioengine_p.h>
-#include <QtCore/qurl.h>
-#include <QtCore/qmutex.h>
-#include <QtGui/qquaternion.h>
-#include <QtGui/qvector3d.h>
-#include <QtMultimedia/qaudiobuffer.h>
-#include <QtMultimedia/qaudiodevice.h>
+#include <QtCore/private/qobject_p.h>
 
 QT_BEGIN_NAMESPACE
 
-class QAudioDecoder;
 class QAudioEnginePrivate;
 
-class QSpatialSoundPrivate : public QAmbientSoundPrivate
+class QSpatialSoundPrivate final : public QAmbientSoundPrivate
 {
     Q_DECLARE_PUBLIC(QSpatialSound)
 
 public:
-    QSpatialSoundPrivate() : QAmbientSoundPrivate(1) { }
+    explicit QSpatialSoundPrivate(QAudioEngine *engine);
 
     static QSpatialSoundPrivate *get(QSpatialSound *soundSource)
     {
         return soundSource ? soundSource->d_func() : nullptr;
     }
 
+    void applyVolume() override;
+
     QVector3D pos;
+    QVector3D unscaledPosition;
     QQuaternion rotation;
     QSpatialSound::DistanceModel distanceModel = QSpatialSound::DistanceModel::Logarithmic;
     float size = .1f;

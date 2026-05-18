@@ -358,10 +358,11 @@ QQmlListProperty<QObject> QQuick3DViewport::data()
     This property specifies which \l Camera is used to render the scene. If this
     property is not set, then the first enabled camera in the scene will be used.
 
-    \note It is strongly recommended to explicitly set this property and not rely
-    on automatic camera selection. If there are multiple cameras in the scene, automatic
-    camera selection does not provide any guarantees regarding which camera will be selected.
-    If \l{Node::layer}{layers} are used, explicitly setting the camera is required.
+    \note It is strongly recommended to set this property explicitly rather than relying on
+    automatic camera selection. When multiple cameras are present in the scene, automatic
+    selection does not guarantee which camera will be chosen. When \l{Node::layer}{layers}
+    are used, explicitly specifying the camera also avoids unnecessary re-evaluation of
+    scene nodes.
 
     \note If this property contains a camera that's not \l {Node::visible}{visible} then
     no further attempts to find a camera will be done.
@@ -2343,6 +2344,20 @@ void QQuick3DViewport::updateSceneManagerForImportScene()
         }
     }
 }
+
+/*!
+    \qmlproperty enumeration QtQuick3D::View3D::renderOverrides
+
+    Controls how Qt Quick 3D performs rendering.
+
+    \value View3D.None Rendering proceeds normally. Internal passes are scheduled as required by the
+    features used in the application.
+
+    \value View3D.DisableInternalPasses Disables Qt Quick 3D's internal rendering passes.
+    When this mode is set, the application is responsible for producing and presenting the final frame.
+    Typically, this involves implementing custom \l {User passes} and presenting the result to the
+    viewport using \l {SimpleQuadRenderer} or a custom \l {QQuick3DRenderExtension}{render extension}.
+*/
 
 QQuick3DViewport::RenderOverrides QQuick3DViewport::renderOverrides() const
 {

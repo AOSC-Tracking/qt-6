@@ -32,10 +32,12 @@
 #include <variant>
 
 #include "base/auto_reset.h"
+#include "base/containers/span.h"
 #include "base/debug/crash_logging.h"
 #include "base/feature_list.h"
 #include "base/memory/ptr_util.h"
 #include "base/metrics/histogram_functions.h"
+#include "base/numerics/safe_conversions.h"
 #include "base/strings/to_string.h"
 #include "base/synchronization/lock.h"
 #include "base/time/time.h"
@@ -4066,7 +4068,12 @@ void HTMLMediaElement::
   GetAudioSourceProvider().SetClient(nullptr);
   if (web_media_player_) {
     audio_source_provider_.Wrap(nullptr);
-    web_media_player_.reset();
+    // Never destruct WMPI synchronously since it may be actively calling into
+    // the media element. Instead, post a task to delete it asynchronously.
+    web_media_player_->Shutdown();
+    GetDocument()
+        .GetTaskRunner(TaskType::kInternalMedia)
+        ->DeleteSoon(FROM_HERE, std::move(web_media_player_));
     // Do not clear `opener_document_` here; new players might still use it.
 
     // The lifetime of the mojo endpoints are tied to the WebMediaPlayer's, so
@@ -4797,11 +4804,13 @@ void HTMLMediaElement::AudioSourceProviderImpl::ProvideInput(
     return;
   }
 
-  // Wrap the AudioBus channel data using std::vector.
+  // Wrap the AudioBus channel data using span.
   unsigned n = bus->NumberOfChannels();
-  std::vector<float*> web_audio_data(n);
-  for (unsigned i = 0; i < n; ++i)
-    web_audio_data[i] = bus->Channel(i)->MutableData();
+  std::vector<base::span<float>> web_audio_data(n);
+  for (unsigned i = 0; i < n; ++i) {
+    web_audio_data[i] = bus->Channel(i)->MutableSpan().first(
+        base::checked_cast<size_t>(frames_to_process));
+  }
 
   web_audio_source_provider_->ProvideInput(web_audio_data, frames_to_process);
 }

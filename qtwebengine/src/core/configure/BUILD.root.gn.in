@@ -397,6 +397,8 @@ source_set("qtwebengine_sources") {
     "//chrome/common/url_constants.h",
     "//chrome/common/webui_url_constants.cc",
     "//chrome/common/webui_url_constants.h",
+    "//components/security_interstitials/core/ssl_error_options_mask.cc",
+    "//components/security_interstitials/core/ssl_error_options_mask.h",
     "//ui/webui/mojo_web_ui_controller.cc",
     "//ui/webui/mojo_web_ui_controller.h",
     "//ui/webui/webui_util.cc",
@@ -404,10 +406,14 @@ source_set("qtwebengine_sources") {
   ]
   if (use_ozone) {
     deps += [
+      "//build/config/linux/libdrm",
       "//ui/gfx/linux:drm",
+      "//ui/gfx/linux:gbm",
     ]
 
     sources += [
+      "//ui/ozone/platform/wayland/common/drm_render_node_handle.cc",
+      "//ui/ozone/platform/wayland/common/drm_render_node_handle.h",
       "//ui/ozone/platform/wayland/gpu/wayland_gl_egl_utility.cc",
       "//ui/ozone/platform/wayland/gpu/wayland_gl_egl_utility.h",
     ]

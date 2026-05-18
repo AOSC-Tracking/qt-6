@@ -30,6 +30,120 @@
 
 #include <math.h>
 
+#ifdef HAVE_PNG
+#include <png.h>
+#endif
+
+#ifdef HAVE_PNG
+struct hb_raster_png_read_blob_t
+{
+  const uint8_t *data = nullptr;
+  size_t size = 0;
+  size_t offset = 0;
+  uint8_t *rgba = nullptr;
+  png_bytep *rows = nullptr;
+};
+
+static void
+hb_raster_png_error (png_structp png,
+		     png_const_charp msg HB_UNUSED)
+{
+#ifdef PNG_SETJMP_SUPPORTED
+  longjmp (png_jmpbuf (png), 1);
+#endif
+}
+
+static void
+hb_raster_png_warning (png_structp png HB_UNUSED,
+		       png_const_charp msg HB_UNUSED)
+{}
+
+static void
+hb_raster_png_read_blob (png_structp png, png_bytep out, png_size_t length)
+{
+  hb_raster_png_read_blob_t *r = (hb_raster_png_read_blob_t *) png_get_io_ptr (png);
+
+  if (!r || !r->data || length > r->size - r->offset)
+    png_error (png, "read error");
+
+  hb_memcpy (out, r->data + r->offset, length);
+  r->offset += length;
+}
+
+static void
+hb_raster_png_read_blob_fini (hb_raster_png_read_blob_t *r)
+{
+  if (!r)
+    return;
+
+  hb_free (r->rgba);
+  hb_free (r->rows);
+  hb_free (r);
+}
+
+struct hb_raster_png_write_blob_t
+{
+  char *data = nullptr;
+  size_t length = 0;
+  size_t allocated = 0;
+  uint8_t *rgba = nullptr;
+  png_bytep *rows = nullptr;
+};
+
+static void
+hb_raster_png_write_blob (png_structp png, png_bytep in, png_size_t length)
+{
+  hb_raster_png_write_blob_t *w = (hb_raster_png_write_blob_t *) png_get_io_ptr (png);
+  if (!w)
+    png_error (png, "write error");
+
+  size_t old_length = w->length;
+  if ((size_t) length > (size_t) -1 - old_length)
+    png_error (png, "write error");
+
+  size_t new_length = old_length + length;
+  if (new_length > w->allocated)
+  {
+    size_t new_allocated = w->allocated ? w->allocated : 4096;
+    while (new_allocated < new_length)
+    {
+      size_t next = new_allocated * 2;
+      if (next <= new_allocated)
+      {
+	new_allocated = new_length;
+	break;
+      }
+      new_allocated = next;
+    }
+
+    char *data = (char *) hb_realloc (w->data, new_allocated);
+    if (!data)
+      png_error (png, "write error");
+    w->data = data;
+    w->allocated = new_allocated;
+  }
+
+  hb_memcpy (w->data + old_length, in, length);
+  w->length = new_length;
+}
+
+static void
+hb_raster_png_flush_blob (png_structp png HB_UNUSED)
+{}
+
+static void
+hb_raster_png_write_blob_fini (hb_raster_png_write_blob_t *w)
+{
+  if (!w)
+    return;
+
+  hb_free (w->data);
+  hb_free (w->rgba);
+  hb_free (w->rows);
+  hb_free (w);
+}
+#endif
+
 
 /*
  * Image compositing
@@ -335,8 +449,6 @@ composite_pixel (uint32_t src, uint32_t dst,
 
 /* hb_raster_image_t */
 
-#define HB_RASTER_IMAGE_MAX_BUFFER_SIZE ((size_t) 1 << 30)
-
 unsigned
 hb_raster_image_t::bytes_per_pixel (hb_raster_format_t format)
 {
@@ -363,7 +475,7 @@ hb_raster_image_t::configure (hb_raster_format_t format,
     return false;
 
   size_t buf_size = (size_t) extents.stride * extents.height;
-  if (buf_size > HB_RASTER_IMAGE_MAX_BUFFER_SIZE)
+  if (buf_size > HB_RASTER_MAX_BUFFER_SIZE)
     return false;
   if (unlikely (!buffer.resize_dirty (buf_size)))
     return false;
@@ -371,6 +483,303 @@ hb_raster_image_t::configure (hb_raster_format_t format,
   this->format = format;
   this->extents = extents;
   return true;
+}
+
+bool
+hb_raster_image_t::deserialize_from_png (hb_blob_t *blob)
+{
+#ifndef HAVE_PNG
+  return false;
+#else
+  if (!blob)
+    return false;
+
+  unsigned blob_len = 0;
+  const uint8_t *blob_data = (const uint8_t *) hb_blob_get_data (blob, &blob_len);
+  if (!blob_data || !blob_len)
+    return false;
+
+  png_structp png = png_create_read_struct (PNG_LIBPNG_VER_STRING, nullptr,
+					    hb_raster_png_error,
+					    hb_raster_png_warning);
+  if (!png)
+    return false;
+
+  png_infop info = png_create_info_struct (png);
+  if (!info)
+  {
+    png_destroy_read_struct (&png, nullptr, nullptr);
+    return false;
+  }
+
+  hb_raster_png_read_blob_t *reader = (hb_raster_png_read_blob_t *) hb_calloc (1, sizeof (*reader));
+  if (!reader)
+  {
+    png_destroy_read_struct (&png, &info, nullptr);
+    return false;
+  }
+
+  reader->data = blob_data;
+  reader->size = (size_t) blob_len;
+  png_set_read_fn (png, reader, hb_raster_png_read_blob);
+  if (setjmp (png_jmpbuf (png)))
+  {
+    png_destroy_read_struct (&png, &info, nullptr);
+    hb_raster_png_read_blob_fini (reader);
+    return false;
+  }
+
+  png_read_info (png, info);
+
+  png_uint_32 w = 0, h = 0;
+  int bit_depth = 0, color_type = 0;
+  int interlace_type = 0, compression_type = 0, filter_method = 0;
+  png_get_IHDR (png, info, &w, &h, &bit_depth, &color_type,
+		&interlace_type, &compression_type, &filter_method);
+
+  if (!w || !h || w > (png_uint_32) INT_MAX || h > (png_uint_32) INT_MAX)
+  {
+    png_destroy_read_struct (&png, &info, nullptr);
+    hb_raster_png_read_blob_fini (reader);
+    return false;
+  }
+
+  bool has_trns = png_get_valid (png, info, PNG_INFO_tRNS);
+
+  if (bit_depth == 16)
+    png_set_strip_16 (png);
+  if (color_type == PNG_COLOR_TYPE_PALETTE)
+    png_set_palette_to_rgb (png);
+  if (color_type == PNG_COLOR_TYPE_GRAY && bit_depth < 8)
+    png_set_expand_gray_1_2_4_to_8 (png);
+  if (has_trns)
+    png_set_tRNS_to_alpha (png);
+  if (color_type == PNG_COLOR_TYPE_GRAY || color_type == PNG_COLOR_TYPE_GRAY_ALPHA)
+    png_set_gray_to_rgb (png);
+  if (!(color_type & PNG_COLOR_MASK_ALPHA) && !has_trns)
+    png_set_add_alpha (png, 0xff, PNG_FILLER_AFTER);
+  if (interlace_type != PNG_INTERLACE_NONE)
+    png_set_interlace_handling (png);
+
+  png_read_update_info (png, info);
+
+  if (png_get_bit_depth (png, info) != 8 || png_get_channels (png, info) != 4)
+  {
+    png_destroy_read_struct (&png, &info, nullptr);
+    hb_raster_png_read_blob_fini (reader);
+    return false;
+  }
+
+  png_size_t rowbytes = png_get_rowbytes (png, info);
+  if (rowbytes < (png_size_t) w * 4u)
+  {
+    png_destroy_read_struct (&png, &info, nullptr);
+    hb_raster_png_read_blob_fini (reader);
+    return false;
+  }
+
+  size_t rgba_size = (size_t) rowbytes * (size_t) h;
+  if (h && rgba_size / (size_t) h != (size_t) rowbytes)
+  {
+    png_destroy_read_struct (&png, &info, nullptr);
+    hb_raster_png_read_blob_fini (reader);
+    return false;
+  }
+
+  reader->rgba = (uint8_t *) hb_malloc (rgba_size);
+  if (!reader->rgba)
+  {
+    png_destroy_read_struct (&png, &info, nullptr);
+    hb_raster_png_read_blob_fini (reader);
+    return false;
+  }
+
+  size_t rows_size = (size_t) h * sizeof (png_bytep);
+  if (h && rows_size / (size_t) h != sizeof (png_bytep))
+  {
+    png_destroy_read_struct (&png, &info, nullptr);
+    hb_raster_png_read_blob_fini (reader);
+    return false;
+  }
+
+  reader->rows = (png_bytep *) hb_malloc (rows_size);
+  if (!reader->rows)
+  {
+    png_destroy_read_struct (&png, &info, nullptr);
+    hb_raster_png_read_blob_fini (reader);
+    return false;
+  }
+
+  for (unsigned y = 0; y < (unsigned) h; y++)
+    reader->rows[y] = (png_bytep) (reader->rgba + (size_t) y * (size_t) rowbytes);
+
+  png_read_image (png, reader->rows);
+  png_read_end (png, nullptr);
+  png_destroy_read_struct (&png, &info, nullptr);
+
+  hb_raster_image_t decoded;
+  hb_raster_extents_t decoded_extents = {0, 0, (unsigned) w, (unsigned) h, 0};
+  if (!decoded.configure (HB_RASTER_FORMAT_BGRA32, decoded_extents))
+  {
+    hb_raster_png_read_blob_fini (reader);
+    return false;
+  }
+
+  for (unsigned y = 0; y < (unsigned) h; y++)
+  {
+    hb_packed_t<uint32_t> *dst = (hb_packed_t<uint32_t> *) (decoded.buffer.arrayZ + (size_t) ((unsigned) h - 1 - y) * decoded.extents.stride);
+    const uint8_t *src = reader->rgba + (size_t) y * (size_t) rowbytes;
+    for (unsigned x = 0; x < (unsigned) w; x++)
+    {
+      uint8_t r = src[4 * x + 0];
+      uint8_t g = src[4 * x + 1];
+      uint8_t b = src[4 * x + 2];
+      uint8_t a = src[4 * x + 3];
+      dst[x] = hb_packed_t<uint32_t> ((uint32_t) hb_raster_div255 (b * a)
+				    | ((uint32_t) hb_raster_div255 (g * a) << 8)
+				    | ((uint32_t) hb_raster_div255 (r * a) << 16)
+				    | ((uint32_t) a << 24));
+    }
+  }
+
+  hb_swap (buffer, decoded.buffer);
+  hb_swap (this->extents, decoded.extents);
+  hb_swap (format, decoded.format);
+  hb_raster_png_read_blob_fini (reader);
+  return true;
+#endif
+}
+
+hb_blob_t *
+hb_raster_image_t::serialize_to_png_or_fail () const
+{
+#ifndef HAVE_PNG
+  return nullptr;
+#else
+  if (format != HB_RASTER_FORMAT_BGRA32 || !extents.width || !extents.height)
+    return nullptr;
+
+  png_structp png = png_create_write_struct (PNG_LIBPNG_VER_STRING, nullptr,
+					     hb_raster_png_error,
+					     hb_raster_png_warning);
+  if (!png)
+    return nullptr;
+
+  png_infop info = png_create_info_struct (png);
+  if (!info)
+  {
+    png_destroy_write_struct (&png, nullptr);
+    return nullptr;
+  }
+
+  hb_raster_png_write_blob_t *writer = (hb_raster_png_write_blob_t *) hb_calloc (1, sizeof (*writer));
+  if (!writer)
+  {
+    png_destroy_write_struct (&png, &info);
+    return nullptr;
+  }
+
+  png_set_write_fn (png, writer, hb_raster_png_write_blob, hb_raster_png_flush_blob);
+  if (setjmp (png_jmpbuf (png)))
+  {
+    png_destroy_write_struct (&png, &info);
+    hb_raster_png_write_blob_fini (writer);
+    return nullptr;
+  }
+
+  png_set_IHDR (png, info,
+		extents.width, extents.height,
+		8, PNG_COLOR_TYPE_RGBA,
+		PNG_INTERLACE_NONE,
+		PNG_COMPRESSION_TYPE_DEFAULT,
+		PNG_FILTER_TYPE_DEFAULT);
+  png_write_info (png, info);
+
+  size_t rowbytes = (size_t) extents.width * 4u;
+  size_t rgba_size = rowbytes * (size_t) extents.height;
+  if (extents.height && rgba_size / (size_t) extents.height != rowbytes)
+  {
+    png_destroy_write_struct (&png, &info);
+    hb_raster_png_write_blob_fini (writer);
+    return nullptr;
+  }
+
+  writer->rgba = (uint8_t *) hb_malloc (rgba_size);
+  if (!writer->rgba)
+  {
+    png_destroy_write_struct (&png, &info);
+    hb_raster_png_write_blob_fini (writer);
+    return nullptr;
+  }
+
+  size_t rows_size = (size_t) extents.height * sizeof (png_bytep);
+  if (extents.height && rows_size / (size_t) extents.height != sizeof (png_bytep))
+  {
+    png_destroy_write_struct (&png, &info);
+    hb_raster_png_write_blob_fini (writer);
+    return nullptr;
+  }
+
+  writer->rows = (png_bytep *) hb_malloc (rows_size);
+  if (!writer->rows)
+  {
+    png_destroy_write_struct (&png, &info);
+    hb_raster_png_write_blob_fini (writer);
+    return nullptr;
+  }
+
+  for (unsigned y = 0; y < extents.height; y++)
+  {
+    uint8_t *dst = writer->rgba + (size_t) y * rowbytes;
+    const uint8_t *src = buffer.arrayZ + (size_t) (extents.height - 1 - y) * extents.stride;
+
+    for (unsigned x = 0; x < extents.width; x++)
+    {
+      uint32_t px;
+      hb_memcpy (&px, src + x * 4, 4);
+      uint8_t b = (uint8_t) (px & 0xFF);
+      uint8_t g = (uint8_t) ((px >> 8) & 0xFF);
+      uint8_t r = (uint8_t) ((px >> 16) & 0xFF);
+      uint8_t a = (uint8_t) (px >> 24);
+
+      dst[4 * x + 3] = a;
+      if (a)
+      {
+	dst[4 * x + 0] = (uint8_t) hb_min (255u, ((unsigned) r * 255u + a / 2u) / a);
+	dst[4 * x + 1] = (uint8_t) hb_min (255u, ((unsigned) g * 255u + a / 2u) / a);
+	dst[4 * x + 2] = (uint8_t) hb_min (255u, ((unsigned) b * 255u + a / 2u) / a);
+      }
+      else
+	dst[4 * x + 0] = dst[4 * x + 1] = dst[4 * x + 2] = 0;
+    }
+
+    writer->rows[y] = (png_bytep) dst;
+  }
+
+  png_write_image (png, writer->rows);
+  png_write_end (png, info);
+  png_destroy_write_struct (&png, &info);
+
+  if (writer->length > (size_t) (unsigned) -1)
+  {
+    hb_raster_png_write_blob_fini (writer);
+    return nullptr;
+  }
+
+  unsigned length = (unsigned) writer->length;
+  char *data = writer->data;
+  writer->data = nullptr;
+  hb_raster_png_write_blob_fini (writer);
+  if (!data && length)
+    return nullptr;
+
+  hb_blob_t *blob = hb_blob_create_or_fail (data, length,
+					    HB_MEMORY_MODE_WRITABLE,
+					    data, hb_free);
+  if (!blob)
+    hb_free (data);
+  return blob;
+#endif
 }
 
 void
@@ -396,10 +805,10 @@ hb_raster_image_t::composite_from (const hb_raster_image_t *src,
 
   for (unsigned y = 0; y < h; y++)
   {
-    uint32_t *dp = reinterpret_cast<uint32_t *> (buffer.arrayZ + y * stride);
-    const uint32_t *sp = reinterpret_cast<const uint32_t *> (src->buffer.arrayZ + y * stride);
+    hb_packed_t<uint32_t> *dp = (hb_packed_t<uint32_t> *) (buffer.arrayZ + y * stride);
+    const hb_packed_t<uint32_t> *sp = (const hb_packed_t<uint32_t> *) (src->buffer.arrayZ + y * stride);
     for (unsigned x = 0; x < w; x++)
-      dp[x] = composite_pixel (sp[x], dp[x], mode);
+      dp[x] = hb_packed_t<uint32_t> (composite_pixel ((uint32_t) sp[x], (uint32_t) dp[x], mode));
   }
 }
 
@@ -509,7 +918,7 @@ hb_raster_image_set_user_data (hb_raster_image_t  *image,
  * Since: 13.0.0
  **/
 void *
-hb_raster_image_get_user_data (hb_raster_image_t  *image,
+hb_raster_image_get_user_data (const hb_raster_image_t  *image,
 			       hb_user_data_key_t *key)
 {
   return hb_object_get_user_data (image, key);
@@ -566,7 +975,8 @@ hb_raster_image_clear (hb_raster_image_t *image)
  *
  * Fetches the raw pixel buffer of @image.  The buffer layout is
  * described by the extents obtained from hb_raster_image_get_extents()
- * and the format from hb_raster_image_get_format().
+ * and the format from hb_raster_image_get_format(). Rows are stored
+ * bottom-to-top.
  *
  * Return value: (transfer none) (array):
  * The pixel buffer, or `NULL`
@@ -574,7 +984,7 @@ hb_raster_image_clear (hb_raster_image_t *image)
  * Since: 13.0.0
  **/
 const uint8_t *
-hb_raster_image_get_buffer (hb_raster_image_t *image)
+hb_raster_image_get_buffer (const hb_raster_image_t *image)
 {
   return image->get_buffer ();
 }
@@ -589,7 +999,7 @@ hb_raster_image_get_buffer (hb_raster_image_t *image)
  * Since: 13.0.0
  **/
 void
-hb_raster_image_get_extents (hb_raster_image_t   *image,
+hb_raster_image_get_extents (const hb_raster_image_t   *image,
 			     hb_raster_extents_t *extents)
 {
   if (extents)
@@ -608,7 +1018,49 @@ hb_raster_image_get_extents (hb_raster_image_t   *image,
  * Since: 13.0.0
  **/
 hb_raster_format_t
-hb_raster_image_get_format (hb_raster_image_t *image)
+hb_raster_image_get_format (const hb_raster_image_t *image)
 {
   return image->format;
+}
+
+/**
+ * hb_raster_image_deserialize_from_png_or_fail:
+ * @image: a raster image
+ * @png: PNG data
+ *
+ * Replaces @image contents by deserializing a PNG blob into a
+ * #HB_RASTER_FORMAT_BGRA32 raster image.
+ *
+ * On success, @image extents are reset to pixel extents with origin
+ * `(0, 0)`. Rows in the resulting image buffer are stored bottom-to-top.
+ * On failure, @image is left unchanged.
+ *
+ * Return value: `true` if deserialization succeeded, `false` otherwise
+ *
+ * Since: 13.1.0
+ **/
+hb_bool_t
+hb_raster_image_deserialize_from_png_or_fail (hb_raster_image_t *image,
+					      hb_blob_t         *png)
+{
+  return image->deserialize_from_png (png);
+}
+
+/**
+ * hb_raster_image_serialize_to_png_or_fail:
+ * @image: a raster image
+ *
+ * Serializes @image to a PNG blob.
+ *
+ * Currently only #HB_RASTER_FORMAT_BGRA32 images are supported.
+ *
+ * Return value: (transfer full):
+ * A newly allocated PNG #hb_blob_t, or `NULL` on failure
+ *
+ * Since: 13.1.0
+ **/
+hb_blob_t *
+hb_raster_image_serialize_to_png_or_fail (const hb_raster_image_t *image)
+{
+  return image->serialize_to_png_or_fail ();
 }

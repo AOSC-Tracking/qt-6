@@ -1979,6 +1979,10 @@ void tst_qmlls_utils::findDefinitionFromLocation_data()
     QTest::addRow("componentFromCpp") << testFile("findDefinition/UseMyCppComponent.qml"_L1) << 3
                                       << 1 << componentFromCppHeaderPath << 42 << 1 << strlen("")
                                       << QStringList{ testFile("findDefinition"_L1) };
+    QTest::addRow("componentFromJava")
+            << testFile("findDefinition/UseMyCppComponent.qml"_L1) << 16 << 44
+            << testFile("findDefinition/SomeIncludeFolder/mycomponentfromnoncppheader.java"_L1)
+            << 42 << 1 << strlen("") << QStringList{ testFile("findDefinition"_L1) };
     QTest::addRow("propertyFromCpp") << testFile("findDefinition/UseMyCppComponent.qml"_L1) << 4
                                      << 6 << componentFromCppHeaderPath << 12 << 1 << strlen("")
                                      << QStringList{ testFile("findDefinition"_L1) };
@@ -2099,6 +2103,47 @@ void tst_qmlls_utils::findDefinitionFromLocation()
     QCOMPARE(definition->sourceLocation().startLine, quint32(expectedLine));
     QCOMPARE(definition->sourceLocation().startColumn, quint32(expectedCharacter));
     QCOMPARE(definition->sourceLocation().length, quint32(expectedLength));
+}
+
+void tst_qmlls_utils::findDefinitionFromAbsoluteLocation()
+{
+    QTemporaryDir build;
+    QVERIFY(build.isValid());
+
+    QDir(build.path()).mkdir("ModuleWithComponent");
+    QFile::copy(testFile("ModuleWithComponent/qmldir"),
+                build.filePath("ModuleWithComponent/qmldir"));
+
+    QFile headerFile(build.filePath("ModuleWithComponent/mycomponentfromnoncppheader.java"));
+    QVERIFY(headerFile.open(QFile::WriteOnly | QFile::Text));
+
+    QFile qmltypes(testFile("ModuleWithComponent/plugin.qmltypes"));
+    QVERIFY(qmltypes.open(QFile::ReadOnly | QFile::Text));
+    QByteArray qmltypesContent = qmltypes.readAll();
+
+    const QByteArray expectedFilePath = headerFile.fileName().toUtf8();
+    qmltypesContent.replace("mycomponentfromnoncppheader.java", expectedFilePath);
+
+    QFile newQmltypes(build.filePath("ModuleWithComponent/plugin.qmltypes"));
+    QVERIFY(newQmltypes.open(QFile::WriteOnly | QFile::Text));
+    newQmltypes.write(qmltypesContent);
+
+    auto [env, file] = createEnvironmentAndLoadFile(
+            testFile("findDefinition/UseMyCppComponent.qml"_L1), { build.path() });
+
+    auto locations = QQmlLSUtils::itemsFromTextLocation(
+            file.field(QQmlJS::Dom::Fields::currentItem), 15, 43);
+
+    QCOMPARE(locations.size(), 1);
+
+    auto definition = QQmlLSUtils::findDefinitionOf(locations.front().domItem, { build.path() });
+    QVERIFY(definition);
+
+    QCOMPARE(definition->filename(), expectedFilePath);
+
+    QCOMPARE(definition->sourceLocation().startLine, quint32(42));
+    QCOMPARE(definition->sourceLocation().startColumn, quint32(1));
+    QCOMPARE(definition->sourceLocation().length, quint32(0));
 }
 
 void tst_qmlls_utils::resolveExpressionType_data()
@@ -2379,6 +2424,21 @@ void tst_qmlls_utils::resolveExpressionType_data()
         QTest::addRow("onFakePropertyChangedSignal")
                 << file << 26 << 18 << ResolveOwnerType << myHeader << noLine
                 << SignalHandlerIdentifier << u"onMySomeTypeChanged"_s;
+    }
+    {
+        const QString file = testFile(u"resolveExpressionType/identifiers.qml"_s);
+        QTest::addRow("identifierJSVariableFirst")
+                << file << 12 << 26 << ResolveActualTypeForFieldMemberExpression << noFile << noLine
+                << JavaScriptIdentifier << u"colliding"_s;
+        QTest::addRow("identifierIdSecond")
+                << file << 15 << 22 << ResolveActualTypeForFieldMemberExpression << file << 5
+                << QmlObjectIdIdentifier << u"colliding"_s;
+        QTest::addRow("identifierPropertyThird") << file << 23 << 22 << ResolveOwnerType << file
+                                                 << 18 << PropertyIdentifier << u"colliding"_s;
+        QTest::addRow("identifierPropertyThird2") << file << 31 << 22 << ResolveOwnerType << file
+                                                  << 26 << PropertyIdentifier << u"colliding"_s;
+        QTest::addRow("identifierMethodFourth") << file << 38 << 22 << ResolveOwnerType << file
+                                                << 34 << MethodIdentifier << u"colliding"_s;
     }
 }
 
@@ -4540,6 +4600,10 @@ void tst_qmlls_utils::completions_data()
     QTest::newRow("attachedSignalHandler")
             << testFile("completions/attachedSignalHandler.qml") << 5 << 9
             << ExpectedCompletions{ { "event", CompletionItemKind::Variable } } << QStringList{};
+    QTest::newRow("idMethodMixup")
+            << testFile("completions/idMethodMixup.qml") << 10 << 15
+            << ExpectedCompletions{ { "myProperty"_L1, CompletionItemKind::Property } }
+            << QStringList{ };
 }
 
 void tst_qmlls_utils::completions()

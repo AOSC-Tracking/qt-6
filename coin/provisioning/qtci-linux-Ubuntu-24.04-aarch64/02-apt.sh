@@ -70,6 +70,7 @@ installPackages+=(libxss-dev)
 installPackages+=(rustc)
 installPackages+=(bindgen)
 installPackages+=(clang)
+installPackages+=(libclang-dev)
 installPackages+=(python3-html5lib)
 
 # Common event loop handling
@@ -237,6 +238,8 @@ installPackages+=(patchelf)
 installPackages+=(libusb-1.0-0-dev)
 # password management support for Qt Creator
 installPackages+=(libsecret-1-dev)
+# Keep zoneinfo up-to-date (COIN-1282)
+installPackages+=(tzdata)
 
 echo "Running update for apt"
 waitLoop

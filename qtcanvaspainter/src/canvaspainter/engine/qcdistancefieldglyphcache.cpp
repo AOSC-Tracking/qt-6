@@ -32,6 +32,7 @@ QList<QGlyphRun> QCDistanceFieldGlyphCache::generateGlyphRuns(
     option.setFlags(QTextOption::DisableEmojiParsing);
     option.setWrapMode(QCTextLayout::convertToQtWrapMode(state->textWrapMode));
     option.setAlignment(QCTextLayout::convertToQtAlignment(alignment));
+    option.setTextDirection(QCTextLayout::convertToQtDirection(state->textDirection));
     m_layout.clearLayout();
     m_layout.setTextOption(option);
     m_layout.setFont(font);
@@ -82,6 +83,7 @@ void QCDistanceFieldGlyphCache::generate(const QString &text, const QRectF &rect
         text,
         state->textAlignment,
         state->textWrapMode,
+        state->textDirection,
         float(rFont.pixelSize()),
         float(rect.width()),
         float(state->textLineHeight),
@@ -101,7 +103,8 @@ void QCDistanceFieldGlyphCache::generate(const QString &text, const QRectF &rect
                                       font, metrics,
                                       state, alignment);
         textY = QCTextLayout::calculateVerticalAlignment(state->textBaseline, rect, metrics, m_layout.boundingRect());
-        m_glyphRunCache.insert(hashKey, { glyphRuns, m_layout.boundingRect(), 0 });
+        if (m_layout.cacheEnabled())
+            m_glyphRunCache.insert(hashKey, { glyphRuns, m_layout.boundingRect(), 0 });
     }
 #else
     // QGlyphRuns caching disabled, generate

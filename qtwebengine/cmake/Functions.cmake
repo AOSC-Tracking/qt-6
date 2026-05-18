@@ -105,6 +105,12 @@ function(add_linker_options target buildDir completeStatic)
     set_target_properties(${cmakeTarget} PROPERTIES STATIC_LIBRARY_OPTIONS "@${objects_rsp}")
     if(LINUX OR ANDROID)
          get_gn_arch(cpu ${TEST_architecture_arch})
+
+         #QTBUG-145054#
+         if(CMAKE_CROSSCOMPILING AND cpu STREQUAL "arm" AND cmakeTarget STREQUAL "WebEngineCore")
+             target_link_options(${cmakeTarget} PRIVATE "LINKER:--strip-debug")
+         endif()
+
          if(CMAKE_CROSSCOMPILING AND cpu STREQUAL "arm" AND ${config} STREQUAL "Debug")
              target_link_options(${cmakeTarget} PRIVATE "LINKER:--long-plt")
          endif()
@@ -673,7 +679,13 @@ macro(qt_webengine_build_and_install_gn)
 endmacro()
 
 macro(qt_webengine_externalproject_add)
-    list(JOIN CMAKE_OSX_ARCHITECTURES "," OSX_ARCH_STR)
+    # On macOS, force the architecture variable to be populated to avoid issues with ccache
+    # picking the wrong object artifacts on CI
+    if(CMAKE_SYSTEM_NAME STREQUAL "Darwin" AND "${CMAKE_OSX_ARCHITECTURES}" STREQUAL "")
+        set(OSX_ARCH_STR ${CMAKE_HOST_SYSTEM_PROCESSOR})
+    else()
+        list(JOIN CMAKE_OSX_ARCHITECTURES "," OSX_ARCH_STR)
+    endif()
     externalproject_add(${ARGN}
         PREFIX      gn
         USES_TERMINAL_BUILD TRUE
@@ -681,6 +693,7 @@ macro(qt_webengine_externalproject_add)
         CMAKE_ARGS -DCMAKE_BUILD_TYPE=Release
                    -DCMAKE_C_COMPILER=${CMAKE_C_COMPILER}
                    -DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}
+                   -DCMAKE_CXX_COMPILER_LAUNCHER=${CMAKE_CXX_COMPILER_LAUNCHER}
                    -DCMAKE_INSTALL_PREFIX:PATH=<INSTALL_DIR>
                    -DCMAKE_PREFIX_PATH:PATH=<INSTALL_DIR>
                    -DCMAKE_OSX_ARCHITECTURES=${OSX_ARCH_STR}

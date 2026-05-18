@@ -28,7 +28,12 @@ Building the API client library requires:
 ## Getting Started
 
 # Documentation for {{#openAPI}}{{#info}}{{title}} {{version}} Qt6 Client Cpp{{/info}}{{/openAPI}}
-All URIs are relative to {{{scheme}}}://{{{host}}}{{{basePath}}}
+All URIs are relative to:
+{{#openAPI}}
+{{#servers}}
+{{{url}}}{{^-last}},{{/-last}}
+{{/servers}}
+{{/openAPI}}
 {{#apiInfo}}{{#apis}}{{#operations}}
 ## {{classname}}
 |Method | HTTP request | Description|

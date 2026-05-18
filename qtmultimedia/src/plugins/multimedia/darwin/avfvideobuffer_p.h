@@ -25,7 +25,6 @@
 #include <CoreVideo/CVImageBuffer.h>
 
 #import "Metal/Metal.h"
-#import "MetalKit/MetalKit.h"
 
 QT_BEGIN_NAMESPACE
 
@@ -44,16 +43,19 @@ public:
     QVideoFrameFormat videoFormat() const { return m_format; }
 
 private:
-    AVFVideoSinkInterface *sink = nullptr;
 
-    QCFType<CVMetalTextureCacheRef> metalCache;
-    QCFType<CVImageBufferRef> m_buffer;
-    QCFType<CVMetalTextureRef> cvMetalTexture[3];
+#if QT_CONFIG(opengl)
+    AVFVideoSinkInterface *sink = nullptr;
 #if defined(Q_OS_MACOS)
     QCFType<CVOpenGLTextureRef> cvOpenGLTexture;
 #elif defined(Q_OS_IOS)
     QCFType<CVOpenGLESTextureRef> cvOpenGLESTexture;
 #endif
+#endif
+
+    QCFType<CVImageBufferRef> m_buffer;
+    QCFType<CVMetalTextureCacheRef> metalCache;
+    QCFType<CVMetalTextureRef> cvMetalTexture[3];
 
     QVideoFrame::MapMode m_mode = QVideoFrame::NotMapped;
     QVideoFrameFormat m_format;

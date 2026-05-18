@@ -247,7 +247,7 @@ QQuick3DParticleSystemLogging *QQuick3DParticleSystem::loggingData() const
 }
 
 /*!
-    \qmlmethod  ParticleSystem3D::reset()
+    \qmlmethod void ParticleSystem3D::reset()
 
     This method resets the internal state of the particle system to it's initial state.
     This can be used when \l running property is \c false to reset the system.
@@ -436,42 +436,11 @@ int QQuick3DParticleSystem::particleCount() const
 
 void QQuick3DParticleSystem::registerParticle(QQuick3DParticle *particle)
 {
-    auto *model = qobject_cast<QQuick3DParticleModelParticle *>(particle);
-    if (model) {
-        registerParticleModel(model);
-        return;
-    }
-    auto *sprite = qobject_cast<QQuick3DParticleSpriteParticle *>(particle);
-    if (sprite) {
-        registerParticleSprite(sprite);
-        return;
-    }
     m_particles << particle;
-}
-
-void QQuick3DParticleSystem::registerParticleModel(QQuick3DParticleModelParticle *m)
-{
-    m_particles << m;
-}
-
-void QQuick3DParticleSystem::registerParticleSprite(QQuick3DParticleSpriteParticle *m)
-{
-    m_particles << m;
 }
 
 void QQuick3DParticleSystem::unRegisterParticle(QQuick3DParticle *particle)
 {
-    auto *model = qobject_cast<QQuick3DParticleModelParticle *>(particle);
-    if (model) {
-        m_particles.removeAll(particle);
-        return;
-    }
-    auto *sprite = qobject_cast<QQuick3DParticleSpriteParticle *>(particle);
-    if (sprite) {
-        m_particles.removeAll(particle);
-        return;
-    }
-
     m_particles.removeAll(particle);
 }
 

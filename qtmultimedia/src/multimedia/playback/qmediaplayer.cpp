@@ -132,16 +132,6 @@ void QMediaPlayerPrivate::setMedia(const QUrl &media, QIODevice *stream)
     if (!control)
         return;
 
-    auto setErrorFn = [&](
-        QMediaPlayer::MediaStatus status,
-        QMediaPlayer::Error err,
-        const QString &errString)
-    {
-        control->setMedia(QUrl(), nullptr);
-        control->mediaStatusChanged(status);
-        control->error(err, errString);
-    };
-
     std::unique_ptr<QFile> file;
 
     // Back ends can't play qrc files directly.
@@ -151,13 +141,14 @@ void QMediaPlayerPrivate::setMedia(const QUrl &media, QIODevice *stream)
         && !control->canPlayQrc()) {
         qrcMedia = media;
 
+        control->mediaStatusChanged(QMediaPlayer::LoadingMedia);
+
         file.reset(new QFile(QLatin1Char(':') + media.path()));
         if (!file->open(QFile::ReadOnly)) {
             file.reset();
-            setErrorFn(
-                QMediaPlayer::InvalidMedia,
-                QMediaPlayer::ResourceError,
-                QMediaPlayer::tr("Attempting to play invalid Qt resource"));
+            control->setInvalidMediaWithError(
+                    QMediaPlayer::ResourceError,
+                    QObject::tr("Attempting to play invalid Qt resource"));
 
         } else if (control->streamPlaybackSupported()) {
             control->setMedia(media, file.get());
@@ -168,17 +159,15 @@ void QMediaPlayerPrivate::setMedia(const QUrl &media, QIODevice *stream)
             QDir().mkpath(QFileInfo(tempFileName).path());
             std::unique_ptr<QTemporaryFile> tempFile { QTemporaryFile::createNativeFile(*file) };
             if (tempFile.get() == nullptr) {
-                setErrorFn(
-                    QMediaPlayer::InvalidMedia,
-                    QMediaPlayer::ResourceError,
-                    QMediaPlayer::tr("Failed to establish temporary file during playback"));
+                control->setInvalidMediaWithError(
+                        QMediaPlayer::ResourceError,
+                        QObject::tr("Failed to establish temporary file during playback"));
                 return;
             }
             if (!tempFile->rename(tempFileName)) {
-                setErrorFn(
-                    QMediaPlayer::InvalidMedia,
-                    QMediaPlayer::ResourceError,
-                    QStringLiteral("Could not rename temporary file to: %1").arg(tempFileName));
+                control->setInvalidMediaWithError(
+                        QMediaPlayer::ResourceError,
+                        QStringLiteral("Could not rename temporary file to: %1").arg(tempFileName));
                 return;
             }
 #else
@@ -192,10 +181,8 @@ void QMediaPlayerPrivate::setMedia(const QUrl &media, QIODevice *stream)
 
             // Copy the qrc data into the temporary file
             if (!tempFile->open()) {
-                setErrorFn(
-                    QMediaPlayer::InvalidMedia,
-                    QMediaPlayer::ResourceError,
-                    tempFile->errorString());
+                control->setInvalidMediaWithError(QMediaPlayer::ResourceError,
+                                                  tempFile->errorString());
                 qrcFile.reset();
                 return;
             }
@@ -1191,10 +1178,10 @@ QMediaPlayer::PitchCompensationAvailability QMediaPlayer::pitchCompensationAvail
 }
 
 /*!
-    \qmlproperty playbackOptions MediaPlayer::playbackOptions
+    \qmlproperty PlaybackOptions MediaPlayer::playbackOptions
     \since 6.10
 
-    This property exposes the \l playbackOptions API that gives low-level control of media playback
+    This property exposes the \l PlaybackOptions API that gives low-level control of media playback
     options. Although we strongly recommend to rely on the default settings of \l MediaPlayer,
     this API can be used to optimize media playback for specific use cases where the default
     options are not ideal.

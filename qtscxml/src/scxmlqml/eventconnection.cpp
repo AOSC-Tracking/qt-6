@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant
 
 #include "eventconnection_p.h"
 
@@ -47,6 +48,9 @@ QScxmlEventConnection::QScxmlEventConnection(QObject *parent) :
 {
 }
 
+QScxmlEventConnection::~QScxmlEventConnection()
+    = default;
+
 QStringList QScxmlEventConnection::events() const
 {
     return m_events;
@@ -90,7 +94,7 @@ QBindable<QScxmlStateMachine*> QScxmlEventConnection::bindableStateMachine()
 
 void QScxmlEventConnection::doConnect()
 {
-    for (const QMetaObject::Connection &connection : std::as_const(m_connections))
+    for (QMetaObject::Connection &connection : m_connections)
         disconnect(connection);
     m_connections.clear();
     const auto stateMachine = m_stateMachine.valueBypassingBindings();

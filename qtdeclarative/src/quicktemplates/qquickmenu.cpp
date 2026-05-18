@@ -287,6 +287,9 @@ public:
 QQuickMenuPrivate::QQuickMenuPrivate()
 {
     cascade = shouldCascade();
+#if QT_CONFIG(wayland)
+    extendedWindowType = QNativeInterface::Private::QWaylandWindow::Menu;
+#endif
 }
 
 void QQuickMenuPrivate::init()
@@ -2200,7 +2203,7 @@ void QQuickMenu::contentItemChange(QQuickItem *newItem, QQuickItem *oldItem)
 
     if (oldItem) {
         QQuickItemPrivate::get(oldItem)->removeItemChangeListener(d, QQuickItemPrivate::Children);
-        QQuickItemPrivate::get(newItem)->removeItemChangeListener(d, QQuickItemPrivate::Destroyed);
+        QQuickItemPrivate::get(oldItem)->removeItemChangeListener(d, QQuickItemPrivate::Destroyed);
         QQuickItemPrivate::get(oldItem)->removeItemChangeListener(d, QQuickItemPrivate::Geometry);
     }
     if (newItem) {

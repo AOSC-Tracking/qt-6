@@ -23,6 +23,7 @@ set(source_files
     src/main/java/org/qtproject/qt/codegen/CppQt6AbstractCodegen.java
     src/main/java/org/qtproject/qt/codegen/CppQt6ClientGenerator.java
     src/main/java/org/qtproject/qt/codegen/YamlDependencyBuilder.java
+    src/main/resources/logback.xml
     src/main/resources/META-INF/services/org.openapitools.codegen.CodegenConfig
     src/main/resources/cpp-qt6-client/CMakeConfig.mustache
     src/main/resources/cpp-qt6-client/CMakeLists.txt.mustache
@@ -56,7 +57,6 @@ set(source_files
     src/main/resources/cpp-qt6-client/model-header.mustache
     src/test/java/org/qtproject/qt/codegen/CppQt6ClientGeneratorTest.java
     pom.xml
-    logback.xml
 )
 
 # add the files to configure-time dependencies

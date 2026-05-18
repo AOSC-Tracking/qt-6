@@ -6,8 +6,7 @@
 
 #include <QtCore/qbuffer.h>
 #include <QtCore/qobject.h>
-#include <QtCore/QProcess>
-#include <QtCore/QThread>
+#include <QtCore/qprocess.h>
 #include <QtGui/qimage.h>
 #include <QtNetwork/qnetworkrequestfactory.h>
 #include <QtNetwork/qrestaccessmanager.h>

@@ -92,6 +92,8 @@ static QAudioBuffer handleNextSampleBuffer(QAudioFormat qtFormat,
 - (BOOL)resourceLoader:(AVAssetResourceLoader *)resourceLoader
         shouldWaitForLoadingOfRequestedResource:(AVAssetResourceLoadingRequest *)loadingRequest;
 
+- (void)clearDecoder;
+
 @end
 
 @implementation AVFResourceReaderDelegate
@@ -114,9 +116,9 @@ static QAudioBuffer handleNextSampleBuffer(QAudioFormat qtFormat,
     if (![loadingRequest.request.URL.scheme isEqualToString:@"iodevice"])
         return NO;
 
-    QMutexLocker locker(&m_mutex);
+    std::lock_guard locker(m_mutex);
 
-    QIODevice *device = m_decoder->sourceDevice();
+    QIODevice *device = m_decoder ? m_decoder->sourceDevice() : nullptr;
     if (!device)
         return NO;
 
@@ -137,7 +139,8 @@ static QAudioBuffer handleNextSampleBuffer(QAudioFormat qtFormat,
             if (len < 1)
                 break;
 
-            [loadingRequest.dataRequest respondWithData:[NSData dataWithBytes:buffer length:len]];
+            [loadingRequest.dataRequest respondWithData:[NSData dataWithBytes:buffer.constData()
+                                                                       length:len]];
             submitted += len;
         }
 
@@ -146,6 +149,12 @@ static QAudioBuffer handleNextSampleBuffer(QAudioFormat qtFormat,
     }
 
     return YES;
+}
+
+- (void)clearDecoder
+{
+    std::lock_guard locker(m_mutex);
+    m_decoder = nullptr;
 }
 
 @end
@@ -205,13 +214,16 @@ AVFAudioDecoder::AVFAudioDecoder(QAudioDecoder *parent)
     m_decodingQueue = dispatch_queue_create("decoder_queue", DISPATCH_QUEUE_SERIAL);
 
     m_readerDelegate = [[AVFResourceReaderDelegate alloc] initWithDecoder:this];
+    Q_ASSERT(m_readerDelegate);
 }
 
 AVFAudioDecoder::~AVFAudioDecoder()
 {
     stop();
 
+    [m_readerDelegate clearDecoder];
     [m_readerDelegate release];
+
     [m_asset release];
 
     dispatch_release(m_readingQueue);
@@ -263,9 +275,14 @@ void AVFAudioDecoder::setSourceDevice(QIODevice *device)
     if (m_device) {
         const QString ext = QMimeDatabase().mimeTypeForData(m_device).preferredSuffix();
         const QString url = u"iodevice:///iodevice."_s + ext;
-        NSString *urlString = url.toNSString();
+        NSString *_Nonnull urlString = url.toNSString();
         NSURL *nsURL = [NSURL URLWithString:urlString];
 
+        if (nsURL == nil) {
+            processInvalidMedia(QAudioDecoder::FormatError,
+                                tr("Failed to create URL for the device"));
+            return;
+        }
         m_asset = [[AVURLAsset alloc] initWithURL:nsURL options:nil];
 
         // use decoding queue instead of reading queue in order to fix random stucks.

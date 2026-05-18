@@ -73,9 +73,8 @@ class tst_qqmljsscope : public QQmlDataTest
         logger.setCategoryIgnored(qmlShadow, true);
         logger.setCategoryIgnored(qmlPropertyOverride, true);
         logger.setSilent(expectErrorsOrWarnings);
-        QQmlJSScope::Ptr target = QQmlJSScope::create();
-        target->setOwnModuleName(u"HelloModule"_s);
-        QQmlJSImportVisitor visitor(target, &m_importer, &logger, dataDirectory());
+        QQmlJSScope::Ptr target = m_importer.importFile(logger.filePath());
+        QQmlJSImportVisitor visitor(&m_importer, &logger, QDir::cleanPath(resolvedFile + "/.."_L1));
         QQmlJSTypeResolver typeResolver { &m_importer };
         typeResolver.init(&visitor, document->program);
         if (!expectErrorsOrWarnings) {
@@ -248,7 +247,7 @@ void tst_qqmljsscope::allTypesAvailable()
         };
 
         QQmlJSImporter importer { importPaths, /* resource file mapper */ nullptr };
-        const auto imported = importer.importModule(u"QtQml"_s);
+        const auto imported = importer.importModule(u"QtQml"_s, QQmlJS::PrecedenceValues::Default);
         QCOMPARE(imported.contextualTypes().context(), QQmlJS::ContextualTypes::QML);
         const auto types = imported.types();
         QVERIFY(types.contains(u"$internal$.QObject"_s));
@@ -301,7 +300,15 @@ void tst_qqmljsscope::componentWrappedObjects()
 
     const auto isGoodType = [](const QQmlJSScope::ConstPtr &type, const QString &propertyName,
                                bool isWrapped) {
-        return type->hasOwnProperty(propertyName)
+        const auto objectNameBindings = type->ownPropertyBindings(u"objectName"_s);
+        if (std::distance(objectNameBindings.first, objectNameBindings.second) != 1)
+            return false;
+
+        const QQmlJSMetaPropertyBinding objectNameBinding = *objectNameBindings.first;
+        if (objectNameBinding.bindingType() != QQmlSA::BindingType::StringLiteral)
+            return false;
+
+        return objectNameBinding.stringValue() == propertyName
                 && type->isWrappedInImplicitComponent() == isWrapped;
     };
 
@@ -783,7 +790,7 @@ void tst_qqmljsscope::hasOwnEnumerationKeys()
 void tst_qqmljsscope::ownModuleName()
 {
     const QString moduleName = u"HelloModule"_s;
-    QQmlJSScope::ConstPtr root = run(u"ownModuleName.qml"_s);
+    QQmlJSScope::ConstPtr root = run(u"HelloModule/ownModuleName.qml"_s);
     QVERIFY(root);
     QCOMPARE(root->moduleName(), moduleName);
     QCOMPARE(root->ownModuleName(), moduleName);

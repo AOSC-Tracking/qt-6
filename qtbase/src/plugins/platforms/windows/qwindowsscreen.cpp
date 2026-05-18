@@ -18,7 +18,6 @@
 #include <qpa/qwindowsysteminterface.h>
 #include <QtCore/private/qsystemerror_p.h>
 #include <QtGui/private/qedidparser_p.h>
-#include <private/qhighdpiscaling_p.h>
 #include <private/qwindowsfontdatabasebase_p.h>
 #include <private/qpixmap_win_p.h>
 #include <private/quniquehandle_p.h>
@@ -163,12 +162,14 @@ static void setMonitorDataFromSetupApi(QWindowsScreenData &data,
         // The first element in the clone group is the main monitor.
         deviceName.header.adapterId = pathGroup[0].targetInfo.adapterId;
         deviceName.header.id = pathGroup[0].targetInfo.id;
-        if (DisplayConfigGetDeviceInfo(&deviceName.header) == ERROR_SUCCESS) {
+        const LONG result = DisplayConfigGetDeviceInfo(&deviceName.header);
+        if (result == ERROR_SUCCESS) {
             data.devicePath = QString::fromWCharArray(deviceName.monitorDevicePath);
         } else {
-            qCWarning(lcQpaScreen)
+            // This can fail for virtual screens or disconnected displays - not an error
+            qCDebug(lcQpaScreen)
                     << u"Unable to get device information for %1:"_s.arg(pathGroup[0].targetInfo.id)
-                    << QSystemError::windowsString();
+                    << QSystemError::windowsString(result);
         }
     }
 
@@ -184,10 +185,12 @@ static void setMonitorDataFromSetupApi(QWindowsScreenData &data,
         deviceName.header.size = sizeof(DISPLAYCONFIG_TARGET_DEVICE_NAME);
         deviceName.header.adapterId = path.targetInfo.adapterId;
         deviceName.header.id = path.targetInfo.id;
-        if (DisplayConfigGetDeviceInfo(&deviceName.header) != ERROR_SUCCESS) {
-            qCWarning(lcQpaScreen)
+        const LONG result = DisplayConfigGetDeviceInfo(&deviceName.header);
+        if (result != ERROR_SUCCESS) {
+            // This can fail for virtual screens (WinDisc) or disconnected displays - not an error
+            qCDebug(lcQpaScreen)
                     << u"Unable to get device information for %1:"_s.arg(path.targetInfo.id)
-                    << QSystemError::windowsString();
+                    << QSystemError::windowsString(result);
             continue;
         }
 
@@ -206,7 +209,8 @@ static void setMonitorDataFromSetupApi(QWindowsScreenData &data,
 
         if (!SetupDiOpenDeviceInterfaceW(devInfo.get(), deviceName.monitorDevicePath, DIODI_NO_ADD,
                                          &deviceInterfaceData)) {
-            qCWarning(lcQpaScreen)
+            // This can fail for virtual screens with no physical target - not an error
+            qCDebug(lcQpaScreen)
                     << u"Unable to open monitor interface to %1:"_s.arg(data.deviceName)
                     << QSystemError::windowsString();
             continue;

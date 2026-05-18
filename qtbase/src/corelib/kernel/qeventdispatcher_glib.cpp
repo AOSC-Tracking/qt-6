@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "qeventdispatcher_glib_p.h"
 #include "qeventdispatcher_unix_p.h"
@@ -105,7 +106,7 @@ static gboolean timerSourcePrepareHelper(GTimerSource *src, gint *timeout)
     }
 
     auto remaining = src->timerList.timerWait().value_or(-1ms);
-    *timeout = q26::saturate_cast<gint>(ceil<milliseconds>(remaining).count());
+    *timeout = q26::saturating_cast<gint>(ceil<milliseconds>(remaining).count());
 
     return (*timeout == 0);
 }
@@ -214,6 +215,7 @@ struct GPostEventSource
     GSource source;
     QAtomicInt serialNumber;
     int lastSerialNumber;
+    int pendingSerialNumber;
     QEventDispatcherGlibPrivate *d;
 };
 
@@ -242,8 +244,9 @@ static gboolean postEventSourceCheck(GSource *source)
 static gboolean postEventSourceDispatch(GSource *s, GSourceFunc, gpointer)
 {
     GPostEventSource *source = reinterpret_cast<GPostEventSource *>(s);
-    source->lastSerialNumber = source->serialNumber.loadRelaxed();
+    source->pendingSerialNumber = source->serialNumber.loadRelaxed();
     QCoreApplication::sendPostedEvents();
+    source->lastSerialNumber = source->pendingSerialNumber;
     source->d->runTimersOnceWithNormalPriority();
     return true; // i dunno, george...
 }

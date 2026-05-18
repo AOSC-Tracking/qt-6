@@ -13,6 +13,7 @@
 #include <private/qduplicatetracker_p.h>
 
 #include <QtCore/qloggingcategory.h>
+#include <QtCore/qtyperevision.h>
 
 QT_BEGIN_NAMESPACE
 
@@ -1508,9 +1509,11 @@ bool QQmlJSTypeResolver::canPrimitivelyConvertFromTo(
     if (from == m_variantListType)
         return to->accessSemantics() == QQmlJSScope::AccessSemantics::Sequence;
 
-    // We can convert anything that fits into QJSPrimitiveValue
-    if (canConvertFromTo(from, m_jsPrimitiveType) && canConvertFromTo(m_jsPrimitiveType, to))
+    // We can convert anything that fits natively into QJSPrimitiveValue
+    if (canPrimitivelyConvertFromTo(from, m_jsPrimitiveType)
+            && canPrimitivelyConvertFromTo(m_jsPrimitiveType, to)) {
         return true;
+    }
 
     if (areEquivalentLists(from, to))
         return true;
@@ -1607,7 +1610,9 @@ QQmlJSRegisterContent QQmlJSTypeResolver::memberType(
                 return true;
             }
         }
-
+        // don't look up enums on ids...
+        if (type.variant() == QQmlJSRegisterContent::ObjectById)
+            return false;
         return checkEnums(resultScope, name, &result);
     };
 

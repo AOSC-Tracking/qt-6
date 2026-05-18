@@ -21,7 +21,7 @@
 #include "qpipewire_spa_pod_support_p.h"
 
 #include <QtCore/qfuture.h>
-#include <QtCore/qtimer.h>
+#include <QtCore/qchronotimer.h>
 #include <QtCore/qreadwritelock.h>
 #include <QtMultimedia/qaudiodevice.h>
 
@@ -63,6 +63,8 @@ class QAudioDeviceMonitor : public QObject
 
 public:
     QAudioDeviceMonitor();
+    ~QAudioDeviceMonitor();
+
     void objectAdded(ObjectId, uint32_t permissions, PipewireRegistryType, uint32_t version,
                      const spa_dict &props);
     void objectRemoved(ObjectId);
@@ -78,8 +80,8 @@ public:
     std::optional<ObjectSerial> findSourceNodeSerial(std::string_view nodeName) const;
 
     // ObjectId/ObjectSerial mapping
-    std::optional<ObjectId> findObjectId(ObjectSerial);
-    std::optional<ObjectSerial> findObjectSerial(ObjectId);
+    std::optional<ObjectId> findObjectId(ObjectSerial) const;
+    std::optional<ObjectSerial> findObjectSerial(ObjectId) const;
 
     [[nodiscard]] bool registerObserver(SharedObjectRemoveObserver);
     void unregisterObserver(const SharedObjectRemoveObserver &);
@@ -113,7 +115,11 @@ private:
         PwPropertyDict properties;
         std::unique_ptr<NodeEventListener> enumFormatListener;
         std::unique_ptr<CoreEventDoneListener> enumFormatDoneListener;
-        QFuture<std::optional<SpaObjectAudioFormat>> formatFuture;
+        QFuture<std::vector<SpaObjectAudioFormat>> formatFuture;
+
+        // owned by he instance, updated in the formatFuture's continuation (we capture a weak reference in the
+        // continuation to avoid lifetime issues
+        const std::shared_ptr<std::optional<std::vector<SpaObjectAudioFormat>>> formatResults;
     };
 
     struct NodeRecord
@@ -147,7 +153,8 @@ private:
     std::optional<QByteArray> m_defaultSourceName;
     std::optional<QByteArray> m_defaultSinkName;
 
-    QTimer m_compressionTimer;
+    QThread m_compressionTimerThread{ this };
+    QChronoTimer m_compressionTimer;
     void startCompressionTimer();
 
     // Device list updates

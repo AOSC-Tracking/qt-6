@@ -95,7 +95,8 @@ void QPulseAudioSourceStream::stop(ShutdownPolicy shutdownPolicy)
     }
 
     // Note: we need to cork the stream before disconnecting to prevent pulseaudio from deadlocking
-    std::ignore = streamCork(m_stream, true);
+    auto op = streamCork(m_stream, true);
+    pulseEngine->waitForAsyncOperation(op);
 
     pa_stream_disconnect(m_stream.get());
 
@@ -167,24 +168,6 @@ bool QPulseAudioSourceStream::startStream(StreamType streamType)
 
 void QPulseAudioSourceStream::installCallbacks(StreamType streamType)
 {
-    pa_stream_set_overflow_callback(m_stream.get(), [](pa_stream *stream, void *data) {
-        auto *self = reinterpret_cast<QPulseAudioSourceStream *>(data);
-        Q_ASSERT(stream == self->m_stream.get());
-        self->underflowCallback();
-    }, this);
-
-    pa_stream_set_underflow_callback(m_stream.get(), [](pa_stream *stream, void *data) {
-        auto *self = reinterpret_cast<QPulseAudioSourceStream *>(data);
-        Q_ASSERT(stream == self->m_stream.get());
-        self->overflowCallback();
-    }, this);
-
-    pa_stream_set_state_callback(m_stream.get(), [](pa_stream *stream, void *data) {
-        auto *self = reinterpret_cast<QPulseAudioSourceStream *>(data);
-        Q_ASSERT(stream == self->m_stream.get());
-        self->stateCallback();
-    }, this);
-
     switch (streamType) {
     case StreamType::Ringbuffer: {
         pa_stream_set_read_callback(m_stream.get(),
@@ -205,21 +188,11 @@ void QPulseAudioSourceStream::installCallbacks(StreamType streamType)
         break;
     }
     }
-
-    pa_stream_set_latency_update_callback(m_stream.get(), [](pa_stream *stream, void *data) {
-        auto *self = reinterpret_cast<QPulseAudioSourceStream *>(data);
-        Q_ASSERT(stream == self->m_stream.get());
-        self->latencyUpdateCallback();
-    }, this);
 }
 
 void QPulseAudioSourceStream::uninstallCallbacks()
 {
-    pa_stream_set_overflow_callback(m_stream.get(), nullptr, nullptr);
-    pa_stream_set_underflow_callback(m_stream.get(), nullptr, nullptr);
-    pa_stream_set_state_callback(m_stream.get(), nullptr, nullptr);
     pa_stream_set_read_callback(m_stream.get(), nullptr, nullptr);
-    pa_stream_set_latency_update_callback(m_stream.get(), nullptr, nullptr);
 }
 
 void QPulseAudioSourceStream::readCallbackRingbuffer([[maybe_unused]] size_t bytesToRead)

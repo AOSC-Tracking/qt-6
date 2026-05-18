@@ -10,6 +10,8 @@
 
 #include <absl/log/initialize.h>
 
+#include <QtCore/qelapsedtimer.h>
+
 class AsyncGrpcClientBenchmark
 {
 public:
@@ -19,18 +21,18 @@ public:
     {
         assert(mExpectedCalls > 0);
         if (payload > 0)
-            sData.assign(payload, 'x');
+            sData = Bench::generatePayloads<std::string>(payload);
 
         std::shared_ptr<grpc::ChannelCredentials> creds;
         grpc::ChannelArguments args;
         if (transport == "https") {
             grpc::SslCredentialsOptions sslOpts;
-            sslOpts.pem_root_certs = { SslRootKey.data(), SslRootKey.size() };
+            sslOpts.pem_root_certs = { Bench::SslRootKey.data(), Bench::SslRootKey.size() };
             creds = grpc::SslCredentials(sslOpts);
         } else {
             creds = grpc::InsecureChannelCredentials();
         }
-        auto channel = grpc::CreateCustomChannel(getTransportAddress(transport), creds, args);
+        auto channel = grpc::CreateCustomChannel(Bench::getTransportAddress(transport), creds, args);
         mStub = qt::bench::BenchmarkService::NewStub(std::move(channel));
     }
 
@@ -44,7 +46,7 @@ private:
     QElapsedTimer mTimer;
     int64_t mExpectedCalls;
 
-    inline static std::string sData;
+    inline static std::vector<std::string> sData;
 };
 
 void AsyncGrpcClientBenchmark::unaryCall()
@@ -59,7 +61,7 @@ void AsyncGrpcClientBenchmark::unaryCall()
         qt::bench::UnaryCallResponse response;
     };
 
-    BenchmarkData benchData(static_cast<uint64_t>(mExpectedCalls));
+    Bench::BenchmarkData benchData(static_cast<uint64_t>(mExpectedCalls));
     benchData.callCount = -50; // for warmup
 
     grpc::CompletionQueue cq;
@@ -68,10 +70,11 @@ void AsyncGrpcClientBenchmark::unaryCall()
 
     const auto startCall = [this, &cq, &benchData]() {
         auto *call = new UnaryCallData();
-        *call->request.mutable_timestamp() = getTimestamp();
+        *call->request.mutable_timestamp() = Bench::getTimestamp();
         if (!sData.empty() && benchData.callCount >= 0) {
-            call->request.set_payload(sData);
-            benchData.sendBytes += call->request.payload().size();
+            auto nextPayload = Bench::nextPayload(sData);
+            benchData.sendBytes += nextPayload.size();
+            call->request.set_payload(std::move(nextPayload));
         }
         call->reader = mStub->AsyncUnaryCall(&call->context, call->request, &cq);
         call->reader->Finish(&call->response, &call->status, call);
@@ -90,7 +93,7 @@ void AsyncGrpcClientBenchmark::unaryCall()
                     benchData.requestLatenciesNanos
                         .push_back(rpcResult->response.request_latency_nanos());
                     benchData.responseLatenciesNanos
-                        .push_back(calculateLatencyNanosNow(rpcResult->response.timestamp()));
+                        .push_back(Bench::calculateLatencyNanosNow(rpcResult->response.timestamp()));
                 }
                 delete rpcResult;
                 startCall();
@@ -129,7 +132,7 @@ void AsyncGrpcClientBenchmark::serverStreaming()
         std::function<bool(bool)> callHandler;
     };
 
-    BenchmarkData benchData(static_cast<uint64_t>(mExpectedCalls));
+    Bench::BenchmarkData benchData(static_cast<uint64_t>(mExpectedCalls));
 
     grpc::CompletionQueue cq;
     void *rawTag = nullptr;
@@ -167,8 +170,9 @@ void AsyncGrpcClientBenchmark::serverStreaming()
     };
 
     if (!sData.empty()) {
-        call->request.set_payload(sData);
-        benchData.sendBytes += sData.size();
+        auto nextPayload = Bench::nextPayload(sData);
+        benchData.sendBytes += nextPayload.size();
+        call->request.set_payload(std::move(nextPayload));
     }
     call->request.set_ping(mExpectedCalls);
     call->stream = mStub->AsyncServerStreaming(&call->context, call->request, &cq,
@@ -204,7 +208,7 @@ void AsyncGrpcClientBenchmark::clientStreaming()
         std::function<bool(bool)> callHandler;
     };
 
-    BenchmarkData benchData(static_cast<uint64_t>(mExpectedCalls));
+    Bench::BenchmarkData benchData(static_cast<uint64_t>(mExpectedCalls));
 
     grpc::CompletionQueue cq;
     void *rawTag = nullptr;
@@ -213,10 +217,13 @@ void AsyncGrpcClientBenchmark::clientStreaming()
     auto *call = new ClientStreamingData();
     call->writeHandler = [this, call, &benchData](bool ok) {
         if (ok && benchData.callCount < mExpectedCalls) {
+            if (!sData.empty()) {
+                auto nextPayload = Bench::nextPayload(sData);
+                benchData.sendBytes += nextPayload.size();
+                call->request.set_payload(std::move(nextPayload));
+            }
             call->request.set_ping(benchData.callCount);
             call->stream->Write(call->request, &call->writeHandler);
-            if (call->request.has_payload())
-                benchData.sendBytes += call->request.payload().size();
             ++benchData.callCount;
         } else if (ok && benchData.callCount >= mExpectedCalls) {
             call->stream->WritesDone(&call->writesDoneHandler);
@@ -247,8 +254,6 @@ void AsyncGrpcClientBenchmark::clientStreaming()
         }
     };
 
-    if (!sData.empty())
-        call->request.set_payload(sData);
     call->stream = mStub->AsyncClientStreaming(&call->context, &call->response, &cq,
                                                &call->callHandler);
 
@@ -284,7 +289,7 @@ void AsyncGrpcClientBenchmark::bidiStreaming()
         std::function<bool(bool)> writesDoneHandler;
         std::function<bool(bool)> readHandler;
     };
-    BenchmarkData benchData(static_cast<uint64_t>(mExpectedCalls));
+    Bench::BenchmarkData benchData(static_cast<uint64_t>(mExpectedCalls));
 
     grpc::CompletionQueue cq;
     void *rawTag = nullptr;
@@ -293,8 +298,11 @@ void AsyncGrpcClientBenchmark::bidiStreaming()
     auto *call = new BidiStreamingData();
     call->writeHandler = [this, call, &benchData](bool ok) {
         if (ok && benchData.callCount < mExpectedCalls) {
-            if (call->request.has_payload())
-                benchData.sendBytes += call->request.payload().size();
+            if (!sData.empty()) {
+                auto nextPayload = Bench::nextPayload(sData);
+                benchData.sendBytes += nextPayload.size();
+                call->request.set_payload(std::move(nextPayload));
+            }
             call->stream->Write(call->request, &call->writeHandler);
             ++benchData.callCount;
         } else if (ok && benchData.callCount >= mExpectedCalls) {
@@ -334,12 +342,9 @@ void AsyncGrpcClientBenchmark::bidiStreaming()
         }
     };
 
+    if (!sData.empty())
+        call->context.AddMetadata("write-size", std::to_string(sData[0].size()));
     call->context.AddMetadata("write-queries", std::to_string(mExpectedCalls));
-
-    if (!sData.empty()) {
-        call->request.set_payload(sData);
-        call->context.AddMetadata("write-size", std::to_string(sData.size()));
-    }
     mTimer.restart();
     call->stream = mStub->AsyncBiDiStreaming(&call->context, &cq, &call->callHandler);
 

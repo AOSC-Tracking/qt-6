@@ -36,6 +36,7 @@
 #include <QTimer>
 #include <QtQuick/private/qquickpinchhandler_p.h>
 #include <QtQuick/private/qquickrectangle_p.h>
+#include <QtCore/qset.h>
 #include <private/axisrenderer_p.h>
 #include <private/qabstractaxis_p.h>
 #include <private/qgraphsview_p.h>
@@ -297,7 +298,7 @@ void QGraphsView::addAxis(QAbstractAxis *axis)
     }
 }
 
-void QGraphsView::removeAxis(QAbstractAxis *axis)
+void QGraphsView::removeAxis(QAbstractAxis *axis, bool removeAllReferences)
 {
     if (axis) {
         axis->d_func()->setGraph(nullptr);
@@ -312,6 +313,13 @@ void QGraphsView::removeAxis(QAbstractAxis *axis)
         m_axisX = nullptr;
     if (m_axisY == axis)
         m_axisY = nullptr;
+
+    if (removeAllReferences) {
+        for (auto&& s : m_seriesList) {
+            if (auto series = qobject_cast<QAbstractSeries *>(s))
+                series->d_func()->removeAxis(axis);
+        }
+    }
 
     updateComponentSizes();
     polishAndUpdate();
@@ -1856,28 +1864,34 @@ void QGraphsView::calculateAxisCounts(int *xCount, int *yCount, int *leftCount, 
         }
     }
 
+    QSet<QAbstractAxis *> countedAxes;
+
     for (auto&& s : m_seriesList) {
         if (auto series = qobject_cast<QAbstractSeries *>(s)) {
-            if (series->axisY() && series->axisY() != axisY()) {
+            QAbstractAxis *seriesYAxis = series->axisY();
+            if (seriesYAxis && seriesYAxis != axisY() && !countedAxes.contains(seriesYAxis)) {
+                countedAxes.insert(seriesYAxis);
                 (*yCount)++;
-                if (series->axisY()->isTitleVisible() && !series->axisY()->titleText().isEmpty())
+                if (seriesYAxis->isTitleVisible() && !seriesYAxis->titleText().isEmpty())
                     (*yTitleCount)++;
 
-                if (series->axisY()->alignment() == Qt::AlignLeft) {
+                if (seriesYAxis->alignment() == Qt::AlignLeft) {
                     (*leftCount)++;
-                    if (series->axisY()->isTitleVisible() && !series->axisY()->titleText().isEmpty())
+                    if (seriesYAxis->isTitleVisible() && !seriesYAxis->titleText().isEmpty())
                         (*leftTitleCount)++;
                 }
             }
 
-            if (series->axisX() && series->axisX() != axisX()) {
+            QAbstractAxis *seriesXAxis = series->axisX();
+            if (seriesXAxis && seriesXAxis != axisX() && !countedAxes.contains(seriesXAxis)) {
+                countedAxes.insert(seriesXAxis);
                 (*xCount)++;
-                if (series->axisX()->isTitleVisible() && !series->axisX()->titleText().isEmpty())
+                if (seriesXAxis->isTitleVisible() && !seriesXAxis->titleText().isEmpty())
                     (*xTitleCount)++;
 
-                if (series->axisX()->alignment() == Qt::AlignTop) {
+                if (seriesXAxis->alignment() == Qt::AlignTop) {
                     (*topCount)++;
-                    if (series->axisX()->isTitleVisible() && !series->axisX()->titleText().isEmpty())
+                    if (seriesXAxis->isTitleVisible() && !seriesXAxis->titleText().isEmpty())
                         (*topTitleCount)++;
                 }
             }

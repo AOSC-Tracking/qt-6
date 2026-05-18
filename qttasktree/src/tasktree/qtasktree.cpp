@@ -41,8 +41,7 @@ using namespace Qt::StringLiterals;
 
 /*!
     \module QtTaskTree
-    \techpreview
-    \modulestate Technical Preview
+    \preliminary
     \since 6.11
     \ingroup modules
     \title Qt TaskTree C++ Classes
@@ -2032,7 +2031,7 @@ Group operator>>(const For &forItem, const Do &doItem)
     The following construction:
 
     \code
-        const Group recipe = Forever {
+        const ExecutableItem task = Forever {
             task1,
             task2
         };
@@ -2041,7 +2040,7 @@ Group operator>>(const For &forItem, const Do &doItem)
     is an equivalent to:
 
     \code
-        const Group recipe = For (ForeverIterator()) >> Do {
+        const ExecutableItem task = For (ForeverIterator()) >> Do {
             task1,
             task2
         };
@@ -2520,14 +2519,14 @@ public:
     {
         QT_TASKTREE_ASSERT(m_activeStorageStack.size(),
                   qWarning().noquote() << s_activeStorageWarning; return nullptr);
-        const QPair<StoragePtr, QTaskTree *> &top = m_activeStorageStack.last();
+        const auto &top = m_activeStorageStack.last();
         QT_TASKTREE_ASSERT(top.second == activeTaskTree(),
                   qWarning().noquote() << s_activeStorageWarning; return nullptr);
         return top.first;
     }
 
 private:
-    QList<QPair<StoragePtr, QTaskTree *>> m_activeStorageStack;
+    QList<std::pair<StoragePtr, QTaskTree *>> m_activeStorageStack;
 };
 
 class StorageBasePrivate : public QSharedData

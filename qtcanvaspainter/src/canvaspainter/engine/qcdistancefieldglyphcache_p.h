@@ -53,6 +53,7 @@ public:
         QString text;
         QCanvasPainter::TextAlign textAlign;
         QCanvasPainter::WrapMode wrapMode;
+        QCanvasPainter::TextDirection textDirection;
         float pixelSize;
         float lineWidth;
         float lineHeight;
@@ -114,7 +115,7 @@ inline bool operator==(
     const QCDistanceFieldGlyphCache::GlyphCacheKey &a, const QCDistanceFieldGlyphCache::GlyphCacheKey &b)
 {
     return a.fontKey == b.fontKey && qFuzzyCompare(a.pixelSize, b.pixelSize)
-           && a.text == b.text && a.textAlign == b.textAlign
+           && a.text == b.text && a.textAlign == b.textAlign && a.textDirection == b.textDirection
            && a.wrapMode == b.wrapMode && qFuzzyCompare(a.lineWidth, b.lineWidth)
            && qFuzzyCompare(a.lineHeight, b.lineHeight)
            && qFuzzyCompare(a.letterSpacing, b.letterSpacing)
@@ -129,7 +130,7 @@ inline bool operator!=(
 
 inline size_t qHash(const QCDistanceFieldGlyphCache::GlyphCacheKey &k, size_t seed = 0)
 {
-    return qHashMulti(seed, k.fontKey, k.text, k.textAlign, k.wrapMode, k.lineWidth,
+    return qHashMulti(seed, k.fontKey, k.text, k.textAlign, k.textDirection, k.wrapMode, k.lineWidth,
                       k.lineHeight, k.letterSpacing, k.wordSpacing, k.pixelSize);
 }
 

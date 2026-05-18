@@ -19,9 +19,14 @@
 #include "qssgrenderer_p.h"
 #include "resourcemanager/qssgrenderbuffermanager_p.h"
 
+#include <mutex>
+#include <condition_variable>
+
 QT_BEGIN_NAMESPACE
 
-static void reindexChildNodes(QSSGRenderNode &node, const quint32 version, quint32 &dfsIdx, size_t &count)
+Q_STATIC_LOGGING_CATEGORY(lcLayerData, "qt.quick3d.render.layerdata")
+
+static void reindexChildNodes(QSSGRenderNode &node, const QSSGRenderNodeVersionType version, quint32 &dfsIdx, size_t &count)
 {
     Q_ASSERT(node.type != QSSGRenderNode::Type::Layer);
     if (node.type != QSSGRenderNode::Type::Layer) {
@@ -35,7 +40,7 @@ static void reindexChildNodes(QSSGRenderNode &node, const quint32 version, quint
     }
 }
 
-static void reindexLayerChildNodes(QSSGRenderLayer &layer, const quint32 version, quint32 &dfsIdx, size_t &count)
+static void reindexLayerChildNodes(QSSGRenderLayer &layer, const QSSGRenderNodeVersionType version, quint32 &dfsIdx, size_t &count)
 {
     Q_ASSERT(layer.type == QSSGRenderNode::Type::Layer);
     if (layer.type == QSSGRenderNode::Type::Layer) {
@@ -45,7 +50,7 @@ static void reindexLayerChildNodes(QSSGRenderLayer &layer, const quint32 version
     }
 }
 
-static void reindex(QSSGRenderRoot *rootNode, const quint32 version, quint32 &dfsIdx, size_t &count)
+static void reindex(QSSGRenderRoot *rootNode, const QSSGRenderNodeVersionType version, quint32 &dfsIdx, size_t &count)
 {
     if (rootNode) {
         Q_ASSERT(rootNode->type == QSSGRenderNode::Type::Root);
@@ -102,7 +107,7 @@ static void collectLayerChildNodes(QSSGRenderLayer *layer, QSSGGlobalRenderNodeD
 
 template <QSSGRenderDataHelpers::Strategy Strategy>
 static bool calcGlobalNodeDataIndexedImpl(QSSGRenderNode *node,
-                                          const quint32 version,
+                                          const QSSGRenderNodeVersionType version,
                                           QSSGGlobalRenderNodeData::GlobalTransformStore &globalTransforms,
                                           QSSGGlobalRenderNodeData::GlobalOpacityStore &globalOpacities)
 {
@@ -149,7 +154,7 @@ static bool calcGlobalNodeDataIndexedImpl(QSSGRenderNode *node,
     return retval;
 }
 
-QSSGRenderDataHelpers::GlobalStateResult QSSGRenderDataHelpers::updateGlobalNodeState(QSSGRenderNode *node, const quint32 version)
+QSSGRenderDataHelpers::GlobalStateResult QSSGRenderDataHelpers::updateGlobalNodeState(QSSGRenderNode *node, const VersionType version)
 {
     using LocalState = QSSGRenderNode::LocalState;
     using GlobalState = QSSGRenderNode::GlobalState;
@@ -185,7 +190,7 @@ QSSGRenderDataHelpers::GlobalStateResult QSSGRenderDataHelpers::updateGlobalNode
 }
 
 bool QSSGRenderDataHelpers::calcInstanceTransforms(QSSGRenderNode *node,
-                                                   const quint32 version,
+                                                   const VersionType version,
                                                    QSSGGlobalRenderNodeData::GlobalTransformStore &globalTransforms,
                                                    QSSGGlobalRenderNodeData::InstanceTransformStore &instanceTransforms)
 {
@@ -264,14 +269,16 @@ void QSSGGlobalRenderNodeData::reindex()
         quint32 dfsIdx = 0;
         m_nodeCount = 0;
 
-        // If the window changes the window root node changes as well,
-        // this check ensures we accidentally don't reindex with the
-        // same version, as that can cause problems.
-        // The start version should be set to the last layer's last version.
-        if (m_version == m_rootNode->startVersion())
-            m_version = m_rootNode->startVersion() + 1;
-        else
+        // Bump the version to invalidate all existing handles. This ensures nodes don't start
+        // accessing stale data.
+        ++m_version;
+
+        // Version 0 means "not yet indexed" (default-constructed handle), so skip it.
+        // NOTE: This can happen if the version wraps around.
+        if (Q_UNLIKELY(m_version == 0)) {
+            qCDebug(lcLayerData) << "Version wrap around detected, resetting to 1.";
             ++m_version;
+        }
 
         ::reindex(m_rootNode, m_version, dfsIdx, m_nodeCount);
 
@@ -589,6 +596,13 @@ void QSSGRenderModelData::updateModelData(QSSGModelsView &models, QSSGRenderer *
         }
     }
 
+#if QT_CONFIG(thread)
+    bool matrixesDone = false;
+    bool mvpsDone = false;
+    std::mutex mutex;
+    std::condition_variable cv;
+#endif
+
     // - Normal matrices
     const auto doNormalMatrices = [&]() {
         for (const QSSGRenderModel *model : std::as_const(models)) {
@@ -596,6 +610,11 @@ void QSSGRenderModelData::updateModelData(QSSGModelsView &models, QSSGRenderer *
             const QMatrix4x4 globalTransform = m_gnd->getGlobalTransform(*model);
             QSSGRenderNode::calculateNormalMatrix(globalTransform, normalMatrix);
         }
+#if QT_CONFIG(thread)
+        std::lock_guard<std::mutex> guard(mutex);
+        matrixesDone = true;
+        cv.notify_all();
+#endif
     };
 
     // - MVPs
@@ -607,6 +626,11 @@ void QSSGRenderModelData::updateModelData(QSSGModelsView &models, QSSGRenderer *
             for (const QSSGRenderCameraData &cameraData : renderCameraData)
                 QSSGRenderNode::calculateMVP(globalTransform, cameraData.viewProjection, mvp[mvpCount++]);
         }
+#if QT_CONFIG(thread)
+        std::lock_guard<std::mutex> guard(mutex);
+        mvpsDone = true;
+        cv.notify_all();
+#endif
     };
 
 #if QT_CONFIG(thread)
@@ -616,13 +640,9 @@ void QSSGRenderModelData::updateModelData(QSSGModelsView &models, QSSGRenderer *
         qWarning("Unable to start thread for %s!", #func); \
         func(); \
     }
-#define qssgTryWaitForDone() \
-    threadPool->waitForDone();
 #else
 #define qssgTryThreadedStart(func) \
     func();
-#define qssgTryWaitForDone() \
-    /* no-op */
 #endif // QT_CONFIG(thread)
 
     qssgTryThreadedStart(doNormalMatrices);
@@ -634,15 +654,18 @@ void QSSGRenderModelData::updateModelData(QSSGModelsView &models, QSSGRenderer *
     prepareMeshData(models, renderer);
 
     // Wait for the threads to finish
-    qssgTryWaitForDone();
+#if QT_CONFIG(thread)
+    std::unique_lock<std::mutex> guard(mutex);
+    cv.wait(guard, [&]() { return matrixesDone && mvpsDone; });
+#endif
 }
 
-bool QSSGRenderDataHelpers::updateGlobalNodeDataIndexed(QSSGRenderNode *node, const quint32 version, QSSGGlobalRenderNodeData::GlobalTransformStore &globalTransforms, QSSGGlobalRenderNodeData::GlobalOpacityStore &globalOpacities)
+bool QSSGRenderDataHelpers::updateGlobalNodeDataIndexed(QSSGRenderNode *node, const VersionType version, QSSGGlobalRenderNodeData::GlobalTransformStore &globalTransforms, QSSGGlobalRenderNodeData::GlobalOpacityStore &globalOpacities)
 {
     return calcGlobalNodeDataIndexedImpl<Strategy::Update>(node, version, globalTransforms, globalOpacities);
 }
 
-bool QSSGRenderDataHelpers::calcGlobalVariablesIndexed(QSSGRenderNode *node, const quint32 version, QSSGGlobalRenderNodeData::GlobalTransformStore &globalTransforms, QSSGGlobalRenderNodeData::GlobalOpacityStore &globalOpacities)
+bool QSSGRenderDataHelpers::calcGlobalVariablesIndexed(QSSGRenderNode *node, const VersionType version, QSSGGlobalRenderNodeData::GlobalTransformStore &globalTransforms, QSSGGlobalRenderNodeData::GlobalOpacityStore &globalOpacities)
 {
     return calcGlobalNodeDataIndexedImpl<Strategy::Initial>(node, version, globalTransforms, globalOpacities);
 }

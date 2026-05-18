@@ -22,6 +22,7 @@
 #include "qcanvascustombrush_p.h"
 #include "qcanvasoffscreencanvas.h"
 #include <functional>
+#include <optional>
 
 QT_BEGIN_NAMESPACE
 
@@ -32,9 +33,8 @@ class QCanvasCustomBrush;
 struct QCRHIPipelineStateKey;
 struct QCRHISamplerDesc;
 struct QCRHICall;
+struct QCRHIPath;
 struct QCRHICommonUniforms;
-struct QCRHICachedPath;
-struct QCRHICachedPathGroup;
 class QCanvasPath;
 
 struct QCRHITexture
@@ -60,6 +60,20 @@ struct QCRhiCanvas
 
 bool operator==(const QCRhiCanvas &a, const QCRhiCanvas &b) noexcept;
 bool operator!=(const QCRhiCanvas &a, const QCRhiCanvas &b) noexcept;
+
+struct QCRhiUncachedPathDrawArgs
+{
+    const QCPaths &paths;
+    int pathsCount;
+};
+
+struct QCRhiCachedPathDrawArgs
+{
+    QCanvasPath *canvasPath;
+    int pathGroup;
+    const QTransform &pathTransform;
+    std::optional<QCRhiUncachedPathDrawArgs> updateData;
+};
 
 class QCPainterRhiRenderer
 {
@@ -114,7 +128,9 @@ public:
 
     bool hasDrawCalls() const;
 
+    bool testFlag(RenderFlag flag) const;
     void setFlag(RenderFlags flag, bool enable);
+    RenderFlags flags() const;
 
     bool renderCreate();
 
@@ -128,14 +144,13 @@ public:
     void setViewport(float x, float y, float width, float height);
     void renderFill(const QCPaint &paint, const QCState &state,
                     const QRectF &bounds,
-                    const QCPaths &paths, int pathsCount,
-                    QCanvasPath *painterPath, int pathGroup,
-                    const QTransform &pathTransform);
+                    std::optional<QCRhiUncachedPathDrawArgs> uncachedPathInfo,
+                    std::optional<QCRhiCachedPathDrawArgs> cachedPathInfo);
     void renderStroke(const QCPaint &paint, const QCState &state,
                       float strokeWidth,
-                      const QCPaths &paths, int pathsCount,
-                      QCanvasPath *painterPath, int pathGroup,
-                      const QTransform &pathTransform);
+                      std::optional<QCRhiUncachedPathDrawArgs> uncachedPathInfo,
+                      std::optional<QCRhiCachedPathDrawArgs> cachedPathInfo);
+
 #ifndef QCPAINTER_DISABLE_TEXT_SUPPORT
     void renderTextFill(
         const QCPaint &paint,
@@ -159,7 +174,8 @@ public:
 #endif
     void renderDelete();
 
-    bool isPathCached(QCanvasPath *path, int pathGroup) const;
+    bool isPathCachedForFill(QCanvasPath *path, int pathGroup, const QCCachedPathFillProperties &fillProperties);
+    bool isPathCachedForStroke(QCanvasPath *path, int pathGroup, const QCCachedPathStrokeProperties &strokeProperties);
     void removePathGroup(int pathGroup);
 
     static void textureFormatInfo(QRhiTexture::Format format, QSize size,
@@ -209,6 +225,14 @@ private:
                       const QRhiCommandBuffer::DynamicOffset &dynamicOffset,
                       bool indexedDraw,
                       bool *needsViewport);
+
+    int transferFillGeom(QCRHICall *call,
+                         int vertexCount, const QCVertex *vertices, int indexCount,
+                         int pathCount, const QCPath *pathInfos);
+    void transferStrokeGeom(QCRHICall *call,
+                            int vertexCount, const QCVertex *vertices,
+                            int pathCount, const QCPath *pathInfos);
+    void transferPathsFromCachedPathGroup(QCRHICall *call, int pathCount, const QCRHIPath *paths);
 
 private:
     friend class QCanvasPainter;

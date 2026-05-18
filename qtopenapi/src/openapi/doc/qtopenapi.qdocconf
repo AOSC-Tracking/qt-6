@@ -33,4 +33,4 @@ depends += qtdoc qtcmake qtcore qtnetwork qthttpserver qtqml
 navigation.landingpage = "Qt OpenAPI"
 
 # Fail the documentation build if there are more warnings than the limit
-warninglimit = 10
+warninglimit = 0

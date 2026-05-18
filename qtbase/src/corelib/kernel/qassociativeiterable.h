@@ -1,5 +1,6 @@
 // Copyright (C) 2020 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #ifndef QASSOCIATIVEITERABLE_H
 #define QASSOCIATIVEITERABLE_H
@@ -132,6 +133,10 @@ public:
 
     QVariant value(const QVariant &key) const;
     void setValue(const QVariant &key, const QVariant &mapped);
+
+    // Random access iteration is broken on QAssociativeIterator.
+    // That's why this class is deprecated after all.
+    constexpr bool canRandomAccessIterate() const { return false; }
 };
 
 template<>

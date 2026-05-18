@@ -343,15 +343,12 @@ void QQmlJSTypePropagator::handleUnqualifiedAccess(const QString &name, bool isM
                 }
 
                 fixString += handler.isMultiline ? u") "_s : u") => "_s;
-
-                suggestion = QQmlJSFixSuggestion {
-                    name + u" is accessible in this scope because you are handling a signal"
-                           " at %1:%2. Use a function instead.\n"_s
-                        .arg(id.location.startLine)
-                        .arg(id.location.startColumn),
-                    fixLocation,
-                    fixString
-                };
+                suggestion =
+                        QQmlJSFixSuggestion{ u"\"%1\" is ambiguous. "
+                                             "Use a function instead: %2%3"_s.arg(
+                                                     name, fixString,
+                                                     handler.isMultiline ? "{ ... }"_L1 : "..."_L1),
+                                             fixLocation, fixString };
                 suggestion->setAutoApplicable();
             }
             break;
@@ -372,8 +369,9 @@ void QQmlJSTypePropagator::handleUnqualifiedAccess(const QString &name, bool isM
                     continue;
                 if (it->objectType() == qmlScope) {
                     suggestion = QQmlJSFixSuggestion {
-                        name + " is implicitly injected into this delegate."
-                               " Add a required property instead."_L1,
+                        "'%1' is implicitly injected into this delegate. "
+                        "Add a required property '%1' to the delegate instead."_L1
+                                .arg(name),
                         qmlScope->sourceLocation()
                     };
                 };
@@ -387,7 +385,8 @@ void QQmlJSTypePropagator::handleUnqualifiedAccess(const QString &name, bool isM
         for (QQmlJSScope::ConstPtr scope = qmlScope; !scope.isNull(); scope = scope->parentScope()) {
             if (scope->hasProperty(name)) {
                 QQmlJSScopesById::MostLikelyCallback<QString> id;
-                m_function->addressableScopes.possibleIds(scope, qmlScope, Default, id);
+                m_function->addressableScopes.possibleIds(scope, qmlScope,
+                                                          QQmlJSScopesByIdOption::Default, id);
 
                 QQmlJS::SourceLocation fixLocation = location;
                 fixLocation.length = 0;
@@ -691,7 +690,7 @@ void QQmlJSTypePropagator::generate_StoreNameCommon(int nameIndex)
         return;
     }
 
-    if (!type.isWritable()) {
+    if (!type.isWritable() && !type.isList()) {
         addError(u"Can't assign to read-only property %1"_s.arg(name));
 
         m_logger->log(u"Cannot assign to read-only property %1"_s.arg(name), qmlReadOnlyProperty,
@@ -891,6 +890,20 @@ bool QQmlJSTypePropagator::handleImportNamespaceLookup(const QString &propertyNa
     return false;
 }
 
+bool QQmlJSTypePropagator::checkTypeResolved(const QQmlJSScope::ConstPtr &type)
+{
+    if (type->isFullyResolved() || type->isScript())
+        return true;
+
+    if (!m_knownUnresolvedTypes || !m_knownUnresolvedTypes->hasSeen(type)) {
+        m_logger->log(QStringLiteral("Type %1 is used but it is not resolved")
+                              .arg(QQmlJSUtils::getScopeName(type, type->scopeType())),
+                      qmlUnresolvedType, currentSourceLocation());
+    }
+
+    return false;
+}
+
 void QQmlJSTypePropagator::handleLookupError(const QString &propertyName)
 {
     const QQmlJSRegisterContent accumulatorIn = m_state.accumulatorIn();
@@ -946,8 +959,10 @@ void QQmlJSTypePropagator::handleLookupError(const QString &propertyName)
         }
     }
 
-    m_logger->log(u"Member \"%1\" not found on type \"%2\""_s.arg(propertyName).arg(typeName),
-                  qmlMissingProperty, currentSourceLocation(), true, true, fixSuggestion);
+    if (checkTypeResolved(baseType)) {
+        m_logger->log(u"Member \"%1\" not found on type \"%2\""_s.arg(propertyName).arg(typeName),
+                      qmlMissingProperty, currentSourceLocation(), true, true, fixSuggestion);
+    }
 }
 
 void QQmlJSTypePropagator::propagatePropertyLookup(const QString &propertyName, int lookupIndex)
@@ -1395,9 +1410,11 @@ void QQmlJSTypePropagator::generate_CallProperty(int nameIndex, int base, int ar
             fixSuggestion = suggestion;
         }
 
-        m_logger->log(u"Member \"%1\" not found on type \"%2\""_s.arg(
-                              propertyName, callBase.containedTypeName()),
-                      qmlMissingProperty, currentSourceLocation(), true, true, fixSuggestion);
+        if (baseType->isFullyResolved() || baseType->isScript()) {
+            m_logger->log(u"Member \"%1\" not found on type \"%2\""_s.arg(
+                                  propertyName, callBase.containedTypeName()),
+                          qmlMissingProperty, currentSourceLocation(), true, true, fixSuggestion);
+        }
         return;
     }
 

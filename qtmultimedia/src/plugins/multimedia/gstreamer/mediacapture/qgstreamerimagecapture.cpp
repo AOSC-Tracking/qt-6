@@ -279,18 +279,12 @@ void QGstreamerImageCapture::convertBufferToImage(const QMutexLocker<QRecursiveM
             qDebug() << "QGstreamerImageCapture::convertBufferToImage: no session";
             return;
         }
-        auto memoryFormat = caps.memoryFormat();
 
-        GstVideoInfo previewInfo;
-        QVideoFrameFormat fmt;
-        auto optionalFormatAndVideoInfo = caps.formatAndVideoInfo();
-        if (optionalFormatAndVideoInfo)
-            std::tie(fmt, previewInfo) = std::move(*optionalFormatAndVideoInfo);
-
-        auto *sink = m_session->gstreamerVideoSink();
-        auto gstBuffer = std::make_unique<QGstVideoBuffer>(std::move(buffer), previewInfo, sink,
-                                                           fmt, memoryFormat);
-        QVideoFrame frame = QVideoFramePrivate::createFrame(std::move(gstBuffer), fmt);
+        QGstVideoInfo previewInfo;
+        auto optionalVideoInfo = caps.videoInfo();
+        if (optionalVideoInfo)
+            previewInfo = *optionalVideoInfo;
+        QVideoFrame frame = qCreateFrameFromGstBuffer(buffer, previewInfo);
 
         metadata.insert(QMediaMetaData::Resolution, frame.size());
 
@@ -317,17 +311,15 @@ void QGstreamerImageCapture::convertBufferToImage(const QMutexLocker<QRecursiveM
                 return;
             }
 
-            auto memoryFormat = caps.memoryFormat();
-
-            GstVideoInfo previewInfo;
+            QGstVideoInfo previewInfo;
             QVideoFrameFormat fmt;
-            auto optionalFormatAndVideoInfo = caps.formatAndVideoInfo();
-            if (optionalFormatAndVideoInfo)
-                std::tie(fmt, previewInfo) = std::move(*optionalFormatAndVideoInfo);
+            auto optionalVideoInfo = caps.videoInfo();
+            if (optionalVideoInfo) {
+                previewInfo = *optionalVideoInfo;
+                fmt = qVideoFrameFormatFromGstVideoInfo(previewInfo);
+            }
 
-            auto *sink = m_session->gstreamerVideoSink();
-            auto gstBuffer = std::make_unique<QGstVideoBuffer>(std::move(buffer), previewInfo, sink,
-                                                               fmt, memoryFormat);
+            auto gstBuffer = std::make_unique<QGstVideoBuffer>(std::move(buffer), previewInfo, fmt);
 
             QVideoFrame frame = QVideoFramePrivate::createFrame(std::move(gstBuffer), fmt);
             QImage img = frame.toImage();

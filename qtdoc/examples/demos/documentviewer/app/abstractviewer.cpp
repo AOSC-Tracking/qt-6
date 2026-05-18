@@ -38,6 +38,7 @@ void AbstractViewer::init(QFile *file, QWidget *widget, QMainWindow *mainWindow)
     m_file.reset(file);
     m_widget = widget;
     m_uiAssets.mainWindow = mainWindow;
+    mainWindow->installEventFilter(this);
 }
 
 AbstractViewer::~AbstractViewer()
@@ -52,13 +53,21 @@ void AbstractViewer::setTranslationBaseName(const QString &baseName)
     m_translator->install();
 }
 
-void AbstractViewer::updateTranslation(QLocale::Language lang)
+bool AbstractViewer::eventFilter(QObject *, QEvent *event)
 {
-    if (m_translator) {
-        m_translator->setLanguage(lang);
-        m_translator->install();
+    if (event->type() != QEvent::LanguageChange)
+        return false;
+
+    const QLocale locale;
+    if (locale != m_currentLocale) {
+        m_currentLocale = locale;
+        if (m_translator) {
+            m_translator->setLanguage(locale.language());
+            m_translator->install();
+        }
         retranslate();
     }
+    return false;
 }
 
 bool AbstractViewer::isEmpty() const
@@ -104,6 +113,11 @@ QList<QAction *> AbstractViewer::actions() const
 QWidget *AbstractViewer::widget() const
 {
     return m_widget;
+}
+
+QList<QToolBar *> AbstractViewer::toolBars() const
+{
+    return m_toolBars;
 }
 
 QList<QMenu *> AbstractViewer::menus() const
@@ -158,17 +172,18 @@ void AbstractViewer::statusMessage(const QString &message, const QString &type, 
     emit showMessage(msg, timeout);
 }
 
-QToolBar *AbstractViewer::addToolBar(const QString &title)
+QToolBar *AbstractViewer::addToolBar()
 {
-    auto *bar = mainWindow()->addToolBar(title);
+    auto *bar = new QToolBar();
+    mainWindow()->addToolBar(bar);
     bar->setObjectName(viewerName() + "ToolBar"_L1);
     m_toolBars.append(bar);
     return bar;
 }
 
-QMenu *AbstractViewer::addMenu(const QString &title)
+QMenu *AbstractViewer::addMenu()
 {
-    QMenu *menu = new QMenu(title, menuBar());
+    QMenu *menu = new QMenu(menuBar());
     menu->setObjectName(viewerName() + "Menu"_L1);
     menuBar()->insertMenu(m_uiAssets.help, menu);
     m_menus.append(menu);
@@ -179,6 +194,9 @@ void AbstractViewer::cleanup()
 {
     // delete all objects created by the viewer which need to be displayed
     // and therefore parented on MainWindow
+    if (m_uiAssets.mainWindow)
+        m_uiAssets.mainWindow->removeEventFilter(this);
+
     if (m_file)
         m_file.reset();
 

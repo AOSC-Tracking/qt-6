@@ -33,8 +33,12 @@ namespace {{this}} {
 class {{packageNameUpperCase}}_EXPORT {{classname}} : public {{cppCommonNamespace}}::{{prefix}}{{^isEnum}}Object{{/isEnum}}{{#isEnum}}Enum{{/isEnum}} {
     Q_GADGET{{#enableQmlCode}}
     QML_VALUE_TYPE(data{{classname}}){{/enableQmlCode}}
-{{^isEnum}}{{#vars}}
-    Q_PROPERTY({{{dataType}}} {{getter}}Value READ {{getter}}Value WRITE {{setter}}){{/vars}}{{/isEnum}}{{#isEnum}}{{/isEnum}}
+
+{{^isEnum}}
+{{#vars}}
+    Q_PROPERTY({{{dataType}}} {{getter}}Value READ {{getter}}Value WRITE {{setter}})
+{{/vars}}
+{{/isEnum}}
 public:
     {{classname}}();
     {{classname}}(const QString &json);

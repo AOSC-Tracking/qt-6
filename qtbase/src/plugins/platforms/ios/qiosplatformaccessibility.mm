@@ -54,8 +54,12 @@ void QIOSPlatformAccessibility::notifyAccessibilityUpdate(QAccessibleEvent *even
     switch (event->type()) {
     case QAccessible::Announcement: {
         auto *announcementEvent = static_cast<QAccessibleAnnouncementEvent *>(event);
-        UIAccessibilityPostNotification(UIAccessibilityAnnouncementNotification,
-                                        announcementEvent->message().toNSString());
+        const bool queueAnnouncement =
+                (announcementEvent->politeness() == QAccessible::AnnouncementPoliteness::Polite);
+        NSAttributedString *message = [[NSAttributedString alloc]
+                initWithString:announcementEvent->message().toNSString()
+                    attributes:@{UIAccessibilitySpeechAttributeQueueAnnouncement: @(queueAnnouncement)}];
+        UIAccessibilityPostNotification(UIAccessibilityAnnouncementNotification, [message autorelease]);
         break;
     }
     case QAccessible::Focus: {
@@ -72,6 +76,13 @@ void QIOSPlatformAccessibility::notifyAccessibilityUpdate(QAccessibleEvent *even
     case QAccessible::NameChanged: {
         auto *element = [QMacAccessibilityElement elementWithId:event->uniqueId()];
         if (element == m_focusElement)
+            UIAccessibilityPostNotification(UIAccessibilityLayoutChangedNotification, element);
+        break;
+    }
+    case QAccessible::StateChanged:
+    case QAccessible::ValueChanged: {
+        auto *element = [QMacAccessibilityElement elementWithId:event->uniqueId()];
+        if (element)
             UIAccessibilityPostNotification(UIAccessibilityLayoutChangedNotification, element);
         break;
     }

@@ -8,6 +8,7 @@
 #include "qpipewire_propertydict_p.h"
 #include "qpipewire_support_p.h"
 
+#include <QtCore/qapplicationstatic.h>
 #include <QtCore/qcoreapplication.h>
 #include <QtCore/qdebug.h>
 #include <QtCore/qsemaphore.h>
@@ -33,9 +34,8 @@ QT_BEGIN_NAMESPACE
 
 namespace QtPipeWire {
 
-Q_GLOBAL_STATIC(QAudioContextManager, s_audioContextInstance);
-
-Q_STATIC_LOGGING_CATEGORY(lcPipewireRegistry, "qt.multimedia.pipewire.registry");
+Q_APPLICATION_STATIC(QAudioContextManager, s_audioContextInstance)
+Q_STATIC_LOGGING_CATEGORY(lcPipewireRegistry, "qt.multimedia.pipewire.registry")
 
 QAudioContextManager::QAudioContextManager():
     m_libraryInstance{
@@ -63,6 +63,8 @@ QAudioContextManager::QAudioContextManager():
 QAudioContextManager::~QAudioContextManager()
 {
     if (isConnected()) {
+        stopListenDefaultMetadataObject();
+        stopDeviceMonitor();
         stopEventLoop();
         stopActiveStreams();
     }
@@ -307,6 +309,17 @@ void QAudioContextManager::startListenDefaultMetadataObject(ObjectId id, uint32_
         qFatal() << "Failed to add listener" << make_error_code(-status).message();
 }
 
+void QAudioContextManager::stopListenDefaultMetadataObject()
+{
+    if (!m_defaultMetadataObject)
+        return;
+
+    withEventLoopLock([&] {
+        spa_hook_remove(&m_defaultMetadataObjectListener);
+        m_defaultMetadataObject.reset();
+    });
+}
+
 namespace {
 
 // parse json object with one "name" member
@@ -434,6 +447,17 @@ void QAudioContextManager::startDeviceMonitor()
             pw_registry_add_listener(m_registry.get(), &m_registryListener, &registry_events, this);
     if (status < 0)
         qFatal() << "Failed to add listener" << make_error_code(-status).message();
+}
+
+void QAudioContextManager::stopDeviceMonitor()
+{
+    if (!m_registry)
+        return;
+
+    withEventLoopLock([&] {
+        spa_hook_remove(&m_registryListener);
+        m_registry.reset();
+    });
 }
 
 } // namespace QtPipeWire

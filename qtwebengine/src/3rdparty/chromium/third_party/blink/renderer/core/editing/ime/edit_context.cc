@@ -539,6 +539,8 @@ bool EditContext::InsertText(const WebString& text) {
 }
 
 void EditContext::DeleteCurrentSelection() {
+  CHECK_LE(selection_start_, text_.length());
+  CHECK_LE(selection_end_, text_.length());
   if (selection_start_ == selection_end_)
     return;
 
@@ -557,7 +559,17 @@ void EditContext::DeleteCurrentSelection() {
 template <typename StateMachine>
 int FindNextBoundaryOffset(const String& str, int current);
 
+void EditContext::EnsureSelectionWithinTextBounds() {
+  if (!RuntimeEnabledFeatures::
+          UseBoundedSelectionOffsetsInEditContextDeleteOperationsEnabled()) {
+    return;
+  }
+  SetSelection(std::min(selection_start_, text_.length()),
+               std::min(selection_end_, text_.length()));
+}
+
 void EditContext::DeleteBackward() {
+  EnsureSelectionWithinTextBounds();
   // If the current selection is collapsed, delete one grapheme, otherwise,
   // delete whole selection.
   if (selection_start_ == selection_end_) {
@@ -570,6 +582,7 @@ void EditContext::DeleteBackward() {
 }
 
 void EditContext::DeleteForward() {
+  EnsureSelectionWithinTextBounds();
   if (selection_start_ == selection_end_) {
     SetSelection(selection_start_,
                  FindNextBoundaryOffset<ForwardGraphemeBoundaryStateMachine>(
@@ -580,6 +593,7 @@ void EditContext::DeleteForward() {
 }
 
 void EditContext::DeleteWordBackward() {
+  EnsureSelectionWithinTextBounds();
   if (selection_start_ == selection_end_) {
     String text16bit(text_);
     text16bit.Ensure16Bit();
@@ -592,6 +606,7 @@ void EditContext::DeleteWordBackward() {
 }
 
 void EditContext::DeleteWordForward() {
+  EnsureSelectionWithinTextBounds();
   if (selection_start_ == selection_end_) {
     String text16bit(text_);
     text16bit.Ensure16Bit();

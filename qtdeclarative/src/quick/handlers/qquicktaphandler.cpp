@@ -141,7 +141,9 @@ void QQuickTapHandler::handleEventPoint(QPointerEvent *event, QEventPoint &point
     QQuickSinglePointHandler::handleEventPoint(event, point);
 
     // If TapHandler only needs a passive grab, it should not block other items and handlers from reacting.
-    // If the point is accepted, QQuickItemPrivate::localizedTouchEvent() would skip it.
+    // For touch, if the point is accepted, QQuickItemPrivate::localizedTouchEvent() would skip it.
+    // For mouse, keeping accepted=true causes deliverPressOrReleaseEvent() to set handlersOnly=true,
+    // which prevents sibling items with MouseArea from also receiving the press (QTBUG-145896).
     if (isTouch && m_gesturePolicy == DragThreshold)
         point.setAccepted(false);
 }

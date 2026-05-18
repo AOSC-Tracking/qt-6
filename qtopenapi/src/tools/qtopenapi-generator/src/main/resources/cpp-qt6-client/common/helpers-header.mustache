@@ -199,18 +199,19 @@ bool fromStringValue(const QMap<QString, QString> &inStr, QMap<QString, T> &val)
 
 template <typename T>
 bool fromJsonValue(QList<T> &val, const QJsonValue &jval) {
-    bool ok = true;
     if (jval.isArray()) {
         const QJsonArray arr = jval.toArray();
         for (const auto &jitem : arr) {
             T item;
-            ok &= fromJsonValue(item, jitem);
+            if (!fromJsonValue(item, jitem)) {
+                val.clear();
+                return false;
+            }
             val.push_back(std::move(item));
         }
-    } else {
-        ok = false;
+        return true;
     }
-    return ok;
+    return false;
 }
 
 template <typename T>

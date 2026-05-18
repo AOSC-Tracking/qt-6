@@ -64,13 +64,13 @@
                             \li \l {Qt for Windows - Deployment}{Deployment}
                             \li \l {Qt for Windows - Specific Issues}{Specific issues}
                         \endlist
-                    \li \l {Qt for Linux/X11}
+                    \li \l {Qt for Linux}
                         \list
-                            \li \l {Qt for X11 Requirements}{Requirements}
+                            \li \l {Qt for Linux - Requirements}{Requirements}
                             \li \l {Qt for Linux - Alternative ways of installing Qt}{Alternative ways of installing Qt}
-                            \li \l {Qt for Linux/X11 - Building from Source}{Building from source}
-                            \li \l {Qt for Linux/X11 - Deployment}{Deployment}
-                            \li \l {Qt for Linux/X11 - Specific Issues}{Specific issues}
+                            \li \l {Qt for Linux - Building from Source}{Building from source}
+                            \li \l {Qt for Linux - Deployment}{Deployment}
+                            \li \l {Qt for Linux - Specific Issues}{Specific issues}
                             \li \l {Enterprise Qt Debian Packages}
                             \li \l {Wayland and Qt}
                             \li \l {Qt Packaging Recommendations}
@@ -85,6 +85,7 @@
                     \li \l {Qt for Android}
                         \list
                             \li \l {Getting Started with Qt for Android}{Getting started}
+                            \li \l {Qt for Android Prerequisites}{Configure development environment}
                             \li \l {How Qt for Android Works}
                             \li \l {Qt for Android Supported Versions Selection Guidelines}{Supported versions selection guidelines}
                             \li \l {Qt for Android - Building from Source}{Building from source}
@@ -237,6 +238,7 @@
                     \li \l {Changes to Qt Modules in Qt 6}
                     \li \l {Changes to Qt Extras Modules}
                     \li \l {Porting C++ Applications to Qt 6 using Clazy checks}
+                    \li \l {Porting Qt 3D to Qt Quick 3D: A Migration Guide}{Migrating from Qt 3D to Qt Quick 3D}
                 \endlist
             \li \l {Qt Languages}
             \li \l {Known Issues}

@@ -426,7 +426,7 @@ void QHeaderView::setOffset(int newOffset)
     if (d->headerOffset == newOffset)
         return;
     // don't overflow; this function is checked with both INT_MIN and INT_MAX...
-    const int ndelta = q26::saturate_cast<int>(d->headerOffset - qint64{newOffset});
+    const int ndelta = q26::saturating_cast<int>(d->headerOffset - qint64{newOffset});
     d->headerOffset = newOffset;
     if (d->orientation == Qt::Horizontal) {
         if (isRightToLeft()) {
@@ -2711,8 +2711,7 @@ void QHeaderView::mouseMoveEvent(QMouseEvent *e)
         }
         case QHeaderViewPrivate::MoveSection: {
             if (d->shouldAutoScroll(e->position().toPoint())) {
-                d->draggedPosition = e->pos();
-                d->draggedPositionOffset = d->offset();
+                d->draggedPosition = e->pos() + d->offset();
                 d->startAutoScroll();
             }
             if (qAbs(pos - d->firstPos) >= QApplication::startDragDistance()

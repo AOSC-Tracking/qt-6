@@ -212,9 +212,7 @@ void QLowEnergyControllerPrivateBluez::init()
                         || (!remoteKey && role == QLowEnergyController::PeripheralRole)) {
                     return;
                 }
-                qCDebug(QT_BT_BLUEZ) << "received new signature resolving key"
-                                     << QByteArray(reinterpret_cast<const char *>(csrk.data),
-                                                   sizeof csrk).toHex();
+                qCDebug(QT_BT_BLUEZ) << "received new signature resolving key";
                 signingData.insert(remoteDevice.toUInt64(), SigningData(csrk));
         }
     );
@@ -451,7 +449,7 @@ void QLowEnergyControllerPrivateBluez::connectToDevice()
     // BlueZ 5.37+ (maybe even earlier versions) can have pending BTLE connections
     // Only one active L2CP socket to CID 0x4 possible at a time
 
-    QList<quint16> activeHandles = hciManager->activeLowEnergyConnections();
+    const QList<quint16> activeHandles = hciManager->activeLowEnergyConnections();
     if (!activeHandles.isEmpty()) {
         qCWarning(QT_BT_BLUEZ) << "Cannot connect due to pending active LE connections";
 
@@ -3229,7 +3227,6 @@ void QLowEnergyControllerPrivateBluez::loadSigningDataIfNecessary(SigningKeyType
                                << keyString.size();
         return;
     }
-    qCDebug(QT_BT_BLUEZ) << "CSRK of peer device is" << keyString;
     const quint32 counter = settings.value(QLatin1String("Counter"), 0).toUInt();
     using namespace std;
     BluezUint128 csrk;

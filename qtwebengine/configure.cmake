@@ -32,6 +32,7 @@ qt_webengine_set_version(libavcodec 60.31.102)
 qt_webengine_set_version(libavformat 60.16.100)
 qt_webengine_set_version(openh264 2.4.1)
 qt_webengine_set_version(windows_sdk 26100) # we only care about minor number "10.0.26100.0"
+qt_webengine_set_version(libopenjp2 2.5.0)
 
 
 #### find_package checks
@@ -44,6 +45,8 @@ if(QT_CONFIGURE_RUNNING)
     function(qt_webengine_configure_check_for_ulimit)
     endfunction()
     function(qt_webengine_get_windows_sdk_version)
+    endfunction()
+    function(qt_webengine_check_for_metal_toolchain)
     endfunction()
 else()
     find_package(Ninja ${QT_CONFIGURE_CHECK_ninja_version})
@@ -62,8 +65,8 @@ else()
         OUT_VAR_DEPS_FOUND sbom_deps_found
         OUT_VAR_REASON_FAILURE_MESSAGE sbom_missing_deps_message
     )
-    find_package(Rust)
-    find_package(Bindgen)
+    find_package(QWERust)
+    find_package(QWEBindgen)
     find_package(QWELibClang)
 endif()
 
@@ -103,7 +106,7 @@ if(PkgConfig_FOUND)
     pkg_check_modules(OPUS opus>=${QT_CONFIGURE_CHECK_opus_version})
     pkg_check_modules(VPX vpx>=${QT_CONFIGURE_CHECK_vpx_version} IMPORTED_TARGET)
     pkg_check_modules(LIBPCI libpci)
-    pkg_check_modules(LIBOPENJP2 libopenjp2)
+    pkg_check_modules(LIBOPENJP2 libopenjp2>=${QT_CONFIGURE_CHECK_libopenjp2_version})
     pkg_check_modules(XKBCOMMON xkbcommon)
     pkg_check_modules(XKBFILE xkbfile)
     pkg_check_modules(XCBDRI3 xcb-dri3)
@@ -529,6 +532,18 @@ qt_webengine_configure_check("windows-sdk"
 )
 unset(sdk_minor)
 
+if(APPLE)
+    qt_webengine_check_for_metal_toolchain()
+endif()
+
+qt_webengine_configure_check("metal-toolchain"
+    MODULES QtWebEngine
+    CONDITION NOT APPLE OR ${TEST_metal_toolchain}
+    MESSAGE "Build requires Metal Toolchain to be installed via 'xcodebuild -downloadComponent MetalToolchain'"
+    DOCUMENTATION "Metal Toolchain needs to be installed"
+    TAGS APPLE_PLATFORM
+)
+
 ### Support Checks (optional)
 
 # Only check for the 'xcb' feature if the Gui targets exists, aka Qt was not configured with
@@ -638,6 +653,11 @@ qt_feature("webengine-developer-build" PRIVATE
     LABEL "Developer build"
     PURPOSE "Enables the developer build configuration."
     AUTODETECT QT_FEATURE_private_tests
+)
+qt_feature("webengine-pass-extra-flags" PRIVATE
+    LABEL "Pass cmake flags"
+    PURPOSE "Pass CMAKE_C_FLAGS and CMAKE_CXX_FLAGS to GN when building Chromium"
+    AUTODETECT NO
 )
 qt_feature("webengine-system-re2" PRIVATE
     LABEL "re2"
@@ -767,7 +787,7 @@ qt_feature("webengine-system-openh264" PRIVATE
 qt_feature("webengine-rust-build" PRIVATE
     LABEL "Build with rust"
     AUTODETECT OFF
-    CONDITION Rust_FOUND AND Bindgen_FOUND AND QWELibClang_FOUND
+    CONDITION QWERust_FOUND AND QWEBindgen_FOUND AND QWELibClang_FOUND
 )
 
 qt_feature("webengine-ozone-x11" PRIVATE
@@ -780,7 +800,7 @@ qt_feature("webengine-ozone-x11" PRIVATE
 
 qt_feature("webengine-precompiled-headers" PRIVATE
     LABEL "Use precompiled headers for 3rdparty"
-    CONDITION BUILD_WITH_PCH
+    CONDITION BUILD_WITH_PCH AND NOT LINUX
 )
 
 #FIXME: fix version numbers when qt_feature_with_configure_check megred as

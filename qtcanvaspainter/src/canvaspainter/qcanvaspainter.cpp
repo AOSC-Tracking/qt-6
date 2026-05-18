@@ -1062,8 +1062,13 @@ QTransform QCanvasPainter::getTransform() const
 }
 
 /*!
+   \internal
     Sets the current brush transform to \a transform. This transform is
     applied to both stroke and fill brushes.
+
+    \note Setting the brush transform will change the internal state.
+    Make sure to set it back to the identity transform before doing other
+    paint operations.
 */
 
 void QCanvasPainter::setBrushTransform(const QTransform &transform)
@@ -1710,14 +1715,17 @@ void QCanvasPainter::stroke()
 /*!
     \overload
 
-    Fills the \a path with current fill style and belonging
-    into \a pathGroup. Painting through QCanvasPath is optimal when
-    the path contains more commands is mostly static.
-    By default, \a pathGroup is \c 0, so using the
-    first group. When \a pathGroup is \c -1, the path will not be cached
-    on GPU side. More information about using path cache groups in
-    \l{QCanvasPath} documentation.
+    Fills the \a path with current fill style and belonging into \a
+    pathGroup. Painting through QCanvasPath is optimal when the path
+    contains more commands is mostly static.
+
+    When \a pathGroup is \c -1, the path will not be cached on GPU side.
+    This is the default. To request the caching of path data, pass a
+    value equal or greater to \c 0. More information about using path
+    cache groups in \l{QCanvasPath} documentation.
+
     Calling beginPath() before this method is not required.
+
     \table
     \row
     \li \inlineimage qcpainter-fill2.webp
@@ -1736,7 +1744,7 @@ void QCanvasPainter::stroke()
     \endcode
     \endtable
 
-    \sa setFillStyle()
+    \sa setFillStyle(), removePathGroup()
 */
 
 void QCanvasPainter::fill(const QCanvasPath &path, int pathGroup)
@@ -1748,14 +1756,17 @@ void QCanvasPainter::fill(const QCanvasPath &path, int pathGroup)
 /*!
     \overload
 
-    Strokes the \a path with current stroke style and belonging
-    into \a pathGroup. Painting through QCanvasPath is optimal when
-    the path contains more commands is mostly static.
-    By default, \a pathGroup is \c 0, so using the
-    first group. When \a pathGroup is \c -1, the path will not be cached
-    on GPU side. More information about using path cache groups in
-    \l{QCanvasPath} documentation.
+    Strokes the \a path with current stroke style and belonging into \a
+    pathGroup. Painting through QCanvasPath is optimal when the path
+    contains more commands is mostly static.
+
+    When \a pathGroup is \c -1, the path's rendering-related data will not be
+    cached. This is the default. To request the caching of path data, pass a
+    value equal or greater to \c 0. More information about using path cache
+    groups can be found in the \l{QCanvasPath} documentation.
+
     Calling beginPath() before this method is not required.
+
     \table
     \row
     \li \inlineimage qcpainter-stroke2.webp
@@ -1774,7 +1785,7 @@ void QCanvasPainter::fill(const QCanvasPath &path, int pathGroup)
     \endcode
     \endtable
 
-    \sa setStrokeStyle()
+    \sa setStrokeStyle(), removePathGroup()
 */
 
 void QCanvasPainter::stroke(const QCanvasPath &path, int pathGroup)
@@ -1922,18 +1933,7 @@ void QCanvasPainter::strokeRect(float x, float y, float width, float height)
 void QCanvasPainter::drawBoxShadow(const QCanvasBoxShadow &shadow)
 {
     Q_D(QCanvasPainter);
-    d->m_e->save();
-    d->m_e->beginPath();
-    const auto r = shadow.boundingRect();
-    d->m_e->addRect(r.x(), r.y(), r.width(), r.height());
-    d->m_e->setFillPaint(shadow.createPaint(this));
-    d->m_e->fill();
-    static bool shadowRectDebug = qEnvironmentVariableIsSet("QCPAINTER_DEBUG_SHADOW_RECT");
-    if (shadowRectDebug) {
-        d->m_e->setStrokeColor(QColorConstants::Red);
-        strokeRect(r);
-    }
-    d->m_e->restore();
+    d->drawBoxShadow(this, shadow);
 }
 
 // *** Images ***
@@ -2038,14 +2038,8 @@ void QCanvasPainter::drawImage(const QCanvasImage &image, const QRectF &sourceRe
     float startY = dy - sy * (dh/sh);
     float endX = dw * image.width() / sw;
     float endY = dh * image.height() / sh;
-    QCPaint ip = d->m_e->createImagePattern(startX, startY, endX, endY, image.id(), 0.0f, image.tintColor());
-    d->m_e->save();
-    d->m_e->setAntialias(0);
-    d->m_e->beginPath();
-    d->m_e->addRect(dx, dy, dw, dh);
-    d->m_e->setFillPaint(ip);
-    d->m_e->fill();
-    d->m_e->restore();
+    d->m_e->drawImageIdAt(image.id(), startX, startY, endX, endY,
+                          dx, dy, dw, dh, image.tintColor());
     d->markTextureIdUsed(image.id());
 }
 
@@ -2896,6 +2890,21 @@ QRectF QCanvasPainterPrivate::textBoundingBox(const QString &text, float x, floa
 QRectF QCanvasPainterPrivate::textBoundingBox(const QString &text, const QRectF &rect)
 {
     return m_e->textBoundingBox(text, rect);
+}
+
+void QCanvasPainterPrivate::drawBoxShadow(QCanvasPainter *painter, const QCanvasBoxShadow &shadow)
+{
+    const auto paint = shadow.createPaint(painter);
+    const auto r = shadow.boundingRect();
+    m_e->fillPlainRect(paint, r.x(), r.y(), r.width(), r.height());
+    static bool shadowRectDebug = qEnvironmentVariableIsSet("QCPAINTER_DEBUG_SHADOW_RECT");
+    if (Q_UNLIKELY(shadowRectDebug)) {
+        m_e->save();
+        m_e->setStrokeColor(QColorConstants::Red);
+        m_e->setLineWidth(1.0f);
+        painter->strokeRect(r);
+        m_e->restore();
+    }
 }
 
 /*!

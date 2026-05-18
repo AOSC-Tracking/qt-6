@@ -1,6 +1,7 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // Copyright (C) 2016 Intel Corporation.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "qeventdispatcher_win_p.h"
 
@@ -349,10 +350,10 @@ void QEventDispatcherWin32Private::registerTimer(WinTimerInfo *t)
 
     bool ok = false;
     ULONG tolerance = calculateNextTimeout(t, qt_msectime());
-    uint interval = q26::saturate_cast<uint>(t->interval);
+    uint interval = q26::saturating_cast<uint>(t->interval);
     if (interval != t->interval) {
         // Now we'll need to post the timer event at each second timeout.
-        interval = q26::saturate_cast<uint>(t->interval / 2 + 1);
+        interval = q26::saturating_cast<uint>(t->interval / 2 + 1);
         t->usesExtendedInterval = true;
         t->isSecondTimeout = false;
     }

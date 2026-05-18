@@ -1,5 +1,6 @@
 // Copyright (C) 2022 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include <private/qpermissions_p.h>
 #include <private/qstdweb_p.h>
@@ -135,8 +136,19 @@ namespace
             return cb(Qt::PermissionStatus::Denied);
 
         qstdweb::PromiseCallbacks queryCallbacks;
-        queryCallbacks.thenFunc = [device, cb](val)
+        queryCallbacks.thenFunc = [device, cb](val stream)
         {
+            // turn stream/light off
+            if (!stream.isNull() && !stream.isUndefined() && !stream["getTracks"].isUndefined()) {
+                emscripten::val tracks = stream.call<emscripten::val>("getTracks");
+                if (!tracks.isUndefined() && tracks["length"].as<int>() > 0) {
+                    for (int i = 0; i < tracks["length"].as<int>(); i++) {
+                        tracks[i].call<void>("stop");
+                    }
+                }
+            }
+            stream = emscripten::val::null(); // this causes the garbage collection to turn off media light
+
             updatePermission(device, wapiGranted, cb);
         };
         queryCallbacks.catchFunc = [device, cb](val error)
@@ -149,8 +161,8 @@ namespace
         val constraint = val::object();
         if (device == wapiCamera)
             constraint.set("video", true);
-        else
-            constraint.set("audio", true);
+
+        constraint.set("audio", true);
 
         qstdweb::Promise::make(mediaDevices, QStringLiteral("getUserMedia"), queryCallbacks, constraint);
     }

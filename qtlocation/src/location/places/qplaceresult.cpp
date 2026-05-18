@@ -1,5 +1,6 @@
 // Copyright (C) 2022 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "qplaceresult.h"
 #include "qplaceresult_p.h"
@@ -12,7 +13,7 @@ bool QPlaceResultPrivate::compare(const QPlaceSearchResultPrivate *other) const
     const QPlaceResultPrivate *od = static_cast<const QPlaceResultPrivate *>(other);
     return QPlaceSearchResultPrivate::compare(other)
            && ((qIsNaN(distance) && qIsNaN(od->distance))
-                || qFuzzyCompare(distance, od->distance))
+                || QtPrivate::fuzzyCompare(distance, od->distance))
            && place == od->place
            && sponsored == od->sponsored;
 }

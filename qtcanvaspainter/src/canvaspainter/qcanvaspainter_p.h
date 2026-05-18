@@ -82,7 +82,6 @@ public:
     QCanvasImage getQCanvasImage(const QImage &image, QCanvasPainter::ImageFlags flags, qint64 imageKey = 0);
     QCanvasImage getQCanvasImage(QRhiTexture *texture, QCanvasPainter::ImageFlags flags);
     QCanvasImage getQCanvasImage(const QCanvasOffscreenCanvas &canvas, QCanvasPainter::ImageFlags flags);
-    void drawImageId(int imageId, float x, float y, float width, float height, const QColor &tintColor);
     void handleCleanupTextures();
     void clearTextureCache();
     void markTextureIdUsed(int imageId);
@@ -92,6 +91,7 @@ public:
     void fillText(const QString &text, const QRectF &rect);
     QRectF textBoundingBox(const QString &text, float x, float y, float maxWidth = -1);
     QRectF textBoundingBox(const QString &text, const QRectF &rect);
+    void drawBoxShadow(QCanvasPainter *painter, const QCanvasBoxShadow &shadow);
 
     QCanvasImageTracker m_imageTracker;
     QHash<quint64, QCanvasImage> m_nativeTextureCache; // QRhiTexture::globalResourceId -> QCanvasImage

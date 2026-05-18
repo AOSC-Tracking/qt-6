@@ -31,21 +31,21 @@ public:
     Q_CANVASPAINTER_EXPORT QCanvasPainter();
     Q_CANVASPAINTER_EXPORT ~QCanvasPainter();
 
-    enum class PathWinding { CounterClockWise, ClockWise };
-    enum class PathConnection { NotConnected, Connected };
-    enum class LineCap { Butt, Round, Square };
-    enum class LineJoin { Round, Bevel, Miter };
-    enum class TextAlign { Left, Right, Center, Start, End };
-    enum class TextBaseline { Top, Hanging, Middle, Alphabetic, Bottom };
-    enum class TextDirection { LeftToRight, RightToLeft, Inherit, Auto };
+    enum class PathWinding : quint8 { CounterClockWise, ClockWise };
+    enum class PathConnection : quint8 { NotConnected, Connected };
+    enum class LineCap : quint8 { Butt, Round, Square };
+    enum class LineJoin : quint8 { Round, Bevel, Miter };
+    enum class TextAlign : quint8 { Left, Right, Center, Start, End };
+    enum class TextBaseline : quint8 { Top, Hanging, Middle, Alphabetic, Bottom };
+    enum class TextDirection : quint8 { LeftToRight, RightToLeft, Inherit, Auto };
 
-    enum class CompositeOperation {
+    enum class CompositeOperation : quint8 {
         SourceOver,
         SourceAtop,
         DestinationOut,
     };
 
-    enum class WrapMode {
+    enum class WrapMode : quint8 {
         NoWrap,
         Wrap,
         WordWrap,
@@ -188,8 +188,8 @@ public:
     Q_CANVASPAINTER_EXPORT void fill();
     Q_CANVASPAINTER_EXPORT void stroke();
 
-    Q_CANVASPAINTER_EXPORT void fill(const QCanvasPath &path, int pathGroup = 0);
-    Q_CANVASPAINTER_EXPORT void stroke(const QCanvasPath &path, int pathGroup = 0);
+    Q_CANVASPAINTER_EXPORT void fill(const QCanvasPath &path, int pathGroup = -1);
+    Q_CANVASPAINTER_EXPORT void stroke(const QCanvasPath &path, int pathGroup = -1);
 
     // *** Direct drawing ***
 

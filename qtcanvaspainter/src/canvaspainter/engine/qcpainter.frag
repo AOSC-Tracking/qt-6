@@ -64,12 +64,6 @@ float antialiasingAlpha() {
 }
 #endif
 
-mat2 rotate2d(float a) {
-    const float c = cos(a);
-    const float s = sin(a);
-    return mat2(c, -s, s, c);
-}
-
 void applyColorEffects(inout vec4 color) {
     if (colorEffects[0] > 0.0) {
         // Contrast + Brightness
@@ -117,7 +111,6 @@ void main()
             else
                 color = mix(innerCol, outerCol, d);
         } else if (type == 5 || type == 6) { // Conical gradient
-            pt = rotate2d(radius) * pt;
             float d = 0.5 - atan(pt.x, pt.y) * PI2_INV;
             if (type == 6)
                 color = texture(tex, vec2(d, 0.5));

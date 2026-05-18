@@ -1,5 +1,6 @@
 // Copyright (C) 2015 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #ifndef QGEOTILESPEC_H
 #define QGEOTILESPEC_H
@@ -71,9 +72,11 @@ private:
 
     bool isEqual(const QGeoTileSpec &rhs) const noexcept;
     bool isLess(const QGeoTileSpec &rhs) const noexcept;
+    size_t hash(size_t seed) const noexcept;
+    friend size_t qHash(const QGeoTileSpec &key, size_t seed = 0) noexcept
+    { return key.hash(seed); }
 };
 
-Q_LOCATION_EXPORT unsigned int qHash(const QGeoTileSpec &spec);
 
 Q_LOCATION_EXPORT QDebug operator<<(QDebug, const QGeoTileSpec &);
 

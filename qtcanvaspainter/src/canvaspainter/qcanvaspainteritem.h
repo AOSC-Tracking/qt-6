@@ -36,6 +36,7 @@ public:
     QVariantMap debug();
 
 protected:
+    explicit QCanvasPainterItem(QCanvasPainterItemPrivate &dd, QQuickItem *parent = nullptr);
     virtual QCanvasPainterItemRenderer* createItemRenderer() const = 0;
 
     QQuickRhiItemRenderer *createRenderer() final;

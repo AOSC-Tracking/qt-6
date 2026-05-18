@@ -21,6 +21,7 @@
 
 #include <QtCore/qpointer.h>
 
+#include <algorithm>
 #include <memory>
 
 QT_BEGIN_NAMESPACE
@@ -54,6 +55,22 @@ static bool allowSyntheticRightClick()
             allowRightClick = 1; // user didn't opt out
     }
     return allowRightClick != 0;
+}
+
+static QQuickDeliveryAgentPrivate::HoverItems::iterator findHoverStateByItem(QQuickDeliveryAgentPrivate::HoverItems &hoverItems, QQuickItem *item)
+{
+    return std::find_if(hoverItems.begin(), hoverItems.end(),
+                        [item](const QQuickDeliveryAgentPrivate::HoverItemState &hoverState) {
+                            return hoverState.item == item;
+                        });
+}
+
+static QQuickDeliveryAgentPrivate::HoverItems::const_iterator findHoverStateByItem(const QQuickDeliveryAgentPrivate::HoverItems &hoverItems, const QQuickItem *item)
+{
+    return std::find_if(hoverItems.cbegin(), hoverItems.cend(),
+                        [item](const QQuickDeliveryAgentPrivate::HoverItemState &hoverState) {
+                            return hoverState.item == item;
+                        });
 }
 
 void QQuickDeliveryAgentPrivate::touchToMouseEvent(QEvent::Type type, const QEventPoint &p, const QTouchEvent *touchEvent, QMutableSinglePointEvent *mouseEvent)
@@ -684,17 +701,17 @@ bool QQuickDeliveryAgentPrivate::clearHover(ulong timestamp)
 
     // while we don't modify hoveritems directly in the loop, the delivery of the event
     // is expected to reset the stored ID for each cleared item, and items might also
-    // be removed from the map in response to event delivery.
+    // be removed from the list in response to event delivery.
     // So we don't want to iterate over a const version of hoverItems here (it would be
     // misleading), but still use const_iterators to avoid  premature detach and constant
     // ref-count-checks.
     for (auto it = hoverItems.cbegin(); it != hoverItems.cend(); ++it) {
-        if (const auto &item = it.key()) {
+        if (QQuickItem *item = it->item) {
             deliverHoverEventToItem(item, item->mapFromScene(lastPos), lastPos, lastPos,
                                     globalPos, modifiers, timestamp, HoverChange::Clear);
             Q_ASSERT(([this, item]{
-                const auto &it2 = std::as_const(hoverItems).find(item);
-                return it2 == hoverItems.cend() || it2.value() == 0;
+                const auto it2 = findHoverStateByItem(std::as_const(hoverItems), item);
+                return it2 == hoverItems.cend() || it2->hoverId == 0;
             }()));
         }
     }
@@ -1260,8 +1277,8 @@ bool QQuickDeliveryAgentPrivate::deliverHoverEventToItem(
 {
     QQuickItemPrivate *itemPrivate = QQuickItemPrivate::get(item);
     const bool isHovering = item->contains(localPos);
-    const auto hoverItemIterator = hoverItems.find(item);
-    const bool wasHovering = hoverItemIterator != hoverItems.end() && hoverItemIterator.value() != 0;
+    auto hoverItemIterator = findHoverStateByItem(hoverItems, item);
+    const bool wasHovering = hoverItemIterator != hoverItems.end() && hoverItemIterator->hoverId != 0;
 
     qCDebug(lcHoverTrace) << "item:" << item << "scene pos:" << scenePos << "localPos:" << localPos
                           << "wasHovering:" << wasHovering << "isHovering:" << isHovering;
@@ -1278,9 +1295,9 @@ bool QQuickDeliveryAgentPrivate::deliverHoverEventToItem(
         // line towards the root from now on.
         hoveredLeafItemFound = true;
         if (hoverItemIterator != hoverItems.end())
-            hoverItemIterator.value() = currentHoverId;
+            hoverItemIterator->hoverId = currentHoverId;
         else
-            hoverItems[item] = currentHoverId;
+            hoverItems.append({item, currentHoverId});
 
         if (wasHovering)
             accepted = sendHoverEvent(QEvent::HoverMove, item, localPos, scenePos, lastScenePos, globalPos, modifiers, timestamp);
@@ -1288,7 +1305,7 @@ bool QQuickDeliveryAgentPrivate::deliverHoverEventToItem(
             accepted = sendHoverEvent(QEvent::HoverEnter, item, localPos, scenePos, lastScenePos, globalPos, modifiers, timestamp);
     } else if (wasHovering) {
         // A leave should never stop propagation
-        hoverItemIterator.value() = 0;
+        hoverItemIterator->hoverId = 0;
         sendHoverEvent(QEvent::HoverLeave, item, localPos, scenePos, lastScenePos, globalPos, modifiers, timestamp);
     }
 
@@ -1329,10 +1346,11 @@ bool QQuickDeliveryAgentPrivate::deliverHoverEventToItem(
                     // Mark the whole item as updated, even if only the handler is
                     // actually in a hovered state (because of HoverHandler.margins)
                     hoveredLeafItemFound = true;
+                    hoverItemIterator = findHoverStateByItem(hoverItems, item);
                     if (hoverItemIterator != hoverItems.end())
-                        hoverItemIterator.value() = currentHoverId;
+                        hoverItemIterator->hoverId = currentHoverId;
                     else
-                        hoverItems[item] = currentHoverId;
+                        hoverItems.append({item, currentHoverId});
                     if (hh->isBlocking()) {
                         qCDebug(lcHoverTrace) << "skipping rest of hover delivery due to blocking" << hh;
                         accepted = true;
@@ -2330,7 +2348,10 @@ void QQuickDeliveryAgentPrivate::deliverUpdatedPoints(QPointerEvent *event)
                     bool res = deliverHoverEventToItem(item, item->mapFromScene(point.scenePosition()), point.scenePosition(), point.sceneLastPosition(),
                                                        point.globalPosition(), event->modifiers(), event->timestamp(), HoverChange::Set);
                     // if the event was accepted, then the item's ID must be valid
-                    Q_ASSERT(!res || hoverItems.value(item));
+                    Q_ASSERT(([this, item = item.get(), res]{
+                        const auto it2 = findHoverStateByItem(std::as_const(hoverItems), item);
+                        return !res || it2->hoverId != 0;
+                    }()));
                 }
             }
         }
@@ -2861,9 +2882,29 @@ bool QQuickDeliveryAgentPrivate::sendFilteredPointerEventImpl(QPointerEvent *eve
                         if (event->isAccepted()) {
                             for (auto point : filteringParentTouchEvent.points()) {
                                 const QQuickItem *exclusiveGrabber = qobject_cast<const QQuickItem *>(event->exclusiveGrabber(point));
-                                if (!exclusiveGrabber || !exclusiveGrabber->keepTouchGrab())
+                                // Transfer the grab to the filtering parent unless the current exclusive grabber has
+                                // keepTouchGrab set AND the filtering parent is not an ancestor of that grabber.
+                                // If filteringParent is an ancestor of exclusiveGrabber (e.g. PinchArea wrapping a Flickable),
+                                // allow the transfer: presumably the user intended the parent to intercept multi-touch gestures.
+                                // But only if the grabber itself accepts touch events — meaning it set keepTouchGrab
+                                // on its own behalf (like Flickable). If the grabber doesn't accept touch events
+                                // (like a passive QQuickText), keepTouchGrab was set by the filtering parent's
+                                // childMouseEventFilter to maintain the filter-based event routing pattern
+                                // (e.g. SplitView sets a handle child as grabber to keep receiving filter calls).
+                                const bool grabberInsideFilteringParent = exclusiveGrabber &&
+                                        exclusiveGrabber->acceptTouchEvents() &&
+                                        filteringParent->isAncestorOf(const_cast<QQuickItem *>(exclusiveGrabber));
+                                if (!exclusiveGrabber || !exclusiveGrabber->keepTouchGrab() || grabberInsideFilteringParent)
                                     event->setExclusiveGrabber(point, filteringParent);
                             }
+                            // QPointerEvent::setAccepted(true) marks all individual QEventPoints as accepted,
+                            // which causes localizedTouchEvent() to skip them (line 9577: if (p.isAccepted()) continue).
+                            // This would prevent any ancestor filtering parent (e.g. PinchArea wrapping this Flickable)
+                            // from seeing the points in the recursive sendFilteredPointerEventImpl() call below.
+                            // Reset per-point accepted state so ancestor filters can still see all relevant points.
+                            // The overall event->isAccepted() remains true to stop non-filter item delivery.
+                            for (int i = 0; i < event->pointCount(); ++i)
+                                event->point(i).setAccepted(false);
                         }
                     } else if (Q_LIKELY(QCoreApplication::testAttribute(Qt::AA_SynthesizeMouseForUnhandledTouchEvents)) &&
                                !filteringParent->acceptTouchEvents()) {

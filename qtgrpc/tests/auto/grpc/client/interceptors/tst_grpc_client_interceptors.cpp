@@ -28,6 +28,7 @@
 #include <QtCore/qset.h>
 #include <QtCore/qtimer.h>
 
+#include <deque>
 #include <string>
 #include <vector>
 
@@ -124,6 +125,11 @@ private:
         std::atomic<bool> writePending = { false };
         std::atomic<bool> finishRequested = { false };
         std::atomic<bool> finishStarted = { false };
+        std::deque<tst::i2::StreamMessage> pendingMessages;
+
+        std::function<void()> writeNext;
+        std::function<void()> startFinish;
+        CallbackTag *readerTag = nullptr;
     };
 
     struct ClientStreamHandler
@@ -131,6 +137,7 @@ private:
         grpc::ServerContext ctx;
         grpc::ServerAsyncReader<tst::i2::StreamMessage, tst::i2::StreamMessage> op{ &ctx };
         tst::i2::StreamMessage request;
+        std::atomic<bool> isCancelled = false;
     };
 
     void setupUnaryEcho(std::unique_ptr<TagProcessor> &processor);
@@ -189,47 +196,57 @@ void QtGrpcClientInterceptorsTest::setupBidiStreamEcho(std::unique_ptr<TagProces
 
     auto *processorPtr = processor.get();
 
-    auto startFinish = [data, processorPtr]() {
+    data->startFinish = [data, processorPtr]() {
         if (data->finishStarted.exchange(true, std::memory_order_acq_rel))
             return;
         data->op.Finish(grpc::Status::OK, new DeleteTag<BidiStreamHandler>(data, processorPtr));
     };
 
-    auto reader = std::make_shared<CallbackTag *>(nullptr);
-    *reader = new CallbackTag(
-        [data, reader, startFinish, processorPtr](bool ok) {
+    data->writeNext = [data, processorPtr]() {
+        if (data->pendingMessages.empty()) {
+            data->writePending.store(false, std::memory_order_release);
+            if (data->finishRequested.load(std::memory_order_acquire))
+                data->startFinish();
+            return;
+        }
+
+        auto msg = std::move(data->pendingMessages.front());
+        data->pendingMessages.pop_front();
+
+        data->op.Write(msg,
+                       new CallbackTag(
+                           [data](bool ok) {
+                               QVERIFY(ok);
+                               (data->writeNext)();
+                               return CallbackTag::Delete;
+                           },
+                           processorPtr));
+    };
+
+    data->readerTag = new CallbackTag(
+        [data](bool ok) {
             if (!ok) {
                 // Client closed its write side (or stream ended).
                 // Defer Finish until any in-flight Write completes.
                 data->finishRequested.store(true, std::memory_order_release);
                 if (!data->writePending.load(std::memory_order_acquire))
-                    startFinish();
+                    data->startFinish();
                 return CallbackTag::Delete;
             }
 
-            data->writePending.store(true, std::memory_order_release);
-            data->op.Write(data->request,
-                           new CallbackTag(
-                               [data, startFinish](bool ok) {
-                                   QVERIFY(ok);
-                                   data->writePending.store(false, std::memory_order_release);
+            data->pendingMessages.push_back(data->request);
+            if (!data->writePending.exchange(true, std::memory_order_acq_rel))
+                data->writeNext(); // start write loop if idle
 
-                                   if (data->finishRequested.load(std::memory_order_acquire))
-                                       startFinish();
-
-                                   return CallbackTag::Delete;
-                               },
-                               processorPtr));
-
-            data->op.Read(&data->request, *reader);
+            data->op.Read(&data->request, data->readerTag);
             return CallbackTag::Proceed;
         },
         processorPtr);
 
     auto *handler = new CallbackTag(
-        [data, reader](bool ok) {
+        [data](bool ok) {
             QVERIFY(ok);
-            data->op.Read(&data->request, *reader);
+            data->op.Read(&data->request, data->readerTag);
             return CallbackTag::Delete;
         },
         processorPtr);
@@ -246,8 +263,10 @@ void QtGrpcClientInterceptorsTest::setupClientStreamSink(std::unique_ptr<TagProc
     *reader = new CallbackTag(
         [data, &processor, reader](bool ok) {
             if (!ok) {
-                data->op.Finish(data->request, grpc::Status::OK,
-                                new DeleteTag<ClientStreamHandler>(data, processor.get()));
+                if (!data->isCancelled) {
+                    data->op.Finish(data->request, grpc::Status::OK,
+                                    new DeleteTag<ClientStreamHandler>(data, processor.get()));
+                }
                 return CallbackTag::Delete;
             }
             data->op.Read(&data->request, *reader);
@@ -256,17 +275,19 @@ void QtGrpcClientInterceptorsTest::setupClientStreamSink(std::unique_ptr<TagProc
         processor.get());
 
     data->ctx.AsyncNotifyWhenDone(new CallbackTag(
-        [&cancelled, data](bool ok) {
-            QVERIFY(ok);
+        [&cancelled, data](bool ) {
+            data->isCancelled = data->ctx.IsCancelled();
             cancelled = data->ctx.IsCancelled();
             return CallbackTag::Delete;
         },
         processor.get()));
 
     auto *handler = new CallbackTag(
-        [data, reader](bool ok) {
+        [data, reader, processor = processor.get()](bool ok) {
             QVERIFY(ok);
             data->op.Read(&data->request, *reader);
+            data->ctx.AddInitialMetadata("test-key", "test-value");
+            data->op.SendInitialMetadata(new VoidTag(processor));
             return CallbackTag::Delete;
         },
         processor.get());
@@ -537,13 +558,16 @@ void QtGrpcClientInterceptorsTest::cancelledCallOrder()
     auto stream = m_client2.ClientStream(qt::tst::i2::StreamMessage{});
     QVERIFY(stream);
 
-    // Wait a bit to ensure headers are received before cancelling
-    QTimer::singleShot(50, [&]() {
-        qt::tst::i2::StreamMessage msg;
-        msg.setTag(1);
-        stream->writeMessage(msg);
-        stream->cancel();
-    });
+    connect(stream.get(), &QGrpcOperation::serverInitialMetadataReceived, this,
+            [&stream](const auto &) {
+                // Headers must be received before cancelling
+                QTimer::singleShot(0, [&]() {
+                    qt::tst::i2::StreamMessage msg;
+                    msg.setTag(1);
+                    stream->writeMessage(msg);
+                    stream->cancel();
+                });
+            });
 
     QSignalSpy finishedSpy(stream.get(), &QGrpcOperation::finished);
     QTRY_VERIFY_WITH_TIMEOUT(serverCancelled, 5000);
@@ -554,14 +578,16 @@ void QtGrpcClientInterceptorsTest::cancelledCallOrder()
     QCOMPARE(status.code(), QtGrpc::StatusCode::Cancelled);
 
     const QList<InterceptorCall> expected = {
-        { "A", Capability::Start        },
-        { "B", Capability::Start        },
-        { "A", Capability::WriteMessage },
-        { "B", Capability::WriteMessage },
-        { "A", Capability::Cancel       },
-        { "B", Capability::Cancel       },
-        { "B", Capability::Finished     },
-        { "A", Capability::Finished     },
+        { "A", Capability::Start           },
+        { "B", Capability::Start           },
+        { "B", Capability::InitialMetadata },
+        { "A", Capability::InitialMetadata },
+        { "A", Capability::WriteMessage    },
+        { "B", Capability::WriteMessage    },
+        { "A", Capability::Cancel          },
+        { "B", Capability::Cancel          },
+        { "B", Capability::Finished        },
+        { "A", Capability::Finished        },
     };
     QCOMPARE(CallLog, expected);
 }

@@ -87,6 +87,8 @@ public:
         NetworkManager,
     };
 
+    static QSampleCache *instance();
+
     explicit QSampleCache(QObject *parent = nullptr);
     ~QSampleCache() override;
 
@@ -102,6 +104,9 @@ public:
 
 private:
     std::unique_ptr<QIODevice> createStreamForSample(QSample &sample);
+#if QT_CONFIG(thread)
+    QThreadPool *threadPool();
+#endif
 
 private:
     using SharedSamplePromise = std::shared_ptr<QPromise<SharedSamplePtr>>;
@@ -115,12 +120,14 @@ private:
 
     using SampleLoadResult = std::optional<std::pair<QByteArray, QAudioFormat>>;
 
-    static SampleLoadResult loadSample(QByteArray);
+    static SampleLoadResult loadSample(QSpan<const char>);
 
 #if QT_CONFIG(thread)
     static SampleLoadResult
     loadSample(const QUrl &, std::optional<SampleSourceType> forceSourceType = std::nullopt);
-    QThreadPool m_threadPool;
+#  ifndef Q_OS_WASM
+    QThreadPool m_threadPool{ this };
+#  endif
 #endif
     QFuture<SampleLoadResult> loadSampleAsync(const QUrl &);
 

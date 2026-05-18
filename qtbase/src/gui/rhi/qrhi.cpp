@@ -8815,6 +8815,24 @@ bool QRhiImplementation::sanityCheckShaderResourceBindings(QRhiShaderResourceBin
     return true;
 }
 
+bool QRhiImplementation::sanityCheckResourceOwnership(QRhiResource *maybeResource)
+{
+    if (maybeResource == nullptr || maybeResource->m_rhi == nullptr)
+        return true;
+
+    if (maybeResource->m_rhi->q != q) {
+        qWarning("%s %p (%s) belongs to QRhi %p, but client code attempted to use it with QRhi %p. This is wrong.",
+                  resourceTypeStr(maybeResource),
+                  maybeResource,
+                  maybeResource->m_objectName.constData(),
+                  maybeResource->m_rhi->q,
+                  q);
+        return false;
+    }
+
+    return true;
+}
+
 int QRhiImplementation::effectiveSampleCount(int sampleCount) const
 {
     // Stay compatible with QSurfaceFormat and friends where samples == 0 means the same as 1.
@@ -10171,6 +10189,13 @@ void QRhiCommandBuffer::endPass(QRhiResourceUpdateBatch *resourceUpdates)
     between a beginPass() and endPass() call.
 
     \note The new graphics pipeline \a ps must be a valid pointer.
+
+    Setting a graphics pipeline that does not have the
+    \l{QRhiGraphicsPipeline::}{UsesScissor} flag will either disable scissoring,
+    with graphics APIs where that is applicable, or set the scissor rectangle to
+    match the viewport that was last set (with graphics APIs where scissoring is
+    effectively always active), in order to ensure a uniform behavior across QRhi
+    backends.
  */
 void QRhiCommandBuffer::setGraphicsPipeline(QRhiGraphicsPipeline *ps)
 {

@@ -187,7 +187,7 @@ void QTreeView::setModel(QAbstractItemModel *model)
     if (model == d->model)
         return;
     if (d->model && d->model != QAbstractItemModelPrivate::staticEmptyModel()) {
-        for (const QMetaObject::Connection &connection : d->modelConnections)
+        for (QMetaObject::Connection &connection : d->modelConnections)
             QObject::disconnect(connection);
     }
 
@@ -3141,9 +3141,9 @@ void QTreeViewPrivate::initialize()
 
 void QTreeViewPrivate::clearConnections()
 {
-    for (const QMetaObject::Connection &connection : modelConnections)
+    for (QMetaObject::Connection &connection : modelConnections)
         QObject::disconnect(connection);
-    for (const QMetaObject::Connection &connection : headerConnections)
+    for (QMetaObject::Connection &connection : headerConnections)
         QObject::disconnect(connection);
     QObject::disconnect(selectionmodelConnection);
     QObject::disconnect(sortHeaderConnection);
@@ -3204,21 +3204,6 @@ void QTreeViewPrivate::removeViewItems(int pos, int count)
         if (items[i].parentItem >= pos)
             items[i].parentItem -= count;
 }
-
-#if 0
-bool QTreeViewPrivate::checkViewItems() const
-{
-    for (int i = 0; i < viewItems.count(); ++i) {
-        const QTreeViewItem &vi = viewItems.at(i);
-        if (vi.parentItem == -1) {
-            Q_ASSERT(!vi.index.parent().isValid() || vi.index.parent() == root);
-        } else {
-            Q_ASSERT(vi.index.parent() == viewItems.at(vi.parentItem).index);
-        }
-    }
-    return true;
-}
-#endif
 
 void QTreeViewPrivate::collapse(int item, bool emitSignal)
 {

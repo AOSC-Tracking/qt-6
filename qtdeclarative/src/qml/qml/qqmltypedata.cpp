@@ -321,6 +321,7 @@ QQmlError QQmlTypeData::createTypeAndPropertyCaches(
     m_compiledData->typeNameCache = typeNameCache;
     m_compiledData->resolvedTypes = resolvedTypeCache;
     m_compiledData->inlineComponentData = m_inlineComponentData;
+    m_compiledData->qmlType = m_qmlType;
 
     QQmlPendingGroupPropertyBindings pendingGroupPropertyBindings;
 
@@ -1100,7 +1101,7 @@ QQmlError QQmlTypeData::buildTypeResolutionCaches(
             } else {
                 ref->setTypePropertyCache(compilationUnit->rootPropertyCache());
             }
-            if (!resolvedType->selfReference && resolvedType->needsCreation)
+            if (!resolvedType->selfReference)
                 ref->setCompilationUnit(compilationUnit);
         } else if (qmlType.isInlineComponentType()) {
             // Inline component

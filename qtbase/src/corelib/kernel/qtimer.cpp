@@ -1,6 +1,7 @@
 // Copyright (C) 2022 The Qt Company Ltd.
 // Copyright (C) 2016 Intel Corporation.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "qtimer.h"
 #include "qtimer_p.h"
@@ -259,7 +260,7 @@ checkInterval(const char *caller, std::chrono::milliseconds interval)
     }
 
     const auto msec = interval.count();
-    int ret = q26::saturate_cast<int>(msec);
+    int ret = q26::saturating_cast<int>(msec);
     if (ret != msec) {
         qWarning("%s: interval exceeds maximum allowed interval, it will be clamped to "
                  "INT_MAX ms (about 24 days).", caller);
@@ -708,7 +709,7 @@ int QTimer::remainingTime() const
         using namespace std::chrono;
         auto remaining = QAbstractEventDispatcher::instance()->remainingTime(d->id);
         const auto msec = ceil<milliseconds>(remaining).count();
-        const int ret = q26::saturate_cast<int>(msec);
+        const int ret = q26::saturating_cast<int>(msec);
         Q_ASSERT(ret == msec); // cannot overflow because the interval is clamped before it's set
         return ret;
     }

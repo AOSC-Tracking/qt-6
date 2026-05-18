@@ -1,6 +1,7 @@
 // Copyright (C) 2020 The Qt Company Ltd.
 // Copyright (C) 2021 Intel Corporation.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #ifndef QNUMERIC_P_H
 #define QNUMERIC_P_H
@@ -23,7 +24,7 @@
 #include <limits>
 #include <type_traits>
 
-#include <QtCore/q26numeric.h> // temporarily, for saturate_cast
+#include <QtCore/q26numeric.h> // temporarily, for saturating_cast
 
 #ifndef __has_extension
 #  define __has_extension(X)    0
@@ -436,7 +437,7 @@ template <auto V2, typename T> bool mul_overflow(T v1, T *r)
 template <typename To, typename From>
 static constexpr auto qt_saturate(From x)
 {
-    return q26::saturate_cast<To>(x);
+    return q26::saturating_cast<To>(x);
 }
 
 QT_END_NAMESPACE

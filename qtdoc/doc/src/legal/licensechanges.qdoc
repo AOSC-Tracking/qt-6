@@ -11,6 +11,29 @@
     Changes in Qt and \l{Third-Party Code Used in Qt}{Third Party Modules}
     released with Qt that are relevant to licensing.
 
+    \section1 Qt 6.11.1
+
+    \section2 Qt GUI Module
+
+    \list
+        \li \l{freetype}{Freetype 2} was updated to version 2.14.3.
+        \li \l{harfbuzz-ng}{HarfBuzz-NG} was updated to version 14.2.0.
+        \li \l{libpng}{LibPNG} was updated to version 1.6.58.
+        \li \l{libjpeg}{LibJPEG-turbo} was updated to version 3.1.4.
+    \endlist
+
+    \section2 Qt Quick3D module
+
+    \list
+        \li \l{tinyexr}{Tiny OpenEXR} was updated to version v1.0.13.
+    \endlist
+
+    \section2 Qt SQL Module
+
+    \list
+        \li \l{sqlite}{SQLite} was updated to version 3.53.0.
+    \endlist
+
     \section1 Qt 6.11.0
 
     \section2 Qt Canvas Painter Module
@@ -70,7 +93,7 @@
     \list
         \li Usage of \l{wayland-session-management-protocol}{Wayland Color Management Protocol},
             version experimental V1, is now documented.
-        \li \l{wayland-protocol}{Wayland Protocol} was updated to version 1.24.0
+        \li \l{wayland-protocol}{Wayland Protocol} was updated to version 1.24.0.
     \endlist
 
     \section1 Qt 6.10.3
@@ -99,7 +122,7 @@
 
     \list
         \li \l{freetype}{Freetype 2} was updated to version 2.14.2.
-        \li \l{harfbuzz-ng}{HarfBuzz-NG} was updated to version 13.0.0.
+        \li \l{harfbuzz-ng}{HarfBuzz-NG} was updated to version 12.3.2.
         \li \l{libpng}{LibPNG} was updated to version 1.6.55.
     \endlist
 

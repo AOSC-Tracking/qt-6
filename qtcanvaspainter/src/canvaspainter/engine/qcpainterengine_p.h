@@ -87,6 +87,9 @@ public:
     bool deleteImage(int imageId);
     void drawImageId(int imageId, float x, float y, float width, float height,
                      const QColor &tintColor);
+    void drawImageIdAt(int imageId, float x, float y, float width, float height,
+                       float dX, float dY, float dWidth, float dHeight,
+                       const QColor &tintColor);
     QCPaint createImagePattern(float x, float y, float width, float height,
                                int imageId, float angle, const QColor &tintColor);
 
@@ -114,9 +117,9 @@ public:
     void addPath(const QCanvasPath &path, const QTransform &transform = QTransform());
     void addPath(const QCanvasPath &path, qsizetype start, qsizetype count, const QTransform &transform = QTransform());
     void setPathWinding(QCanvasPainter::PathWinding winding);
-    void fill();
+    void fill(QCanvasPath *maybePath = nullptr, int pathGroup = -1, bool cachedPathUpdateRequired = false);
     void fillForClear();
-    void stroke();
+    void stroke(QCanvasPath *maybePath = nullptr, int pathGroup = -1, bool cachedPathUpdateRequired = false);
     void fill(const QCanvasPath &path, int pathGroup);
     void stroke(const QCanvasPath &path, int pathGroup);
 
@@ -194,17 +197,17 @@ private:
                         float u0, float u1);
     inline void addVert(float x, float y, float u, float v) noexcept;
     void ensureVertices(int count);
-    void preparePainterPath(const QCanvasPath &path,
-                            const QTransform &transform = QTransform());
+    void preparePainterPath(const QCanvasPath &path, bool ignoreTransform = false);
     void appendPainterPath(const QCanvasPath &path,
                            const QTransform &transform = QTransform());
     void appendPainterPath(const QCanvasPath &path,
                            qsizetype start,
                            qsizetype count,
                            const QTransform &transform = QTransform());
-    bool fillPathUpdateRequired(QCanvasPath *path, int pathGroup);
-    bool strokePathUpdateRequired(QCanvasPath *path, int pathGroup);
+    bool fillCachedPathUpdateRequired(QCanvasPath *path, int pathGroup);
+    bool strokeCachedPathUpdateRequired(QCanvasPath *path, int pathGroup);
     QCanvasPainter::TextAlign effectiveTextAlign(QStringView text) const;
+    void fillPlainRect(const QCPaint &paint, float x, float y, float width, float height);
 
     QCPaint getFillPaint(bool ignoreTransform = false);
     QCPaint getStrokePaint(float *strokeWidth, bool ignoreTransform = false);

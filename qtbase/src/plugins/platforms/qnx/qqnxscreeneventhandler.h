@@ -1,5 +1,6 @@
 // Copyright (C) 2013 BlackBerry Limited. All rights reserved.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #ifndef QQNXSCREENEVENTHANDLER_H
 #define QQNXSCREENEVENTHANDLER_H
@@ -43,6 +44,7 @@ protected:
 
 private Q_SLOTS:
     void processEvents();
+    void processPostEvent(screen_window_t window);
 
 private:
     void handleKeyboardEvent(screen_event_t event);

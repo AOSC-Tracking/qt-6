@@ -40,7 +40,7 @@ public:
     virtual bool saveDocument();
     virtual bool saveDocumentAs();
     virtual QString viewerName() const = 0;
-    virtual void retranslate() { };
+    bool eventFilter(QObject *object, QEvent *event) override;
     virtual bool supportsOverview() const;
     virtual QByteArray saveState() const = 0;
     virtual bool restoreState(QByteArray &) = 0;
@@ -50,7 +50,6 @@ public:
     virtual bool isDefaultViewer() const;
     virtual void cleanup();
     void setTranslationBaseName(const QString &baseName);
-    void updateTranslation(QLocale::Language lang);
     bool isEmpty() const;
     bool isPrintingEnabled() const;
     AbstractViewer *viewer();
@@ -58,6 +57,7 @@ public:
 
     QList<QAction *> actions() const;
     QWidget *widget() const;
+    QList<QToolBar *> toolBars() const;
     QList<QMenu *> menus() const;
 
 #ifdef DOCUMENTVIEWER_PRINTSUPPORT
@@ -84,9 +84,10 @@ protected:
         QTabWidget *tabs = nullptr;
     } m_uiAssets;
 
+    virtual void retranslate() { };
     void statusMessage(const QString &message, const QString &type = QString(), int timeout = 8000);
-    QToolBar *addToolBar(const QString &);
-    QMenu *addMenu(const QString &);
+    QToolBar *addToolBar();
+    QMenu *addMenu();
     QMainWindow *mainWindow() const;
     QStatusBar *statusBar() const;
     QMenuBar *menuBar() const;
@@ -105,6 +106,7 @@ private:
     QList<QMenu *> m_menus;
     QList<QToolBar *> m_toolBars;
     bool m_printingEnabled = false;
+    QLocale m_currentLocale;
     std::unique_ptr<Translator> m_translator;
 };
 

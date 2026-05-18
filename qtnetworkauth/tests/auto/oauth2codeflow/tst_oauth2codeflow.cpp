@@ -821,6 +821,30 @@ void tst_OAuth2CodeFlow::idToken()
     QVERIFY(idTokenSpy.isEmpty());
     QVERIFY(oauth2.idToken().isEmpty());
 
+    // Test granted openid scope when none was requested (QTBUG-145561), first test:
+    // - 'openid' scope not requested by client but
+    // - 'openid' scope is granted by server and
+    // - 'id_token' not provided by server
+    oauth2.setRequestedScopeTokens({"read"});
+    oauth2.grant();
+    replyHandler.emitCallbackReceived({{"code"_L1, "acode"_L1}, {"state"_L1, "a_state"_L1}});
+    replyHandler.emitTokensReceived({{"access_token"_L1, "at"_L1}, {"scope"_L1, "read openid"_L1}});
+    QTRY_COMPARE(oauth2.status(), QAbstractOAuth::Status::Granted);
+    QVERIFY(idTokenSpy.isEmpty());
+    QVERIFY(oauth2.idToken().isEmpty());
+    // - 'openid' scope not requested by client but
+    // - 'openid' scope is granted by server and
+    // - 'id_token' is provided by server
+    oauth2.setRequestedScopeTokens({"read"});
+    oauth2.grant();
+    replyHandler.emitCallbackReceived({{"code"_L1, "acode"_L1}, {"state"_L1, "a_state"_L1}});
+    replyHandler.emitTokensReceived({{"access_token"_L1, "at"_L1}, {"scope"_L1, "read openid"_L1},
+                                     {"id_token"_L1, "unsolicited_id_token"_L1}});
+    QTRY_COMPARE(oauth2.status(), QAbstractOAuth::Status::Granted);
+    QVERIFY(!idTokenSpy.isEmpty());
+    QCOMPARE(oauth2.idToken(), "unsolicited_id_token"_L1);
+    idTokenSpy.clear();
+
     // Test with openid
     // Note: using a proper JWT or setting the matching 'nonce' is not required for this tests
     // purpose as we don't currently validate the received token, but no harm in being thorough
@@ -833,10 +857,28 @@ void tst_OAuth2CodeFlow::idToken()
     QCOMPARE(oauth2.idToken(), idToken);
     QCOMPARE(idTokenSpy.size(), 1);
     QCOMPARE(idTokenSpy.at(0).at(0).toByteArray(), idToken);
+    idTokenSpy.clear();
+
+    // Providing an id_token is not mandatory when refreshing tokens. Test first with the id_token
+    oauth2.setRefreshToken("refresh_token"_L1);
+    oauth2.refreshTokens();
+    QTRY_COMPARE(oauth2.status(), QAbstractOAuth::Status::RefreshingToken);
+    replyHandler.emitTokensReceived({{"access_token"_L1, "at"_L1}, {"id_token"_L1, "fresh_id"}});
+    QCOMPARE(oauth2.status(), QAbstractOAuth::Status::Granted);
+    QCOMPARE(idTokenSpy.size(), 1);
+    QCOMPARE(oauth2.idToken(), "fresh_id"_L1);
+    // Test without providing id_token (also must not clear the pre-existing id_token)
+    oauth2.refreshTokens();
+    QTRY_COMPARE(oauth2.status(), QAbstractOAuth::Status::RefreshingToken);
+    replyHandler.emitTokensReceived({{"access_token"_L1, "at"_L1}});
+    QCOMPARE(oauth2.status(), QAbstractOAuth::Status::Granted);
+    QCOMPARE(idTokenSpy.size(), 1);
+    QCOMPARE(oauth2.idToken(), "fresh_id"_L1);
 
     // Test missing id_token error
     QVERIFY(requestFailedSpy.isEmpty());
-    const QRegularExpression tokenWarning{"Token request failed: \"ID token not received\""};
+    const QRegularExpression tokenWarning{
+        "Token request failed: \"'openid' scope requested and granted but ID token not received\""};
     QTest::ignoreMessage(QtWarningMsg, tokenWarning);
     oauth2.grant();
     replyHandler.emitCallbackReceived({{"code"_L1, "acode"_L1}, {"state"_L1, "a_state"_L1}});

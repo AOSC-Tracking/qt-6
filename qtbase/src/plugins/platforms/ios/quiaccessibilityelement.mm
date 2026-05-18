@@ -112,10 +112,8 @@ QT_NAMESPACE_ALIAS_OBJC_CLASS(QMacAccessibilityElement);
 
     if (state.checkable) {
         if (iface->role() == QAccessible::CheckBox
-            || iface->role() == QAccessible::RadioButton)
-            return @"";
-
-        if (iface->role() == QAccessible::Switch)
+            || iface->role() == QAccessible::RadioButton
+            || iface->role() == QAccessible::Switch)
             return state.checked ? @"1" : @"0";
 
         return state.checked
@@ -131,7 +129,7 @@ QT_NAMESPACE_ALIAS_OBJC_CLASS(QMacAccessibilityElement);
             return text->text(0, text->characterCount()).toNSString();
     }
 
-    return [super accessibilityHint];
+    return [super accessibilityValue];
 }
 
 - (CGRect)accessibilityFrame
@@ -143,7 +141,20 @@ QT_NAMESPACE_ALIAS_OBJC_CLASS(QMacAccessibilityElement);
     }
 
     QRect rect = iface->rect();
-    return CGRectMake(rect.x(), rect.y(), rect.width(), rect.height());
+    CGRect frame = QRectF(rect).toCGRect();
+
+    // Adjust the frame to ensure focus rectangle aligns with the visually shifted
+    // content when onscreen keyboard is shown.
+    UIView *view = self.accessibilityContainer;
+    if ([view isKindOfClass:[UIView class]]) {
+        if (UIView *rootView = view.window.rootViewController.view) {
+            CATransform3D transform = rootView.layer.sublayerTransform;
+            if (!CATransform3DIsIdentity(transform))
+                frame.origin.y += transform.m42;
+        }
+    }
+
+    return frame;
 }
 
 - (UIAccessibilityTraits)accessibilityTraits
@@ -169,10 +180,8 @@ QT_NAMESPACE_ALIAS_OBJC_CLASS(QMacAccessibilityElement);
     if (accessibleRole == QAccessible::Button) {
         traits |= UIAccessibilityTraitButton;
     } else if (accessibleRole == QAccessible::CheckBox
-               || accessibleRole == QAccessible::RadioButton) {
-        if (state.checked)
-            traits |= UIAccessibilityTraitSelected;
-    } else if (accessibleRole == QAccessible::Switch) {
+               || accessibleRole == QAccessible::RadioButton
+               || accessibleRole == QAccessible::Switch) {
         traits |= UIAccessibilityTraitToggleButton;
     } else if (accessibleRole == QAccessible::EditableText) {
         static auto defaultTextFieldTraits = []{

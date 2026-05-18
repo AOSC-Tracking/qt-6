@@ -29,6 +29,7 @@ public:
     static Qt::Alignment convertToQtAlignment(QCanvasPainter::TextAlign alignment);
     static float calculateVerticalAlignment(QCanvasPainter::TextBaseline baseline, const QRectF &rect,
                                             const QFontMetrics &metrics, const QRectF &layoutRect);
+    static Qt::LayoutDirection convertToQtDirection(QCanvasPainter::TextDirection direction);
 };
 
 QT_END_NAMESPACE

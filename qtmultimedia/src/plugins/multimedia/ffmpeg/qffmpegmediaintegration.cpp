@@ -111,7 +111,7 @@ static void setupFFmpegLogger()
     av_log_set_callback(&qffmpegLogCallback);
 }
 
-static QPlatformSurfaceCapture *createScreenCaptureByBackend(QString backend)
+static QPlatformSurfaceCapture *createScreenCaptureByBackend(const QString& backend)
 {
     if (backend == u"grabwindow")
         return new QGrabWindowSurfaceCapture(QPlatformSurfaceCapture::ScreenSource{});
@@ -134,7 +134,7 @@ static QPlatformSurfaceCapture *createScreenCaptureByBackend(QString backend)
     return nullptr;
 }
 
-static QPlatformSurfaceCapture *createWindowCaptureByBackend(QString backend)
+static QPlatformSurfaceCapture *createWindowCaptureByBackend(const QString& backend)
 {
     if (backend == u"grabwindow")
         return new QGrabWindowSurfaceCapture(QPlatformSurfaceCapture::WindowSource{});
@@ -339,7 +339,7 @@ QPlatformMediaFormatInfo *QFFmpegMediaIntegration::createFormatInfo()
 QPlatformVideoDevices *QFFmpegMediaIntegration::createVideoDevices()
 {
 #if defined(Q_OS_ANDROID)
-    return new QAndroidVideoDevices(this);
+    return new QFFmpeg::QAndroidVideoDevices(this);
 #elif QT_CONFIG(linux_v4l)
     return new QV4L2CameraDevices(this);
 #elif defined Q_OS_DARWIN
@@ -387,7 +387,8 @@ extern "C" Q_DECL_EXPORT jint JNICALL JNI_OnLoad(JavaVM *vm, void * /*reserved*/
         return JNI_ERR;
 
     if (!QFFmpeg::QAndroidCamera::registerNativeMethods()
-            ||!QAndroidScreenCapture::registerNativeMethods()) {
+        || !QAndroidScreenCapture::registerNativeMethods()
+        || !QFFmpeg::QAndroidVideoDevices::registerNativeMethods()) {
         return JNI_ERR;
     }
 

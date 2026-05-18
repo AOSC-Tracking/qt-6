@@ -11,6 +11,7 @@
 #include <QtQuickTestUtils/private/qmlutils_p.h>
 #include <QtQmlDom/private/qqmldomitem_p.h>
 #include <QtQmlDom/private/qqmldomlinewriter_p.h>
+#include <QtQmlDom/private/qqmldomlinewriterfactory_p.h>
 #include <QtQmlDom/private/qqmldomoutwriter_p.h>
 #include <QtQmlDom/private/qqmldomtop_p.h>
 #include <QtQmlToolingSettings/private/qqmltoolingsettings_p.h>
@@ -54,6 +55,9 @@ private Q_SLOTS:
 
     void normalizedId_data();
     void normalizedId();
+
+    void reject_data();
+    void reject();
 
 private:
     QString formatInMemory(const QString &fileToFormat, bool *didSucceed = nullptr,
@@ -280,12 +284,13 @@ QString TestQmlformat::formatInMemoryImpl(bool *didSucceed, LineWriterOptions op
             checks = largeChecks;
 
         QTextStream res(&resultStr);
-        LineWriter lw([&res](QStringView s) { res << s; }, QLatin1String("*testStream*"), options);
+        auto lw = QQmlJS::Dom::createLineWriter([&res](QStringView s) { res << s; },
+                QLatin1String("*testStream*"), options);
         DomItem qmlFile = tFile.field(Fields::currentItem);
-        OutWriter ow(getFileItemOwner(qmlFile), lw);
+        OutWriter ow(getFileItemOwner(qmlFile), *lw);
         ow.indentNextlines = true;
         writtenOut = qmlFile.writeOutForFile(ow, checks);
-        lw.eof();
+        lw->eof();
         res.flush();
     }
     if (didSucceed)
@@ -410,6 +415,13 @@ void TestQmlformat::qml_data()
                                    << "commentInEnum.formatted.qml";
     QTest::newRow("commentInQmlObject") << "commentInQmlObject.qml"
                                         << "commentInQmlObject.formatted.qml";
+    QTest::newRow("commentsOnArrayAndObjectPatterns")
+            << "commentsOnArrayAndObjectPatterns.qml"
+            << "commentsOnArrayAndObjectPatterns.formatted.qml";
+    QTest::newRow("commentsOnGenerator") << "commentsOnGenerator.qml"
+                                         << "commentsOnGenerator.formatted.qml";
+    QTest::newRow("commentsOnTryCatchFinally") << "commentsOnTryCatchFinally.qml"
+                                               << "commentsOnTryCatchFinally.formatted.qml";
 }
 void TestQmlformat::qml()
 {
@@ -436,26 +448,48 @@ void TestQmlformat::qmlSnippet_data()
 {
     QTest::addColumn<QString>("unformatted");
     QTest::addColumn<QString>("expectedResult");
+    QTest::addColumn<LineWriterOptions>("opts");
+
+    LineWriterOptions defaultOptions ;
+    defaultOptions.attributesSequence = LineWriterOptions::AttributesSequence::Preserve;
+    // the expected snippets use unix newlines, also on windows
+    defaultOptions.lineEndings = LineWriterOptions::LineEndings::Unix;
+
+    {
+        LineWriterOptions maxColumnWidth = defaultOptions;
+        maxColumnWidth.maxLineLength = 80;
+        QTest::addRow("LambdaMaxColumnWidth")
+                << uR"(Item { Component.onCompleted: () => { console.info("a"); A.b.c = rs => { let x = 3; return x; }; }})"_s
+                << uR"(Item {
+    Component.onCompleted: () => {
+        console.info("a");
+        A.b.c = rs => {
+            let x = 3;
+            return x;
+        };
+    }
+}
+)"_s
+                << maxColumnWidth;
+    }
 
     QTest::addRow("QmlObjectComment")
             << u"EIUMAPQTE.ResourceMapHistoryControls { // qmllint disable required\n}"_s
-            << u"EIUMAPQTE.ResourceMapHistoryControls { // qmllint disable required\n}\n"_s;
+            << u"EIUMAPQTE.ResourceMapHistoryControls { // qmllint disable required\n}\n"_s
+            << defaultOptions;
 }
 
 void TestQmlformat::qmlSnippet()
 {
     QFETCH(QString, unformatted);
     QFETCH(QString, expectedResult);
+    QFETCH(LineWriterOptions, opts);
 
     constexpr QLatin1String snippetTemplate = R"(import QtQuick
 
 %1)"_L1;
 
     bool wasSuccessful;
-    LineWriterOptions opts;
-    opts.attributesSequence = LineWriterOptions::AttributesSequence::Preserve;
-    // the expected snippets use unix newlines, also on windows
-    opts.lineEndings = LineWriterOptions::LineEndings::Unix;
     QString output = formatSnippetInMemory(snippetTemplate.arg(unformatted), &wasSuccessful, opts);
     QVERIFY(wasSuccessful && !output.isEmpty());
     QCOMPARE(output, snippetTemplate.arg(expectedResult));
@@ -591,6 +625,39 @@ void TestQmlformat::normalizedId()
     QVERIFY(wasSuccessful && !output.isEmpty());
     auto exp = readTestFile(fileNameBase + ".formatted.qml");
     QCOMPARE(output, exp);
+}
+
+void TestQmlformat::reject_data()
+{
+    QTest::addColumn<QString>("snippet");
+
+    QTest::addRow("var-in-object") << "var x = 3;";
+}
+
+void TestQmlformat::reject()
+{
+    QFETCH(QString, snippet);
+
+    const QString code = snippet.startsWith("import"_L1) || snippet.startsWith("pragam"_L1)
+            ? snippet
+            : R"(import QtQuick
+Item {
+%1
+})"_L1.arg(snippet);
+
+    bool wasSuccessful = true;
+
+    auto env = DomEnvironment::create(
+            QStringList(), // as we load no dependencies we do not need any paths
+            QQmlJS::Dom::DomEnvironment::Option::SingleThreaded
+                    | QQmlJS::Dom::DomEnvironment::Option::NoDependencies);
+
+    const QString formatted = formatInMemoryImpl(
+            &wasSuccessful, LineWriterOptions{}, WriteOutCheck::None, WriteOutCheck::None,
+            std::move(env), FileToLoad::fromMemory(env, testFile("file.qml"), code));
+
+    QVERIFY(!wasSuccessful);
+    QCOMPARE(formatted, ""_L1);
 }
 
 QTEST_MAIN(TestQmlformat)

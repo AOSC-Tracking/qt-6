@@ -22,6 +22,7 @@
 #include <QtMultimedia/qaudiosink.h>
 #include <QtMultimedia/qtmultimediaglobal.h>
 #include <QtMultimedia/private/qaudio_rtsan_support_p.h>
+#include <QtMultimedia/private/qaudiosystem_p.h>
 #include <QtMultimedia/private/qaudioringbuffer_p.h>
 #include <QtMultimedia/private/qautoresetevent_p.h>
 #include <QtMultimedia/private/q_pmr_emulation_p.h>
@@ -183,10 +184,9 @@ public:
     using Notification = std::variant<StopNotification, VisitReply>;
 
 public:
-    // we keep a pool of engines with one engine per device/format
-    static std::shared_ptr<QRtAudioEngine> getEngineFor(const QAudioDevice &, const QAudioFormat &);
-
-    QRtAudioEngine(const QAudioDevice &, const QAudioFormat &);
+    QRtAudioEngine(const QAudioDevice &, const QAudioFormat &,
+                   std::optional<AudioEndpointRole> = std::nullopt,
+                   std::optional<uint32_t> hardwareBufferFrames = std::nullopt);
     Q_DISABLE_COPY_MOVE(QRtAudioEngine)
     ~QRtAudioEngine() override;
 
@@ -211,7 +211,7 @@ public:
         constexpr bool visitorIsTrivial = std::is_trivially_destructible_v<std::decay_t<Visitor>>
                 && sizeof(Visitor) <= smallBufferOptimizationEstimate;
 
-        auto wrapped = [visitor = std::move(visitor)](QRtAudioEngineVoice &voice) {
+        auto wrapped = [visitor = std::move(visitor)](QRtAudioEngineVoice &voice) mutable {
             visitor(static_cast<visitorArg>(voice));
         };
         visitVoiceRt(id, RtVoiceVisitor{ wrapped }, visitorIsTrivial);

@@ -23,7 +23,7 @@ public:
 
     // Reimplement
     void initializeResources(QCanvasPainter *painter) override;
-    void synchronize(QCanvasPainterItem *item) override;
+    void synchronizeData(QCanvasPainterItem *item) override;
     void paint(QCanvasPainter *painter) override;
 
 private:

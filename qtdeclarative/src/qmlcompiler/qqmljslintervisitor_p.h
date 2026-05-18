@@ -19,6 +19,8 @@
 
 #include <private/qqmljsengine_p.h>
 
+#include <QtCore/qtyperevision.h>
+
 QT_BEGIN_NAMESPACE
 
 namespace QQmlJS {
@@ -58,6 +60,8 @@ protected:
     bool visit(QQmlJS::AST::FunctionDeclaration *fdecl) override;
     bool visit(QQmlJS::AST::FunctionExpression *fexpr) override;
     bool visit(QQmlJS::AST::UiPublicMember *publicMember) override;
+
+    void endVisit(QQmlJS::AST::UiProgram *ast) override;
 
 private:
     struct SeenImport
@@ -101,6 +105,7 @@ private:
             const QQmlJS::AST::UiPublicMember *associatedPropertyDefinition = nullptr) override;
     void handleLiteralBinding(const QQmlJSMetaPropertyBinding &binding,
                               const AST::UiPublicMember *associatedPropertyDefinition) override;
+    void checkFileSelections();
 };
 
 } // namespace QQmlJS

@@ -68,6 +68,10 @@ inline bool isPressed(const QStyleOption *option)
 {
     return option->state.testFlag(QStyle::State_Sunken);
 }
+inline bool isSelected(const QStyleOption *option)
+{
+    return option->state.testFlag(QStyle::State_Selected);
+}
 inline bool isHover(const QStyleOption *option)
 {
     return option->state.testFlag(QStyle::State_MouseOver);
@@ -438,8 +442,10 @@ void QWindows11Style::drawComplexControl(ComplexControl control, const QStyleOpt
                 if (sb->frame && (sub & SC_SpinBoxFrame))
                     drawLineEditFrame(cp.painter(), frameRect, option);
 
-                const auto drawUpDown = [&](QStyle::SubControl sc) {
-                    const bool isEnabled = state & QStyle::State_Enabled;
+                const auto drawUpDown = [&](QStyle::SubControl sc,
+                                            QAbstractSpinBox::StepEnabledFlag flag) {
+                    const bool isEnabled =
+                            state.testFlag(QStyle::State_Enabled) && sb->stepEnabled.testFlag(flag);
                     const bool isUp = sc == SC_SpinBoxUp;
                     const QRect rect = proxy()->subControlRect(CC_SpinBox, option, sc, widget);
                     if (isEnabled && sb->activeSubControls & sc)
@@ -447,12 +453,15 @@ void QWindows11Style::drawComplexControl(ComplexControl control, const QStyleOpt
                                         winUI3Color(subtleHighlightColor));
 
                     cp->setFont(d->assetFont);
-                    cp->setPen(sb->palette.buttonText().color());
+                    cp->setPen(sb->palette.color(isEnabled ? QPalette::Active : QPalette::Disabled,
+                                                 QPalette::ButtonText));
                     cp->setBrush(Qt::NoBrush);
                     cp->drawText(rect, Qt::AlignCenter, fluentIcon(isUp ? Icon::ChevronUp : Icon::ChevronDown));
                 };
-                if (sub & SC_SpinBoxUp) drawUpDown(SC_SpinBoxUp);
-                if (sub & SC_SpinBoxDown) drawUpDown(SC_SpinBoxDown);
+                if (sub & SC_SpinBoxUp)
+                    drawUpDown(SC_SpinBoxUp, QAbstractSpinBox::StepUpEnabled);
+                if (sub & SC_SpinBoxDown)
+                    drawUpDown(SC_SpinBoxDown, QAbstractSpinBox::StepDownEnabled);
                 if (state & State_KeyboardFocusChange && state & State_HasFocus) {
                     QStyleOptionFocusRect fropt;
                     fropt.QStyleOption::operator=(*option);
@@ -817,7 +826,6 @@ void QWindows11Style::drawComplexControl(ComplexControl control, const QStyleOpt
             QStyleOptionToolButton label = *toolbutton;
             label.state = bflags;
             label.rect = buttonRect.marginsRemoved(QMargins(fw, fw, fw, fw));
-            prx->drawControl(CE_ToolButtonLabel, &label, painter, widget);
 
             if (toolbutton->subControls.testFlag(SC_ToolButtonMenu)) {
                 QPainterStateGuard psg(painter);
@@ -834,15 +842,18 @@ void QWindows11Style::drawComplexControl(ComplexControl control, const QStyleOpt
                 painter->drawText(textRect, Qt::AlignCenter, fluentIcon(Icon::ChevronDownMed));
 
             } else if (toolbutton->features.testFlag(QStyleOptionToolButton::HasMenu)) {
-                const int mbi = prx->pixelMetric(PM_MenuButtonIndicator, toolbutton, widget);
+                const int mbi = qRound(prx->pixelMetric(PM_MenuButtonIndicator, toolbutton, widget) * 0.3);
                 const QRect &ir = toolbutton->rect;
-                QRect rect(ir.right() + 5 - mbi, ir.y() + ir.height() - mbi + 4, mbi - 6 - fw,
-                           mbi - 6);
+                QRect rect(ir.right() - mbi - 2 * fw, ir.bottom() - mbi - fw, mbi,
+                           mbi);
                 rect = visualRect(toolbutton->direction, buttonRect, rect);
+                const QRect lblRect = label.rect - QMargins(0, 0, rect.width(), 0);
+                label.rect = visualRect(toolbutton->direction, buttonRect, lblRect);
                 painter->setFont(QFont(d->assetFont));
                 painter->setPen(controlTextColor(option));
                 painter->drawText(rect, Qt::AlignCenter, fluentIcon(Icon::ChevronDownMed));
             }
+            prx->drawControl(CE_ToolButtonLabel, &label, painter, widget);
         }
         break;
 #endif // QT_CONFIG(toolbutton)
@@ -997,7 +1008,7 @@ void QWindows11Style::drawPrimitive(PrimitiveElement element, const QStyleOption
             if (indicator != QStyleOptionHeader::None) {
                 QPainterStateGuard psg(painter);
                 QFont f(d->assetFont);
-                f.setPointSize(6);
+                f.setPointSize(option->rect.height());
                 painter->setFont(f);
                 painter->setPen(header->palette.text().color());
                 const auto ico = indicator == QStyleOptionHeader::SortUp ? Icon::ChevronDown
@@ -1083,10 +1094,10 @@ void QWindows11Style::drawPrimitive(PrimitiveElement element, const QStyleOption
     case PE_PanelButtonBevel:{
             const bool isEnabled = state & QStyle::State_Enabled;
             const bool isMouseOver = state & QStyle::State_MouseOver;
-            const bool isRaised = state & QStyle::State_Raised;
+            const bool isAutoRaise = state & QStyle::State_AutoRaise;
             const int fw = proxy()->pixelMetric(PM_DefaultFrameWidth, option, widget);
             const QRectF rect = option->rect.marginsRemoved(QMargins(fw, fw, fw, fw));
-            if (element == PE_PanelButtonTool && ((!isMouseOver && !isRaised) || !isEnabled))
+            if (element == PE_PanelButtonTool && ((!isMouseOver && isAutoRaise) || !isEnabled))
                 painter->setPen(Qt::NoPen);
             else
                 painter->setPen(winUI3Color(controlStrokePrimary));
@@ -1499,35 +1510,29 @@ void QWindows11Style::drawControl(ControlElement element, const QStyleOption *op
                     painter->setFont(toolbutton->font);
                     QRect pr = rect,
                             tr = rect;
-                    int alignment = Qt::TextShowMnemonic;
+                    int alignment = Qt::TextShowMnemonic | Qt::AlignCenter;
                     if (!proxy()->styleHint(SH_UnderlineShortcut, toolbutton, widget))
                         alignment |= Qt::TextHideMnemonic;
 
                     if (toolbutton->toolButtonStyle == Qt::ToolButtonTextUnderIcon) {
                         pr.setHeight(pmSize.height() + 4); //### 4 is currently hardcoded in QToolButton::sizeHint()
                         tr.adjust(0, pr.height() - 1, 0, -1);
-                        pr.translate(shiftX, shiftY);
-                        if (!hasArrow) {
-                            proxy()->drawItemPixmap(painter, pr, Qt::AlignCenter, pm);
-                        } else {
-                            drawArrow(proxy(), toolbutton, pr, painter, widget);
-                        }
-                        alignment |= Qt::AlignCenter;
                     } else {
                         pr.setWidth(pmSize.width() + 4); //### 4 is currently hardcoded in QToolButton::sizeHint()
                         tr.adjust(pr.width(), 0, 0, 0);
-                        pr.translate(shiftX, shiftY);
-                        if (!hasArrow) {
-                            proxy()->drawItemPixmap(painter, QStyle::visualRect(toolbutton->direction, rect, pr), Qt::AlignCenter, pm);
-                        } else {
-                            drawArrow(proxy(), toolbutton, pr, painter, widget);
-                        }
-                        alignment |= Qt::AlignLeft | Qt::AlignVCenter;
+                    }
+                    pr.translate(shiftX, shiftY);
+                    if (hasArrow) {
+                        drawArrow(proxy(), toolbutton, pr, painter, widget);
+                    } else {
+                        const auto vr = QStyle::visualRect(toolbutton->direction, rect, pr);
+                        proxy()->drawItemPixmap(painter, vr, Qt::AlignCenter, pm);
                     }
                     tr.translate(shiftX, shiftY);
-                    const QString text = d->toolButtonElideText(toolbutton, tr, alignment);
                     painter->setPen(controlTextColor(option));
-                    proxy()->drawItemText(painter, QStyle::visualRect(toolbutton->direction, rect, tr), alignment, toolbutton->palette,
+                    const QString text = d->toolButtonElideText(toolbutton, tr, alignment);
+                    const auto vr = QStyle::visualRect(toolbutton->direction, rect, tr);
+                    proxy()->drawItemText(painter, vr, alignment, toolbutton->palette,
                                           toolbutton->state & State_Enabled, text);
                 } else {
                     rect.translate(shiftX, shiftY);
@@ -1775,18 +1780,29 @@ void QWindows11Style::drawControl(ControlElement element, const QStyleOption *op
 
     case CE_MenuItem:
         if (const auto *menuitem = qstyleoption_cast<const QStyleOptionMenuItem *>(option)) {
+            using namespace StyleOptionHelper;
+
             const auto visualMenuRect = [&](const QRect &rect) {
                 return visualRect(option->direction, menuitem->rect, rect);
             };
-            bool dis = !(menuitem->state & State_Enabled);
-            bool checked = menuitem->checkType != QStyleOptionMenuItem::NotCheckable
-                    ? menuitem->checked : false;
-            bool act = menuitem->state & State_Selected;
+
+            const bool checked =
+                    menuitem->checkType != QStyleOptionMenuItem::NotCheckable && menuitem->checked;
 
             const QRect rect = menuitem->rect.marginsRemoved(QMargins(2,2,2,2));
-            if (act && dis == false) {
-                drawRoundedRect(painter, rect, Qt::NoPen, highContrastTheme ? menuitem->palette.brush(QPalette::Highlight)
-                                                                            : QBrush(winUI3Color(subtleHighlightColor)));
+            if (!isDisabled(menuitem)) {
+                QPen pen(Qt::NoPen);
+                QBrush brush(Qt::NoBrush);
+                if (highContrastTheme) {
+                    pen = QPen(menuitem->palette.highlight().color(), 2);
+                    brush = menuitem->palette.window();
+                } else if (isPressed(menuitem)) {
+                    brush = winUI3Color(subtlePressedColor);
+                } else if (isSelected(menuitem)) { // == hover
+                    brush = winUI3Color(subtleHighlightColor);
+                }
+                if (pen != Qt::NoPen || brush != Qt::NoBrush)
+                    drawRoundedRect(painter, rect, pen, brush);
             }
             if (menuitem->menuItemType == QStyleOptionMenuItem::Separator) {
                 constexpr int yoff = 1;
@@ -1815,9 +1831,9 @@ void QWindows11Style::drawControl(ControlElement element, const QStyleOption *op
                                                  rect.y(),
                                                  menuitem->maxIconWidth - 4,
                                                  rect.height())));
-                QIcon::Mode mode = dis ? QIcon::Disabled : QIcon::Normal;
-                if (act && !dis)
-                    mode = QIcon::Active;
+                const auto mode = isDisabled(menuitem)
+                        ? QIcon::Disabled
+                        : (isSelected(menuitem) ? QIcon::Active : QIcon::Normal);
                 const auto size = proxy()->pixelMetric(PM_SmallIconSize, option, widget);
                 QRect pmr(QPoint(0, 0), QSize(size, size));
                 pmr.moveCenter(vRect.center());
@@ -1837,10 +1853,12 @@ void QWindows11Style::drawControl(ControlElement element, const QStyleOption *op
 
                 QColor penColor;
                 if (highContrastTheme) {
-                    penColor = menuitem->palette.color(act ? QPalette::HighlightedText
-                                                           : QPalette::Text);
+                    penColor = menuitem->palette.color(
+                            isSelected(menuitem) ? QPalette::HighlightedText : QPalette::Text);
                 } else {
-                    penColor = controlTextColor(option);
+                    QStyleOption tmpOpt(*option);
+                    tmpOpt.state.setFlag(State_Sunken, false);
+                    penColor = controlTextColor(&tmpOpt);
                 }
                 painter->setPen(penColor);
 
@@ -2055,6 +2073,8 @@ int QWindows11Style::styleHint(StyleHint hint, const QStyleOption *opt,
         return Qt::LeftButton;
     case QStyle::SH_Slider_PageSetButtons:
         return 0;
+    case SH_SpinControls_DisableOnBounds:
+        return 1;
     default:
         return QWindowsVistaStyle::styleHint(hint, opt, widget, returnData);
     }
@@ -2176,10 +2196,23 @@ QRect QWindows11Style::subElementRect(QStyle::SubElement element, const QStyleOp
         }
         break;
 #endif // QT_CONFIG(toolbar)
-    case QStyle::SE_HeaderLabel:
-    case QStyle::SE_HeaderArrow:
-        ret = QWindowsVistaStyle::subElementRect(element, option, widget);
+    case SE_HeaderLabel: {
+        const int margin = proxy()->pixelMetric(PM_HeaderMargin, option, widget);
+        ret = option->rect.marginsRemoved({ margin, margin, margin, margin });
         break;
+    }
+    case SE_HeaderArrow: {
+        ret = option->rect;
+        if (const auto *header = qstyleoption_cast<const QStyleOptionHeader *>(option)) {
+            // the sort indicator is always show above in the win11 style
+            if (header->sortIndicator != QStyleOptionHeader::None) {
+                const int arrowSize = proxy()->pixelMetric(PM_HeaderMarkSize, option, widget);
+                const int xCenter = ret.center().x();
+                ret = QRect(xCenter - arrowSize / 2, ret.top(), arrowSize, arrowSize);
+            }
+        }
+        break;
+    }
     case SE_PushButtonContents: {
         int border = proxy()->pixelMetric(PM_DefaultFrameWidth, option, widget);
         ret = option->rect.marginsRemoved(QMargins(border, border, border, border));
@@ -2541,14 +2574,20 @@ QSize QWindows11Style::sizeFromContents(ContentsType type, const QStyleOption *o
         break;
     }
     case CT_ToolButton: {
-        contentSize = QWindowsVistaStyle::sizeFromContents(type, option, size, widget);
-        // we want our own horizontal spacing
-        const int oldMargin = proxy()->pixelMetric(PM_ButtonMargin, option, widget);
-        contentSize.rwidth() += 2 * contentHMargin - oldMargin;
-        if (const auto toolbutton = qstyleoption_cast<const QStyleOptionToolButton *>(option)) {
-            if (toolbutton->features.testFlag(QStyleOptionToolButton::HasMenu))
-                contentSize.rwidth() += size.height();
+        contentSize = size;
+        if (const auto tb = qstyleoption_cast<const QStyleOptionToolButton *>(option)) {
+            // no separate menu, only dropdown icon
+            if (!tb->subControls.testFlag(SC_ToolButtonMenu)) {
+                if (tb->features.testFlag(QStyleOptionToolButton::HasMenu))
+                    contentSize.rwidth() += 2;
+            }
+            if (tb->toolButtonStyle == Qt::ToolButtonTextBesideIcon
+                || tb->toolButtonStyle == Qt::ToolButtonIconOnly) {
+                contentSize.rheight() = qMax(contentSize.height(), tb->iconSize.height() + 4);
+            }
         }
+        const auto fw = proxy()->pixelMetric(PM_DefaultFrameWidth, option, widget);
+        contentSize += QSize(contentHMargin + 2 * fw, 2 * fw);
         break;
     }
     case CT_ItemViewItem: {
@@ -2673,6 +2712,9 @@ int QWindows11Style::pixelMetric(PixelMetric metric, const QStyleOption *option,
         break;
     case PM_ProgressBarChunkWidth:
         res = 0;    // no chunks on windows11
+        break;
+    case PM_HeaderMarkSize:
+        res = 6;
         break;
     default:
         res = QWindowsVistaStyle::pixelMetric(metric, option, widget);
@@ -2848,7 +2890,8 @@ void QWindows11Style::dwmSetWindowCornerPreference(const QWidget *widget, bool b
     static constexpr auto dwmcpRoundSmall = 3;
     static constexpr auto dwmcpDefault = 0;
 #endif
-    if (widget && widget->isWindow() && widget->testAttribute(Qt::WA_WState_Created)) {
+    if (widget && widget->isWindow() && widget->testAttribute(Qt::WA_WState_Created)
+        && !widget->windowFlags().testFlag(Qt::FramelessWindowHint)) {
         const auto window = widget->windowHandle();
         if (window && window->handle()) {
             const auto wId = reinterpret_cast<HWND>(widget->winId());
@@ -3018,11 +3061,28 @@ QIcon QWindows11Style::standardIcon(StandardPixmap standardIcon,
         return getIcon(Icon::More, 1.0);
     case SP_TabCloseButton:
         return getIcon(Icon::ChromeClose, 0.6);
+    case SP_ArrowUp:
+        return getIcon(Icon::ChevronUpMed, 1.0);
+    case SP_ArrowDown:
+        return getIcon(Icon::ChevronDownMed, 1.0);
+    case SP_ArrowLeft:
+        return getIcon(Icon::ChevronLeftMed, 1.0);
+    case SP_ArrowRight:
+        return getIcon(Icon::ChevronRightMed, 1.0);
     default:
         break;
     }
     return QWindowsVistaStyle::standardIcon(standardIcon, option, widget);
 }
+
+QPixmap QWindows11Style::generatedIconPixmap(QIcon::Mode iconMode, const QPixmap &pixmap,
+                                             const QStyleOption *option) const
+{
+    if (iconMode == QIcon::Disabled)
+        return QWindowsVistaStyle::generatedIconPixmap(iconMode, pixmap, option);
+    return pixmap;
+}
+
 
 QColor QWindows11Style::calculateAccentColor(const QStyleOption *option) const
 {
@@ -3063,7 +3123,7 @@ QBrush QWindows11Style::controlFillBrush(const QStyleOption *option, ControlType
     };
 
     if (option->palette.isBrushSet(QPalette::Current, QPalette::Button))
-        return option->palette.button();
+        return option->palette.brush(QPalette::Current, QPalette::Button);
 
     if (!isChecked(option) && isAutoRaise(option))
         return Qt::NoBrush;
@@ -3082,7 +3142,7 @@ QBrush QWindows11Style::inputFillBrush(const QStyleOption *option, const QWidget
     using namespace StyleOptionHelper;
     const auto role = widget ? widget->backgroundRole() : QPalette::Window;
     if (option->palette.isBrushSet(QPalette::Current, role))
-        return option->palette.button();
+        return option->palette.brush(QPalette::Current, role);
 
     if (isDisabled(option))
         return winUI3Color(fillControlDisabled);
@@ -3104,7 +3164,7 @@ QColor QWindows11Style::controlTextColor(const QStyleOption *option, bool ignore
     };
 
     if (option->palette.isBrushSet(QPalette::Current, QPalette::ButtonText))
-        return option->palette.buttonText().color();
+        return option->palette.color(QPalette::Current, QPalette::ButtonText);
 
     const int colorIndex = !ignoreIsChecked && isChecked(option) ? 1 : 0;
     const auto state = calcControlState(option);
@@ -3123,15 +3183,20 @@ void QWindows11Style::drawLineEditFrame(QPainter *p, const QRectF &rect, const Q
     if (!isEditable || StyleOptionHelper::isDisabled(o))
         return;
 
-    QPainterStateGuard psg(p);
-    p->setClipRect(rect.marginsRemoved(QMarginsF(0, rect.height() - 0.5, 0, -1)));
     const bool hasFocus = o->state & State_HasFocus;
     const auto underlineCol = hasFocus
             ? o->palette.color(QPalette::Accent)
             : colorSchemeIndex == 0 ? QColor(0x80, 0x80, 0x80)
                                     : QColor(0xa0, 0xa0, 0xa0);
-    const auto penUnderline = QPen(underlineCol, hasFocus ? 2 : 1);
-    drawRoundedRect(p, rect, penUnderline, Qt::NoBrush);
+    QPainterStateGuard psg(p);
+    if (hasFocus) {
+        p->setClipRect(rect.marginsRemoved(QMarginsF(0, rect.height() - 1.5, 0, -1)));
+        const QRectF r(rect.top(), rect.left(), rect.width(), rect.height() - 1);
+        drawRoundedRect(p, r, QPen(underlineCol, 2), Qt::NoBrush);
+    } else {
+        p->setClipRect(rect.marginsRemoved(QMarginsF(0, rect.height() - 0.5, 0, -1)));
+        drawRoundedRect(p, rect, underlineCol, Qt::NoBrush);
+    }
 }
 
 QColor QWindows11Style::winUI3Color(enum WINUI3Color col) const

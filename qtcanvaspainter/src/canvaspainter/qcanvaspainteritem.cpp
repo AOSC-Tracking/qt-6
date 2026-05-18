@@ -66,6 +66,11 @@ QT_BEGIN_NAMESPACE
     \li textTriangleCount
     \li drawCallCount
     \li triangleCount
+    \li imageMemoryUsage
+    \li imageCount
+    \li pathGroupCount
+    \li cachedSubpathCount
+    \li cachedPathVertexDataSize
     \endlist
 */
 
@@ -77,24 +82,41 @@ QCanvasPainterItem::QCanvasPainterItem(QQuickItem *parent)
     : QQuickRhiItem(*new QCanvasPainterItemPrivate, parent)
 {
     Q_D(QCanvasPainterItem);
-    setFlag(ItemHasContents, true);
-    connect(this, SIGNAL(scaleChanged()), this, SLOT(update()));
+    d->init();
+}
+
+/*!
+ *  \internal
+ */
+QCanvasPainterItem::QCanvasPainterItem(QCanvasPainterItemPrivate &dd, QQuickItem *parent)
+    : QQuickRhiItem(dd, parent)
+{
+    Q_D(QCanvasPainterItem);
+    d->init();
+}
+
+void QCanvasPainterItemPrivate::init()
+{
+    Q_Q(QCanvasPainterItem);
+    q->setFlag(QQuickItem::ItemHasContents, true);
+    q->connect(q, &QQuickItem::scaleChanged,
+               q, &QQuickItem::update);
     // Default to antialiased
-    setAntialiasing(true);
+    q->setAntialiasing(true);
 
     static bool collectDebug = qEnvironmentVariableIsSet("QCPAINTER_DEBUG_COLLECT");
     if (collectDebug) {
         const int DEBUG_UPDATE_FREQUENCY_MS = 1000;
-        d->m_debugUpdateTimer.setInterval(DEBUG_UPDATE_FREQUENCY_MS);
-        QObjectPrivate::connect(&d->m_debugUpdateTimer,
+        m_debugUpdateTimer.setInterval(DEBUG_UPDATE_FREQUENCY_MS);
+        QObjectPrivate::connect(&m_debugUpdateTimer,
                                 &QTimer::timeout,
-                                d,
+                                this,
                                 &QCanvasPainterItemPrivate::updateDebug);
-        d->m_debugUpdateTimer.start();
+        m_debugUpdateTimer.start();
     }
     // Initial debug values
     QCDebugCounters zeroCounters;
-    d->updateDebugData(zeroCounters);
+    updateDebugData(zeroCounters);
 }
 
 /*!

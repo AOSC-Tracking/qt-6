@@ -36,9 +36,6 @@ class QSSGRhiShaderPipeline;
 namespace RenderHelpers
 {
 
-std::pair<QSSGBounds3, QSSGBounds3> calculateSortedObjectBounds(const QSSGRenderableObjectList &sortedOpaqueObjects,
-                                                                const QSSGRenderableObjectList &sortedTransparentObjects);
-
 void rhiRenderShadowMap(QSSGRhiContext *rhiCtx,
                         QSSGPassKey passKey,
                         QSSGRhiGraphicsPipelineState &ps,
@@ -131,33 +128,31 @@ void rhiPrepareSkyBoxForReflectionMap(QSSGRhiContext *rhiCtx,
                                       QSSGReflectionMapEntry *entry,
                                       QSSGRenderTextureCubeFace cubeFace);
 
-void rhiPrepareOverrideMaterialUserPass(QSSGRhiContext *rhiCtx,
-                                        QSSGPassKey passKey,
-                                        const QSSGRhiGraphicsPipelineState &basePipelineState,
-                                        QRhiRenderPassDescriptor *rpDesc,
-                                        QSSGRenderGraphObject *overrideMaterial,
-                                        QSSGLayerRenderData &inData,
-                                        QSSGRenderableObjectList &inObjects,
-                                        QSSGShaderFeatures featureSet,
-                                        size_t index);
+[[nodiscard]] qsizetype rhiPrepareOverrideMaterialUserPass(QSSGRhiContext *rhiCtx,
+                                                           QSSGPassKey passKey,
+                                                           const QSSGRhiGraphicsPipelineState &basePipelineState,
+                                                           QRhiRenderPassDescriptor *rpDesc,
+                                                           QSSGRenderGraphObject *overrideMaterial,
+                                                           QSSGLayerRenderData &inData,
+                                                           QSSGRenderableObjectList &inObjects,
+                                                           QSSGShaderFeatures featureSet);
 
-void rhiPrepareOriginalMaterialUserPass(QSSGRhiContext *rhiCtx,
-                                        QSSGPassKey passKey,
-                                        const QSSGRhiGraphicsPipelineState &basePipelineState,
-                                        QRhiRenderPassDescriptor *rpDesc,
-                                        const QSSGLayerRenderData &inData,
-                                        QSSGRenderableObjectList &inObjects,
-                                        QSSGShaderFeatures featureSet,
-                                        size_t index);
+[[nodiscard]] qsizetype rhiPrepareOriginalMaterialUserPass(QSSGRhiContext *rhiCtx,
+                                                           QSSGPassKey passKey,
+                                                           const QSSGRhiGraphicsPipelineState &basePipelineState,
+                                                           QRhiRenderPassDescriptor *rpDesc,
+                                                           const QSSGLayerRenderData &inData,
+                                                           QSSGRenderableObjectList &inObjects,
+                                                           QSSGShaderFeatures featureSet);
 
-void rhiPrepareAugmentedUserPass(QSSGRhiContext *rhiCtx,
-                                 QSSGPassKey passKey,
-                                 const QSSGRhiGraphicsPipelineState &basePipelineState,
-                                 QRhiRenderPassDescriptor *rpDesc,
-                                 const QSSGUserShaderAugmentation &shaderAugmentation,
-                                 const QSSGLayerRenderData &inData,
-                                 QSSGRenderableObjectList &inObjects,
-                                 QSSGShaderFeatures featureSet, size_t index);
+[[nodiscard]] qsizetype rhiPrepareAugmentedUserPass(QSSGRhiContext *rhiCtx,
+                                                    QSSGPassKey passKey,
+                                                    const QSSGRhiGraphicsPipelineState &basePipelineState,
+                                                    QRhiRenderPassDescriptor *rpDesc,
+                                                    const QSSGUserShaderAugmentation &shaderAugmentation,
+                                                    const QSSGLayerRenderData &inData,
+                                                    QSSGRenderableObjectList &inObjects,
+                                                    QSSGShaderFeatures featureSet);
 
 void rhiRenderUserAugmentedPass(QSSGRhiContext *rhiCtx,
                                QSSGRenderableObjectList &inObjects);
@@ -176,6 +171,21 @@ Q_QUICK3DRUNTIMERENDER_EXPORT void rhiPrepareRenderable(QSSGRhiContext *rhiCtx,
                                                         QSSGRenderTextureCubeFace cubeFace = QSSGRenderTextureCubeFaceNone,
                                                         QSSGReflectionMapEntry *entry = nullptr,
                                                         bool oit = false);
+
+Q_QUICK3DRUNTIMERENDER_EXPORT void rhiPrepareRenderableForScreenMapPass(QSSGRhiContext *rhiCtx,
+                                                                        QSSGPassKey passKey,
+                                                                        const QSSGLayerRenderData &inData,
+                                                                        QSSGRenderableObject &inObject,
+                                                                        QRhiRenderPassDescriptor *renderPassDescriptor,
+                                                                        QSSGRhiGraphicsPipelineState *ps,
+                                                                        QSSGShaderFeatures featureSet,
+                                                                        int samples,
+                                                                        int viewCount,
+                                                                        QSSGRenderCamera *alteredCamera = nullptr,
+                                                                        QMatrix4x4 *alteredModelViewProjection = nullptr,
+                                                                        QSSGRenderTextureCubeFace cubeFace = QSSGRenderTextureCubeFaceNone,
+                                                                        QSSGReflectionMapEntry *entry = nullptr,
+                                                                        bool oit = false);
 
 Q_QUICK3DRUNTIMERENDER_EXPORT void rhiRenderRenderable(QSSGRhiContext *rhiCtx,
                                                        const QSSGRhiGraphicsPipelineState &state,

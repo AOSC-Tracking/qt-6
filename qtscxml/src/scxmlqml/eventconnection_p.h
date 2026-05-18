@@ -1,5 +1,6 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant
 
 #ifndef EVENTCONNECTION_P_H
 #define EVENTCONNECTION_P_H
@@ -22,7 +23,9 @@
 #include <QtCore/qobject.h>
 #include <QtQml/qqmlparserstatus.h>
 #include <QtQml/qqml.h>
+
 #include "QtCore/qproperty.h"
+#include <QtCore/qvarlengtharray.h>
 #include <private/qproperty_p.h>
 
 QT_BEGIN_NAMESPACE
@@ -49,6 +52,7 @@ class Q_SCXMLQML_EXPORT QScxmlEventConnection : public QObject, public QQmlParse
 
 public:
     QScxmlEventConnection(QObject *parent = nullptr);
+    ~QScxmlEventConnection() override;
 
     QStringList events() const;
     void setEvents(const QStringList &events);
@@ -72,7 +76,7 @@ private:
                              &QScxmlEventConnection::setEvents,
                              &QScxmlEventConnection::eventsChanged);
 
-    QList<QMetaObject::Connection> m_connections;
+    QVarLengthArray<QMetaObject::Connection, 4> m_connections;
 
     void doConnect();
     void classBegin() override;

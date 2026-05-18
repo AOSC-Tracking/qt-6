@@ -184,15 +184,23 @@ function(qt6_add_openapi_client target)
 
         set(openapi_cli_entrypoint_class "org.openapitools.codegen.OpenAPIGenerator")
         set(run_client_cmd
-            "${openapi_generator_cli_jar_file}${path_separator}${generator_jar_path}")
+            "${generator_jar_path}${path_separator}${openapi_generator_cli_jar_file}")
         set(generation_command java ${arg_JAVA_OPTIONS} -cp "${run_client_cmd}" "${openapi_cli_entrypoint_class}")
         list(APPEND extra_dependencies "${openapi_generator_cli_jar_file}")
     elseif(openapi_generator_cli_exec_file)
-        if(arg_JAVA_OPTIONS)
-            set(backup_java_opts "$ENV{JAVA_OPTS}")
-            list(JOIN arg_JAVA_OPTIONS " " java_options_str)
-            set(ENV{JAVA_OPTS} "${backup_java_opts} ${java_options_str}")
-        endif()
+        # When using the jar, logback.xml is included in it and picked up automatically.
+        # When using the cli executable, there is no jar on the classpath, so we pass
+        # the logback config explicitly via JAVA_OPTS. The user's JAVA_OPTIONS come
+        # after, so they can still override it.
+        get_filename_component(generator_logback_config
+            "${__qt_openapi_macros_module_base_dir}/../tools/qtopenapi-generator/src/main/resources/logback.xml"
+            REALPATH)
+        set(backup_java_opts "$ENV{JAVA_OPTS}")
+        list(PREPEND arg_JAVA_OPTIONS "-Dlogback.configurationFile=${generator_logback_config}")
+        list(JOIN arg_JAVA_OPTIONS " " java_options_str)
+        set(ENV{JAVA_OPTS}
+            "${backup_java_opts} ${java_options_str}")
+
         set(generation_command
             "${openapi_generator_cli_exec_file}" --custom-generator="${generator_jar_path}")
         list(APPEND extra_dependencies "${openapi_generator_cli_exec_file}")
@@ -325,7 +333,7 @@ function(qt6_add_openapi_client target)
             RESULT_VARIABLE generate_result
             ${extra_args}
         )
-        if(arg_JAVA_OPTIONS AND openapi_generator_cli_exec_file)
+        if(openapi_generator_cli_exec_file)
             set(ENV{JAVA_OPTS} ${backup_java_opts})
         endif()
         if(NOT generate_result)

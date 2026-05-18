@@ -1,12 +1,14 @@
 // Copyright (C) 2022 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-3.0-only
+
 #include "qquick3dambientsound_p.h"
-#include "qquick3daudioengine_p.h"
-#include "qambientsound.h"
-#include <QAudioFormat>
-#include <qdir.h>
-#include <QQmlContext>
-#include <QQmlFile>
+
+#include <QtQuick3DSpatialAudio/private/qquick3daudioengine_p.h>
+#include <QtSpatialAudio/qambientsound.h>
+
+#include <QtCore/qdir.h>
+#include <QtQml/qqmlcontext.h>
+#include <QtQml/qqmlfile.h>
 
 QT_BEGIN_NAMESPACE
 
@@ -48,7 +50,7 @@ QUrl QQuick3DAmbientSound::source() const
     return m_sound->source();
 }
 
-void QQuick3DAmbientSound::setSource(QUrl source)
+void QQuick3DAmbientSound::setSource(const QUrl& source)
 {
     const QQmlContext *context = qmlContext(this);
     QUrl url;

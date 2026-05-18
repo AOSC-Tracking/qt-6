@@ -59,6 +59,30 @@ QQmlJSScope::Ptr QQmlJSScope::clone(const ConstPtr &origin)
 
 /*!
 \internal
+Prepares the scope to be used by QQmlJSImportVisitor: we don't want to have "left-overs" from a
+potential previous import visitor run, so remove all information except for the information set
+by the qqmljsimporter (internalName, moduleName and isSingleton).
+ */
+QQmlJSScope::Ptr QQmlJSScope::resetForReparse(Ptr &&scope)
+{
+    auto *factory = scope.factory();
+    if (!factory) {
+        const QString moduleName = scope->moduleName();
+        *scope = QQmlJSScope{ scope->internalName() };
+        scope->setOwnModuleName(moduleName);
+        return std::move(scope);
+    }
+
+    const QString moduleName = factory->moduleName();
+    const QString internalName = factory->internalName();
+    *scope.factory() = QQmlJSScope::ConstPtr::Factory{ };
+    scope->setOwnModuleName(moduleName);
+    scope->setInternalName(internalName);
+    return std::move(scope);
+}
+
+/*!
+\internal
 Return all the JavaScript identifiers defined in the current scope.
 */
 QHash<QString, QQmlJSScope::JavaScriptIdentifier> QQmlJSScope::ownJSIdentifiers() const
@@ -715,7 +739,8 @@ void QQmlJSScope::resolveList(const QQmlJSScope::Ptr &self, const QQmlJSScope::C
         listType->setFilePath(self->filePath());
     }
 
-    const QQmlJSImportedScope element = {self, QTypeRevision()};
+    const QQmlJS::ContextualType element = { self, QTypeRevision(),
+                                             QQmlJS::PrecedenceValues::Default };
     const QQmlJSImportedScope array = {arrayType, QTypeRevision()};
     QQmlJS::ContextualTypes contextualTypes(
             QQmlJS::ContextualTypes::INTERNAL,
@@ -1185,17 +1210,19 @@ bool QQmlJSScope::Export::isValid() const
     return m_version.isValid() || !m_package.isEmpty() || !m_type.isEmpty();
 }
 
-QDeferredFactory<QQmlJSScope>::QDeferredFactory(QQmlJSImporter *importer, const QString &filePath,
-                                                const TypeReader &typeReader)
-    : m_filePath(filePath),
-      m_importer(importer),
+QDeferredFactory<QQmlJSScope>::QDeferredFactory(QQmlJSImporter *importer, const TypeReader &typeReader,
+                                                const QString &filePath, const QString &moduleName, bool isSingleton)
+    : m_importer(importer),
       m_typeReader(typeReader ? typeReader
                               : [](QQmlJSImporter *importer, const QString &filePath,
                                    const QSharedPointer<QQmlJSScope> &scopeToPopulate) {
                                     QQmlJSTypeReader defaultTypeReader(importer, filePath);
                                     defaultTypeReader(scopeToPopulate);
                                     return defaultTypeReader.errors();
-                                })
+                                }),
+      m_filePath(filePath),
+      m_moduleName(moduleName),
+      m_isSingleton(isSingleton)
 {
 }
 

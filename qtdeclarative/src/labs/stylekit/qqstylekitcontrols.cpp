@@ -3,7 +3,6 @@
 
 #include "qqstylekitcontrols_p.h"
 #include "qqstylekitcontrol_p.h"
-#include "qqstylekitvariation_p.h"
 #include "qqstylekitcustomcontrol_p.h"
 
 QT_BEGIN_NAMESPACE
@@ -63,7 +62,7 @@ QT_BEGIN_NAMESPACE
 
     \snippet ControlsSnippets.qml abstractButton
 
-    \sa {qtlabsstylekit-controls.html}{Control Types}
+    \sa {Qt Labs StyleKit}{Control Types}
 */
 
 /*!
@@ -174,6 +173,13 @@ QT_BEGIN_NAMESPACE
 
     Unset properties fall back to \l pane.
 
+    Note that the \l [QtQuickControls]{Page::header}{header} and
+    \l [QtQuickControls]{Page::footer}{footer} of a \l [QtQuickControls]{Page} are
+    typically set by the application to a \l [QtQuickControls]{ToolBar} or
+    \l [QtQuickControls]{TabBar}, and those controls are styled separately.
+    To give a \l [QtQuickControls]{ToolBar} alternative styling when used inside
+    a \l [QtQuickControls]{Page}, use a \l StyleVariation:
+
     \snippet ControlsSnippets.qml page
 */
 
@@ -229,8 +235,8 @@ QT_BEGIN_NAMESPACE
     \qmlproperty ControlStyle AbstractStylableControls::scrollBar
 
     Grouped property for styling \l [QtQuickControls]{ScrollBar}.
-    For a scroll bar, the groove is styled through the indicator, while the handle is
-    styled through the indicator's foreground.
+    The groove is styled through \l {ControlStyleProperties::}{background}, and the
+    handle through \l {ControlStyleProperties::}{indicator}.
 
     Unset properties fall back to \l control.
 
@@ -241,6 +247,8 @@ QT_BEGIN_NAMESPACE
     \qmlproperty ControlStyle AbstractStylableControls::scrollIndicator
 
     Grouped property for styling \l [QtQuickControls]{ScrollIndicator}.
+    The groove is styled through \l {ControlStyleProperties::}{background}, and the
+    handle through \l {ControlStyleProperties::}{indicator}.
 
     Unset properties fall back to \l control.
 
@@ -405,17 +413,6 @@ QQStyleKitControl* QQStyleKitControls::getControl(QQStyleKitExtendableControlTyp
     if (!m_controls.contains(controlType))
         return nullptr;
     return m_controls[controlType];
-}
-
-
-QList<QQStyleKitVariation *> QQStyleKitControls::variations() const
-{
-    QList<QQStyleKitVariation *> list;
-    for (auto *obj : children()) {
-        if (auto *variation = qobject_cast<QQStyleKitVariation *>(obj))
-            list.append(variation);
-    }
-    return list;
 }
 
 #define IMPLEMENT_ACCESSORS(NAME, TYPE) \

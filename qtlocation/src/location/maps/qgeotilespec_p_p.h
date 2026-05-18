@@ -1,5 +1,6 @@
 // Copyright (C) 2021 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 #ifndef QGEOTILESPEC_P_H
 #define QGEOTILESPEC_P_H
 
@@ -14,6 +15,7 @@
 // We mean it.
 //
 
+#include <QtCore/qhashfunctions.h>
 #include <QString>
 #include <QSharedData>
 
@@ -27,6 +29,18 @@ public:
         : plugin_(plugin), mapId_(mapId), zoom_(zoom),
           x_(x), y_(y), version_(version)
     {}
+
+
+    size_t hash(size_t seed) const
+    {
+        return qHashMulti(seed,
+                          mapId_,
+                          zoom_,
+                          x_,
+                          y_,
+                          version_,
+                          plugin_);
+    }
 
     inline bool operator==(const QGeoTileSpecPrivate &rhs) const
     {

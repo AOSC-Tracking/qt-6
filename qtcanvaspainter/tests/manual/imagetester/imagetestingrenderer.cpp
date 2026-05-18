@@ -12,7 +12,7 @@ ImageTestingRenderer::ImageTestingRenderer()
 {
 }
 
-void ImageTestingRenderer::synchronize(QCanvasPainterItem *item)
+void ImageTestingRenderer::synchronizeData(QCanvasPainterItem *item)
 {
     auto p = painter();
     ImageTestingItem *realItem = static_cast<ImageTestingItem*>(item);

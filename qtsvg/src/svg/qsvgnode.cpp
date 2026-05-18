@@ -44,6 +44,16 @@ void QSvgNode::draw(QPainter *p, QSvgExtraStates &states)
 #endif
 
     if (shouldDrawNode(p, states)) {
+        quint8 remainingDepth = states.trustedSource ? states.remainingNestedNodes
+                                                     : states.remainingNestedNodes - 1;
+        QScopedValueRollback<quint8> nestedNodesGuard(states.remainingNestedNodes, remainingDepth);
+        if (states.remainingNestedNodes == 0) {
+            qCWarning(lcSvgDraw) << "Too many nested nodes at" << qPrintable(typeName())
+                                 << "exceeding max nested limit of" << QtSvg::renderingMaxNestedNodes << "."
+                                 << "Enable AssumeTrustedSource in QSvgHandler or set QT_SVG_DEFAULT_OPTIONS=2 to disable this check.";
+            return;
+        }
+
         applyStyle(p, states);
         applyAnimatedStyle(p, states);
         QSvgNode *maskNode = this->hasMask() ? document()->namedNode(this->maskId()) : nullptr;
@@ -85,7 +95,7 @@ void QSvgNode::draw(QPainter *p, QSvgExtraStates &states)
             QImage proxy = drawIntoBuffer(p, states, boundsRect.toAlignedRect());
             applyBufferToCanvas(p, proxy);
         } else {
-            if (separateFillStroke(states))
+            if (separateFillStroke(p, states))
                 fillThenStroke(p, states);
             else
                 drawCommand(p, states);
@@ -154,7 +164,7 @@ QImage QSvgNode::drawIntoBuffer(QPainter *p, QSvgExtraStates &states, const QRec
     proxyPainter.translate(-boundsRect.topLeft());
     proxyPainter.setTransform(p->transform(), true);
     proxyPainter.setRenderHints(p->renderHints());
-    if (separateFillStroke(states))
+    if (separateFillStroke(p, states))
         fillThenStroke(&proxyPainter, states);
     else
         drawCommand(&proxyPainter, states);
@@ -677,7 +687,7 @@ bool QSvgNode::shouldDrawNode(QPainter *p, QSvgExtraStates &states) const
     if (m_displayMode == DisplayMode::NoneMode)
         return false;
 
-    if (document() && document()->options().testFlag(QtSvg::AssumeTrustedSource))
+    if (document() && states.trustedSource)
         return true;
 
     QRectF brect = internalFastBounds(p, states);

@@ -40,7 +40,10 @@
     \section2 Qt OpenAPI Module
 
     \l{Qt OpenAPI} extends an \l{https://openapi-generator.tech/}{Open API generator}
-    to generate Qt HTTP clients, typically used for RESTful APIs.
+    to generate Qt HTTP clients, typically used for RESTful APIs. In addition to the
+    documentation, the
+    \l{https://www.qt.io/blog/rest-better-with-the-support-of-openapi-in-qt-6}
+    {REST Better with the Support of OpenAPI in Qt 6} blog post gives a good overview.
 
     \section2 Qt TaskTree Module
     \l {Qt TaskTree} provides a declarative way to compose and execute
@@ -88,6 +91,11 @@
           operates on, ensuring that relevant QAbstractItemModel signals are emitted on
           changes, without user code having to work with QModelIndex. This new class is under
           technology preview.
+      \li On Windows, Qt now automatically generates an application manifest for
+          executables built with CMake. The manifest derives the application version from
+          \c PROJECT_VERSION, supports customization of the project identifier and execution
+          level via CMake variables, declares compatibility with Windows 10 and Windows 11,
+          and enables \c longPathAware.
     \endlist
 
     \section2 Qt Concurrent Module
@@ -160,11 +168,11 @@
         \li \l QGrpcOperation class introduces a
             \l{QGrpcOperation::}{serverInitialMetadataReceived()} signal that notifies
             RPC handlers as soon as the server initial metadata is received.
-        \li \l QGrpcChannelOptions class now provides
+        \li \l QGrpcChannelOptions and \l QGrpcCallOptions classes now provide
             \l{QGrpcChannelOptions::}{filterServerMetadata()} and
             \l{QGrpcChannelOptions::}{setFilterServerMetadata()} methods to control
             whether protocol-related metadata is included in server responses.
-        \li The \l QtGrpc namespace introduces the \l{QtGrpc::}{RpcType} enum and
+        \li The \l[CPP]{QtGrpc} namespace introduces the \l{QtGrpc::}{RpcType} enum and
             \l{QtGrpc::}{RpcDescriptor} struct to describe gRPC methods with their
             service name, method name, and communication pattern.
     \endlist
@@ -187,7 +195,7 @@
 
     No noteworthy changes.
 
-    \section2 Qt HttpServer Module
+    \section2 Qt HTTP Server Module
     \list
         \li Added support for HTTP/1.0 clients.
         \li Qt 6.11 introduces configurable request size limits to \l QHttpServerConfiguration,
@@ -622,6 +630,10 @@
         use that manifest file. You can turn off the manifest generation with
         -no-generate-vcpkg-manifest. You can turn off setting the manifest
         directory by passing -- -UVCPKG_MANIFEST_DIR to configure.
+    \li Added support for generating \l{Software Bill of Materials}{CycloneDX}
+        SBOM documents in addition to the existing SPDX format. To enable
+        CycloneDX generation, configure Qt with
+        \c{-sbom -sbom-cyclonedx-v1_6 -sbom-cyclonedx-v1_6-required}.
     \endlist
 
     \section2 Desktop Platforms
@@ -683,6 +695,7 @@
     \li Support for Play Store's Feature Delivery.
     \li Support for Android 16.
     \li Updated to Gradle 9.3.1 and Android Gradle Plugin 9.0.0.
+    \li Updated to JDK 21 LTS and bumped compatibility to JDK 17 LTS.
     \endlist
 
     \section4 Qt Quick for Android
@@ -729,6 +742,9 @@
 
     \list
         \li \l{Qt Positioning} got a backend for the GeoLocation API.
+        \li Use the new \c wasmdeployqt tool to deploy and ship dynamically linked
+            \l{Qt for WebAssembly} applications. This replaces the previous
+            \c preload_qt_plugins.py and \c preload_qml_imports.py Python scripts.
     \endlist
 
     \section1 List of API Changes

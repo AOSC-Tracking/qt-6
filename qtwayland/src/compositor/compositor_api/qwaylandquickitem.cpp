@@ -556,13 +556,15 @@ void QWaylandQuickItem::setSurface(QWaylandSurface *surface)
 {
     Q_D(QWaylandQuickItem);
     QWaylandSurface *oldSurf = d->view->surface();
-    QWaylandCompositor *oldComp = d->view->surface() ? d->view->surface()->compositor() : nullptr;
-    d->view->setSurface(surface);
-    QWaylandCompositor *newComp = d->view->surface() ? d->view->surface()->compositor() : nullptr;
+    if (oldSurf == surface)
+        return;
+
+    QWaylandCompositor *oldComp = oldSurf ? oldSurf->compositor() : nullptr;
+    QWaylandCompositor *newComp = surface ? surface->compositor() : nullptr;
     if (oldComp != newComp)
         emit compositorChanged();
-    if (oldSurf != surface)
-        emit surfaceChanged();
+
+    d->view->setSurface(surface);
 
     updateFocus();
     update();
@@ -1533,20 +1535,15 @@ QSGNode *QWaylandQuickItem::updatePaintNode(QSGNode *oldNode, UpdatePaintNodeDat
 
         if (!d->provider) {
             d->provider = new QWaylandSurfaceTextureProvider();
-            if (compositor()) {
+            if (auto *c = compositor()) {
                 d->texProviderConnection =
-                    QObject::connect(
-                            compositor(),
-                            &QObject::destroyed,
-                            this,
-                            [this](QObject*) {
-                                    auto *itemPriv = QWaylandQuickItemPrivate::get(this);
-                                    if (itemPriv->provider) {
-                                        itemPriv->provider->deleteLater();
-                                        itemPriv->provider = nullptr;
-                                    }
-                                    disconnect(itemPriv->texProviderConnection); }
-                    );
+                    QObject::connect(c, &QObject::destroyed, this, [d = d] {
+                        if (d->provider) {
+                            d->provider->deleteLater();
+                            d->provider = nullptr;
+                        }
+                        QObject::disconnect(d->texProviderConnection);
+                    });
             }
         }
 

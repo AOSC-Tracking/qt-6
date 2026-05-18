@@ -1959,6 +1959,7 @@ void DynamicRoleModelNodeMetaObject::propertyWritten(int index)
 
     \div {class="float-right"}
     \inlineimage listmodel.png
+                 {List showing Apple, Orange, and Banana with prices}
     \enddiv
 
     \snippet qml/listmodel/listmodel.qml 0
@@ -1983,6 +1984,7 @@ void DynamicRoleModelNodeMetaObject::propertyWritten(int index)
 
     \div {class="float-right"}
     \inlineimage listmodel-nested.png
+                 {List showing fruits with nested attribute data}
     \enddiv
 
     \snippet qml/listmodel/listmodel-nested.qml delegate
@@ -2092,7 +2094,7 @@ QQmlListModel::~QQmlListModel()
             m_agent->modelDestroyed();
     }
 
-    if (m_mainThread && m_agent)
+    if (m_agent && m_ownAgent)
         m_agent->release();
 
     m_listModel = nullptr;
@@ -2109,9 +2111,6 @@ QQmlListModel *QQmlListModel::createWithOwner(QQmlListModel *newOwner)
     model->m_engine = newOwner->m_engine;
     model->m_agent = newOwner->m_agent;
     model->m_dynamicRoles = newOwner->m_dynamicRoles;
-
-    if (model->m_mainThread && model->m_agent)
-        model->m_agent->addref();
 
     QQmlEngine::setContextForObject(model, QQmlEngine::contextForObject(newOwner));
 
@@ -2258,6 +2257,7 @@ QQmlListModelWorkerAgent *QQmlListModel::agent()
         return m_agent;
 
     m_agent = new QQmlListModelWorkerAgent(this);
+    m_ownAgent = true;
     return m_agent;
 }
 
@@ -2663,7 +2663,7 @@ void QQmlListModel::append(QQmlV4FunctionPtr args)
 }
 
 /*!
-    \qmlmethod object ListModel::get(int index)
+    \qmlmethod var ListModel::get(int index)
 
     Returns the item at \a index in the list model. This allows the item
     data to be accessed or modified from JavaScript:

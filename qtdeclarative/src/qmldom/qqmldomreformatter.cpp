@@ -132,33 +132,33 @@ bool ScriptFormatter::visit(RegExpLiteral *ast)
 
 bool ScriptFormatter::visit(ArrayPattern *ast)
 {
-    out(ast->lbracketToken);
+    outWithComments(ast->lbracketToken, ast);
     int baseIndent = lw.increaseIndent(1);
     if (ast->elements) {
         accept(ast->elements);
-        out(ast->commaToken);
+        outWithComments(ast->commaToken, ast);
         auto lastElement = lastListElement(ast->elements);
         if (lastElement->element && cast<ObjectPattern *>(lastElement->element->initializer)) {
             ensureNewline();
         }
     } else {
-        out(ast->commaToken);
+        outWithComments(ast->commaToken, ast);
     }
     lw.decreaseIndent(1, baseIndent);
-    out(ast->rbracketToken);
+    outWithComments(ast->rbracketToken, ast);
     return false;
 }
 
 bool ScriptFormatter::visit(ObjectPattern *ast)
 {
-    out(ast->lbraceToken);
+    outWithComments(ast->lbraceToken, ast);
     ++expressionDepth;
     if (ast->properties) {
         lnAcceptIndented(ast->properties);
         ensureNewline();
     }
     --expressionDepth;
-    out(ast->rbraceToken);
+    outWithComments(ast->rbraceToken, ast);
     return false;
 }
 
@@ -172,10 +172,6 @@ bool ScriptFormatter::visit(PatternElementList *ast)
 
         if (it->elision)
             accept(it->elision);
-        if (it->elision && it->element) {
-            outWithComments(it->elision->commaToken, it);
-            ensureSpaceIfNoComment();
-        }
         if (it->element)
             accept(it->element);
         if (it->next) {
@@ -813,7 +809,7 @@ bool ScriptFormatter::visit(LabelledStatement *ast)
 
 bool ScriptFormatter::visit(TryStatement *ast)
 {
-    out("try"); // ast->tryToken
+    outWithComments(ast->tryToken, ast);
     ensureSpaceIfNoComment();
     accept(ast->statement);
     if (ast->catchExpression) {
@@ -829,11 +825,11 @@ bool ScriptFormatter::visit(TryStatement *ast)
 
 bool ScriptFormatter::visit(Catch *ast)
 {
-    out(ast->catchToken);
+    outWithComments(ast->catchToken, ast);
     ensureSpaceIfNoComment();
-    out(ast->lparenToken);
-    out(ast->identifierToken);
-    out(")"); // ast->rparenToken
+    outWithComments(ast->lparenToken, ast);
+    outWithComments(ast->identifierToken, ast);
+    outWithComments(ast->rparenToken, ast);
     ensureSpaceIfNoComment();
     accept(ast->statement);
     return false;
@@ -841,7 +837,7 @@ bool ScriptFormatter::visit(Catch *ast)
 
 bool ScriptFormatter::visit(Finally *ast)
 {
-    out("finally"); // ast->finallyToken
+    outWithComments(ast->finallyToken, ast);
     ensureSpaceIfNoComment();
     accept(ast->statement);
     return false;
@@ -855,13 +851,10 @@ bool ScriptFormatter::visit(FunctionDeclaration *ast)
 bool ScriptFormatter::visit(FunctionExpression *ast)
 {
     if (!ast->isArrowFunction) {
-        if (ast->isGenerator) {
-            out("function*");
-            ensureSpaceIfNoComment();
-        } else {
-            out("function");
-            ensureSpaceIfNoComment();
-        }
+        outWithComments(ast->functionToken, ast);
+        if (ast->isGenerator)
+            outWithComments(ast->starToken, ast);
+        ensureSpaceIfNoComment();
         outWithComments(ast->identifierToken, ast);
     }
 
@@ -904,8 +897,8 @@ bool ScriptFormatter::visit(FunctionExpression *ast)
 bool ScriptFormatter::visit(Elision *ast)
 {
     for (Elision *it = ast; it; it = it->next) {
-        if (it->next) {
-            out(","); // ast->commaToken
+        if (ast->commaToken.isValid()) {
+            outWithComments(ast->commaToken, ast);
             ensureSpaceIfNoComment();
         }
     }

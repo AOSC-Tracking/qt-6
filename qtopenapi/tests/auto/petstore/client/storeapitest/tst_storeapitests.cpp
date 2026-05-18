@@ -4,8 +4,7 @@
 #include "../client/storeapi.h"
 
 #include <QtCore/qdebug.h>
-#include <QtCore/QProcess>
-#include <QtCore/QThread>
+#include <QtCore/qprocess.h>
 #include <QtTest/qtest.h>
 
 using namespace std::chrono_literals;

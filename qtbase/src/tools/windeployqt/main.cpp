@@ -1007,20 +1007,27 @@ static QString deployPlugin(const QString &plugin, const QDir &subDir, const boo
 {
     const QString subDirName = subDir.dirName();
     // Filter out disabled plugins
-    if (optVerboseLevel && pluginSelections.disabledPluginTypes.contains(subDirName)) {
-        std::wcout << "Skipping plugin " << plugin << " due to skipped plugin type " << subDirName << '\n';
+    if (pluginSelections.disabledPluginTypes.contains(subDirName)) {
+        if (optVerboseLevel) {
+            std::wcout << "Skipping plugin " << plugin << " due to skipped plugin type "
+                       << subDirName << '\n';
+        }
         return {};
     }
-    if (optVerboseLevel && subDirName == u"generic" && plugin.contains(u"qinsighttracker")
+    if (subDirName == u"generic" && plugin.contains(u"qinsighttracker")
         && !deployInsightTrackerPlugin) {
-        std::wcout << "Skipping plugin " << plugin
-                   << ". Use -deploy-insighttracker if you want to use it.\n";
+        if (optVerboseLevel) {
+            std::wcout << "Skipping plugin " << plugin
+                       << ". Use -deploy-insighttracker if you want to use it.\n";
+        }
         return {};
     }
-    if (optVerboseLevel && subDirName == u"tls" && plugin.contains(u"qopensslbackend")
+    if (subDirName == u"tls" && plugin.contains(u"qopensslbackend")
         && !deployOpenSslPlugin) {
-        std::wcout << "Skipping plugin " << plugin
-                   << ". Use -force-openssl or specify -openssl-root if you want to use it.\n";
+        if (optVerboseLevel) {
+            std::wcout << "Skipping plugin " << plugin
+                       << ". Use -force-openssl or specify -openssl-root if you want to use it.\n";
+        }
         return {};
     }
 
@@ -1032,8 +1039,9 @@ static QString deployPlugin(const QString &plugin, const QDir &subDir, const boo
             : dotIndex;
     const QString pluginName = plugin.first(stripIndex);
 
-    if (optVerboseLevel && pluginSelections.excludedPlugins.contains(pluginName)) {
-        std::wcout << "Skipping plugin " << plugin << " due to exclusion option" << '\n';
+    if (pluginSelections.excludedPlugins.contains(pluginName)) {
+        if (optVerboseLevel)
+            std::wcout << "Skipping plugin " << plugin << " due to exclusion option" << '\n';
         return {};
     }
 
@@ -1357,6 +1365,27 @@ static QString vcRedistDir()
     std::wcerr << "Warning: Cannot find Visual Studio redist directory under "
                << QDir::toNativeSeparators(vcRedistDirName).toStdWString() << ".\n";
     return QString();
+}
+
+static bool isSystemLibrary(const QString &libraryPath)
+{
+    static const QString systemRootEnv = qEnvironmentVariable("SystemRoot");
+    static bool systemRootEmptyEmitted = false;
+    if (systemRootEnv.isEmpty()) {
+        if (!systemRootEmptyEmitted) {
+            std::wcerr << "Warning: Cannot detect system root.\n";
+            systemRootEmptyEmitted = true;
+        }
+        return false;
+    }
+    static QString systemRoot;
+    if (systemRoot.isEmpty()) {
+        systemRoot = QDir(QDir::fromNativeSeparators(systemRootEnv)).canonicalPath();
+        if (!systemRoot.endsWith(u'/'))
+            systemRoot += u'/';
+    }
+
+    return libraryPath.startsWith(systemRoot, Qt::CaseInsensitive);
 }
 
 static QStringList findMinGWRuntimePaths(const QString &qtBinDir, Platform platform, const QStringList &runtimeFilters)
@@ -1764,10 +1793,12 @@ static DeployResult deploy(const Options &options, const QMap<QString, QString> 
         if (options.systemDxc) {
             const QStringList dxcLibs = findDxc(options.platform, qtBinDir,
                                                 peHeaderInfo.wordSize);
-            if (!dxcLibs.isEmpty())
+            if (!dxcLibs.isEmpty()) {
                 deployedQtLibraries.append(dxcLibs);
-            else
-                std::wcerr << "Warning: Cannot find any version of the dxcompiler.dll and dxil.dll.\n";
+            } else {
+                std::wcerr << "Warning: Cannot find any version of the dxcompiler.dll and dxil.dll."
+                           << " This is not a problem unless Direct3D 12 and certain features are used by the application.\n";
+            }
         }
     } // Windows
 
@@ -1787,6 +1818,10 @@ static DeployResult deploy(const Options &options, const QMap<QString, QString> 
                                                  peHeaderInfo.machineArch));
         }
         for (const QString &qtLib : std::as_const(libraries)) {
+            if (isSystemLibrary(qtLib)) {
+                std::wcout << "Skipping system library " << qtLib << "\n";
+                continue;
+            }
             if (!updateLibrary(qtLib, targetPath, options, errorMessage))
                 return result;
         }

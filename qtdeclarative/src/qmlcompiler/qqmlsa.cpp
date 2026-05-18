@@ -1215,8 +1215,8 @@ bool Element::operatorEqualsImpl(const Element &lhs, const Element &rhs)
 }
 
 /*!
-    \fn friend inline qsizetype Element::qHash(const Element &key, qsizetype seed) noexcept
-    Returns the hash for \a key using \a seed to seed the calculation.
+    \fn size_t Element::qHash(const Element &key, size_t seed)
+    \qhash{Element}
 */
 
 qsizetype Element::qHashImpl(const Element &key, qsizetype seed) noexcept
@@ -1338,7 +1338,8 @@ Element GenericPass::resolveType(QAnyStringView moduleName, QAnyStringView typeN
 {
     Q_D(const GenericPass);
     QQmlJSImporter *typeImporter = PassManagerPrivate::visitor(*d->m_manager)->importer();
-    const auto module = typeImporter->importModule(moduleName.toString());
+    const auto module =
+            typeImporter->importModule(moduleName.toString(), QQmlJS::PrecedenceValues::Default);
     const auto scope = module.type(typeName.toString()).scope;
     return QQmlJSScope::createQQmlSAElement(scope);
 }
@@ -1394,7 +1395,7 @@ Element GenericPass::resolveIdToElement(QAnyStringView id, const Element &contex
     Q_D(const GenericPass);
     QQmlJSScopesById::MostLikelyCallback<QQmlJSScope::ConstPtr> result;
     PassManagerPrivate::visitor(*d->m_manager)->addressableScopes().possibleScopes(
-            id.toString(), QQmlJSScope::scope(context), Default, result);
+            id.toString(), QQmlJSScope::scope(context), QQmlJSScopesByIdOption::Default, result);
     return QQmlJSScope::createQQmlSAElement(result.result);
 }
 
@@ -1406,7 +1407,7 @@ QString GenericPass::resolveElementToId(const Element &element, const Element &c
     Q_D(const GenericPass);
     QQmlJSScopesById::MostLikelyCallback<QString> result;
     PassManagerPrivate::visitor(*d->m_manager)->addressableScopes().possibleIds(
-            QQmlJSScope::scope(element), QQmlJSScope::scope(context), Default, result);
+            QQmlJSScope::scope(element), QQmlJSScope::scope(context), QQmlJSScopesByIdOption::Default, result);
     return result.result;
 }
 
@@ -1525,7 +1526,8 @@ bool PassManagerPrivate::registerPropertyPass(std::shared_ptr<PropertyPass> pass
     QString name;
     if (!moduleName.isEmpty() && !typeName.isEmpty()) {
         auto typeImporter = m_visitor->importer();
-        auto module = typeImporter->importModule(moduleName.toString());
+        auto module = typeImporter->importModule(moduleName.toString(),
+                                                 QQmlJS::PrecedenceValues::Default);
         auto element = QQmlJSScope::createQQmlSAElement(module.type(typeName.toString()).scope);
 
         if (element.isNull())

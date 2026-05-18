@@ -820,6 +820,23 @@
                 "Some Adreno drivers assume incorrect glSampleCoverage if new FBO is bound with different sample count"
             ],
             "issue": "https://crbug.com/408364831"
-        }
+         },
+         {
+             "name": "recreate_mipmap_levels_before_generate",
+             "category": "Workarounds",
+             "description": [
+                 "Before calling glGenerateMipmap on a mutable texture, recreate levels that the driver is ",
+                 "supposed to recreate to work around driver bugs."
+             ],
+             "issue": "http://crbug.com/491732188"
+         },
+         {
+             "name": "limit_max_buffer_size_to_1gb",
+             "category": "Workarounds",
+             "description": [
+                 "Some drivers have internal failures when attempting to allocate and initialize buffers larger than 1gb."
+             ],
+             "issue": "http://crbug.com/475877320"
+         }
     ]
 }

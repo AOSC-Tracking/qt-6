@@ -1,6 +1,7 @@
 // Copyright (C) 2014 Aaron McCarthy <mccarthy.aaron@gmail.com>
 // Copyright (C) 2022 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "qdeclarativesupportedcategoriesmodel_p.h"
 #include "qgeoserviceprovider.h"
@@ -78,7 +79,7 @@ QT_BEGIN_NAMESPACE
 */
 
 /*!
-    \qmlmethod string QtLocation::CategoryModel::errorString() const
+    \qmlmethod string QtLocation::CategoryModel::errorString()
 
     This read-only property holds the textual presentation of the latest category model error.
     If no error has occurred, an empty string is returned.

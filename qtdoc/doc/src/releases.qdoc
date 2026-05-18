@@ -1,4 +1,4 @@
-// Copyright (C) 2025 The Qt Company Ltd.
+// Copyright (C) 2026 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GFDL-1.3-no-invariants-only
 
 /*!
@@ -29,7 +29,8 @@
     \e{Minor releases} increment the \e{minor} version number, resetting the patch version number
     to zero. Minor versions contain new functionality, as well as various fixes and improvements.
 
-    \e{Patch releases} increment just the \e patch version number. Patch releases consist of
+    \e{Patch releases} --- also called \e{maintenance releases} ---
+    increment just the \e patch version number. Patch releases consist of
     bug fixes (including fixes for possible security issues), documentation fixes,
     and performance improvements.
 
@@ -122,24 +123,16 @@
         \li Standard support until
     \row
         \li Qt 6.11
-        \li Qt 6.11.0
+        \li Qt 6.11.1
         \li 2027-03-17
     \row
         \li Qt 6.10
         \li Qt 6.10.3
         \li 2026-10-07
     \row
-        \li Qt 6.9
-        \li Qt 6.9.3
-        \li 2026-03-31
-    \row
         \li Qt 6.8 LTS
-        \li Qt 6.8.6 (LTS, commercial only)
+        \li Qt 6.8.7 (LTS, commercial only)
         \li 2029-10-08
-    \row
-        \li Qt 6.5 LTS
-        \li Qt 6.5.11 (LTS, commercial only)
-        \li 2026-03-30
     \endtable
 
 
@@ -155,19 +148,19 @@
         \li Standard support until
     \row
         \li \b{Qt 6.11}
-        \li Qt 6.11.0
+        \li Qt 6.11.1
         \li 2027-03-17
     \row
         \li \b{Qt 6.10}
-        \li Qt 6.10.2
+        \li Qt 6.10.3
         \li 2026-10-07
     \row
         \li \b{Qt 6.9}
         \li Qt 6.9.3
-        \li 2026-03-31
+        \li Ended (ES is available)
     \row
         \li \b{Qt 6.8 LTS}
-        \li Qt 6.8.6
+        \li Qt 6.8.7
         \li 2029-10-08
     \row
         \li \b{Qt 6.7}
@@ -179,8 +172,9 @@
         \li Ended (ES is available)
     \row
         \li \b{Qt 6.5 LTS}
-        \li Qt 6.5.11
-        \li 2026-03-30
+        \li Qt 6.5.12
+        \li Ended \l {Extended Security Maintenance for Qt 6.5}
+            {Extended Security Maintenance available}
     \row
         \li Qt 6.4
         \li Qt 6.4.3

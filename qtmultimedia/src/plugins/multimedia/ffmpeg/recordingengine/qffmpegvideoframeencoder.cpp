@@ -322,7 +322,7 @@ bool VideoFrameEncoder::open()
     Q_ASSERT(m_codecContext);
 
     AVDictionaryHolder opts;
-    applyVideoEncoderOptions(m_settings, QByteArray{ m_codec.name() }, m_codecContext.get(), opts);
+    applyVideoEncoderOptions(m_settings, m_codec.name(), m_codecContext.get(), opts);
     applyExperimentalCodecOptions(m_codec, opts);
 
     qCDebug(qLcVideoFrameEncoder) << "Opening encoder" << m_codec.name() << "with" << opts;
@@ -472,6 +472,9 @@ int VideoFrameEncoder::sendFrame(AVFrameUPtr inputFrame)
 
     if (!updateSourceFormatAndSize(inputFrame.get()))
         return AVERROR(EINVAL);
+
+    // some codecs require quality to be set on each frame and ignore global_quality
+    inputFrame->quality = m_codecContext->global_quality;
 
     FrameConverter converter{ std::move(inputFrame) };
 

@@ -1,5 +1,6 @@
 // Copyright (C) 2020 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #ifndef QSEQUENTIALITERABLE_H
 #define QSEQUENTIALITERABLE_H
@@ -123,6 +124,10 @@ public:
     void removeValue(Position position = Unspecified);
 
     QMetaType valueMetaType() const;
+
+    // Random access iteration is broken on QSequentialIterator.
+    // That's why this class is deprecated after all.
+    constexpr bool canRandomAccessIterate() const { return false; }
 };
 
 template<>

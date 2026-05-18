@@ -141,9 +141,9 @@ import "testlogger.js" as TestLogger
     \section1 Simulating Keyboard and Mouse Events
 
     The keyPress(), keyRelease(), and keyClick() methods can be used
-    to simulate keyboard events within unit tests.  The events are
+    to simulate keyboard events within unit tests. The events are
     delivered to the currently focused QML item. You can pass either
-    a Qt.Key enum value or a latin1 char (string of length one)
+    a Qt.Key enum value or a latin1 char (string of length one).
 
     \code
     Rectangle {
@@ -699,7 +699,7 @@ Item {
 
     /*!
         \since 5.9
-        \qmlmethod object TestCase::createTemporaryQmlObject(string qml, object parent, string filePath)
+        \qmlmethod QtObject TestCase::createTemporaryQmlObject(string qml, QtObject parent, string filePath)
 
         This function dynamically creates a QML object from the given \a qml
         string with the specified \a parent. The returned object will be
@@ -745,7 +745,7 @@ Item {
 
     /*!
         \since 5.9
-        \qmlmethod object TestCase::createTemporaryObject(Component component, object parent, object properties)
+        \qmlmethod QtObject TestCase::createTemporaryObject(Component component, QtObject parent, var properties)
 
         This function dynamically creates a QML object from the given
         \a component with the specified optional \a parent and \a properties.
@@ -1017,7 +1017,7 @@ Item {
     }
 
     /*!
-        \qmlmethod object TestCase::grabImage(item)
+        \qmlmethod QtObject TestCase::grabImage(Item item)
 
         Returns a snapshot image object of the given \a item.
 
@@ -1393,12 +1393,16 @@ Item {
     /*!
         \qmlmethod TestCase::keyPress(key, modifiers = Qt.NoModifier, delay = -1)
 
-        Simulates pressing a \a key with optional \a modifiers on the currently
-        focused item.  If \a delay is larger than 0, the test will wait for
-        \a delay milliseconds.
+        Simulates pressing a \a key with optional \a modifiers on the
+        currently focused item. If \a delay is larger than 0, the test
+        will wait for \a delay milliseconds.
 
-        The event will be sent to the TestCase window or, in case of multiple windows,
-        to the current active window. See \l QGuiApplication::focusWindow() for more details.
+        For more information about the accepted \a key formats, see
+        \l {Simulating Keyboard and Mouse Events}.
+
+        The event will be sent to the TestCase window or, in case of
+        multiple windows, to the current active window. See
+        \l QGuiApplication::focusWindow() for more details.
 
         \b{Note:} At some point you should release the key using keyRelease().
 
@@ -1421,12 +1425,16 @@ Item {
     /*!
         \qmlmethod TestCase::keyRelease(key, modifiers = Qt.NoModifier, delay = -1)
 
-        Simulates releasing a \a key with optional \a modifiers on the currently
-        focused item.  If \a delay is larger than 0, the test will wait for
-        \a delay milliseconds.
+        Simulates releasing a \a key with optional \a modifiers on the
+        currently focused item. If \a delay is larger than 0, the test
+        will wait for \a delay milliseconds.
 
-        The event will be sent to the TestCase window or, in case of multiple windows,
-        to the current active window. See \l QGuiApplication::focusWindow() for more details.
+        For more information about the accepted \a key formats, see
+        \l {Simulating Keyboard and Mouse Events}.
+
+        The event will be sent to the TestCase window or, in case of
+        multiple windows, to the current active window. See
+        \l QGuiApplication::focusWindow() for more details.
 
         \sa keyPress(), keyClick()
     */
@@ -1447,12 +1455,16 @@ Item {
     /*!
         \qmlmethod TestCase::keyClick(key, modifiers = Qt.NoModifier, delay = -1)
 
-        Simulates clicking of \a key with optional \a modifiers on the currently
-        focused item.  If \a delay is larger than 0, the test will wait for
-        \a delay milliseconds.
+        Simulates clicking of \a key with optional \a modifiers on the
+        currently focused item. If \a delay is larger than 0, the test
+        will wait for \a delay milliseconds.
 
-        The event will be sent to the TestCase window or, in case of multiple windows,
-        to the current active window. See \l QGuiApplication::focusWindow() for more details.
+        For more information about the accepted \a key formats, see
+        \l {Simulating Keyboard and Mouse Events}.
+
+        The event will be sent to the TestCase window or, in case of
+        multiple windows, to the current active window. See
+        \l QGuiApplication::focusWindow() for more details.
 
         \sa keyPress(), keyRelease()
     */

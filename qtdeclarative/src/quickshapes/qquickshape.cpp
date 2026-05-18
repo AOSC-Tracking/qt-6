@@ -152,7 +152,7 @@ QQuickShapeStrokeFillParams::QQuickShapeStrokeFillParams()
     Once associated with a Shape, here is the output with a joinStyleIndex
     of 2 (ShapePath.RoundJoin):
 
-    \image visualpath-code-example.png
+    \image visualpath-code-example.png {Black angled line with rounded corner}
 
     \sa {Qt Quick Examples - Shapes}, {Weather Forecast Example}, Shape
  */
@@ -172,7 +172,7 @@ QQuickShapePath::QQuickShapePath(QObject *parent)
     // to the difference in semantics and the need to act (see dirty flag
     // below) differently on QQuickPath-related changes.
 
-    connect(this, &QQuickPath::changed, [this]() {
+    connect(this, &QQuickPath::changed, this, [this]() {
         Q_D(QQuickShapePath);
         d->dirty |= QQuickShapePathPrivate::DirtyPath;
         emit shapePathChanged();
@@ -240,7 +240,7 @@ void QQuickShapePath::setStrokeWidth(qreal w)
 }
 
 /*! \since 6.11
-    \qmlproperty real QtQuick.Shapes::ShapePath::cosmeticStroke
+    \qmlproperty bool QtQuick.Shapes::ShapePath::cosmeticStroke
 
     This property holds whether the stroke width remains constant despite rendering scale.
 
@@ -826,6 +826,7 @@ void QQuickShapeTrim::setOffset(qreal t)
     \endqml
 
     \image pathitem-code-example.png
+           {Triangle with rainbow gradient fill and red dashed stroke}
 
     Like \l Item, Shape also allows any visual or non-visual objects to be
     declared as children. ShapePath objects are handled specially. This is
@@ -1846,6 +1847,7 @@ void QQuickShapeLinearGradient::setY2(qreal v)
     \endcode
 
     \image shape-radial-gradient.png
+           {Ellipse with radial gradient from white center to cyan edge}
 
     Extended radial gradients, where a separate focal circle is specified, are
     also supported.

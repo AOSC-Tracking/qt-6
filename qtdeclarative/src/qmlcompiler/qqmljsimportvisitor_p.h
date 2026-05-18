@@ -43,16 +43,9 @@ struct QQmlJSResourceFileMapper;
 class Q_QMLCOMPILER_EXPORT QQmlJSImportVisitor : public QQmlJS::AST::Visitor
 {
 public:
-    QQmlJSImportVisitor(const QQmlJSScope::Ptr &target,
-                        QQmlJSImporter *importer, QQmlJSLogger *logger,
-                        const QString &implicitImportDirectory,
-                        const QStringList &qmldirFiles = QStringList());
     QQmlJSImportVisitor(QQmlJSImporter *importer, QQmlJSLogger *logger,
                         const QString &implicitImportDirectory,
-                        const QStringList &qmldirFiles = QStringList())
-        : QQmlJSImportVisitor(QQmlJSScope::create(), importer, logger,
-                              implicitImportDirectory, qmldirFiles)
-    {}
+                        const QStringList &qmldirFiles = QStringList());
     ~QQmlJSImportVisitor();
 
     using QQmlJS::AST::Visitor::endVisit;
@@ -67,6 +60,7 @@ public:
 
     QQmlJSImporter::ImportedTypes imports() const { return m_rootScopeImports; }
     QQmlJSScopesById addressableScopes() const { return m_scopesById; }
+    QDuplicateTracker<QQmlJSScope::ConstPtr> *knownUnresolvedTypes() { return &m_unresolvedTypes; }
     QHash<QQmlJS::SourceLocation, QQmlJSMetaSignalHandler> signalHandlers() const
     {
         return m_signalHandlers;
@@ -161,6 +155,8 @@ protected:
     virtual bool checkCustomParser(const QQmlJSScope::ConstPtr &scope);
 
     void setScopeName(QQmlJSScope::Ptr &scope, QQmlJSScope::ScopeType type, const QString &name);
+    void createAttachedAndGroupedScopes(QQmlJS::AST::UiQualifiedId *propertyName);
+    int openAttachedAndGroupedScopes(QQmlJS::AST::UiQualifiedId *propertyName);
 
     QString m_implicitImportDirectory;
     QStringList m_qmldirFiles;
@@ -307,6 +303,7 @@ protected:
     void breakInheritanceCycles(const QQmlJSScope::Ptr &scope);
     void checkDeprecation(const QQmlJSScope::ConstPtr &scope);
     void checkGroupedAndAttachedScopes(QQmlJSScope::ConstPtr scope);
+    void checkForComponentTypeWithProperties(const QQmlJSScope::ConstPtr &scope);
     bool rootScopeIsValid() const { return m_exportedRootScope->sourceLocation().isValid(); }
 
     enum class BindingExpressionParseResult { Invalid, Script, Literal, Translation };

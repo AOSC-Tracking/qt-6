@@ -173,20 +173,11 @@ void ShadowMapPass::renderPrep(QSSGRenderer &renderer, QSSGLayerRenderData &data
     QSSG_ASSERT(!data.renderedCameras.isEmpty(), return);
     camera = data.renderedCameras[0];
 
-    const auto &renderedDepthWriteObjects = data.getSortedRenderedDepthWriteObjects(*camera);
-    const auto &renderedOpaqueDepthPrepassObjects = data.getSortedrenderedOpaqueDepthPrepassObjects(*camera);
-
     QSSG_ASSERT(shadowPassObjects.isEmpty(), shadowPassObjects.clear());
 
-    for (const auto &handles : { &renderedDepthWriteObjects, &renderedOpaqueDepthPrepassObjects }) {
-        for (const auto &handle : *handles) {
-            if (handle.obj->renderableFlags.castsShadows())
-                shadowPassObjects.push_back(handle);
-        }
-    }
+    data.getShadowCastingObjects(*camera, shadowPassObjects, castingObjectsBox, receivingObjectsBox);
 
     globalLights = data.globalLights;
-
     enabled = !shadowPassObjects.isEmpty() || !globalLights.isEmpty();
 
     if (enabled) {
@@ -197,13 +188,6 @@ void ShadowMapPass::renderPrep(QSSGRenderer &renderer, QSSGLayerRenderData &data
         // Try reducing self-shadowing and artifacts.
         ps.depthBias = 2;
         ps.slopeScaledDepthBias = 1.5f;
-
-        const auto &sortedOpaqueObjects = data.getSortedOpaqueRenderableObjects(*camera);
-        const auto &sortedTransparentObjects = data.getSortedTransparentRenderableObjects(*camera);
-        const auto [casting, receiving] = calculateSortedObjectBounds(sortedOpaqueObjects,
-                                                                      sortedTransparentObjects);
-        castingObjectsBox = casting;
-        receivingObjectsBox = receiving;
 
         if (!debugCamera) {
             debugCamera = std::make_unique<QSSGRenderCamera>(QSSGRenderGraphObject::Type::OrthographicCamera);
@@ -262,6 +246,14 @@ void ShadowMapPass::resetForFrame()
 
 // REFLECTIONMAP PASS
 
+ReflectionMapPass::ReflectionMapPass()
+{
+    // Read the environment variable to check if the old behavior of including the screen texture objects
+    // in the reflection pass should be kept for compatibility reasons.
+    // Besides being expensive, we shouldn't be using the main screen texture in the probes at all.
+    m_includeSTO = qEnvironmentVariableIntValue("QT_QUICK3D_REFLECTION_PASS_INCLUDE_SCREEN_TEXTURE_OBJECTS") != 0;
+}
+
 void ReflectionMapPass::renderPrep(QSSGRenderer &renderer, QSSGLayerRenderData &data)
 {
     Q_UNUSED(renderer);
@@ -280,7 +272,8 @@ void ReflectionMapPass::renderPrep(QSSGRenderer &renderer, QSSGLayerRenderData &
 
     const auto &sortedOpaqueObjects = data.getSortedOpaqueRenderableObjects(*camera);
     const auto &sortedTransparentObjects = data.getSortedTransparentRenderableObjects(*camera);
-    const auto &sortedScreenTextureObjects = data.getSortedScreenTextureRenderableObjects(*camera);
+    QSSGRenderableObjectList emptyList{};
+    const auto &sortedScreenTextureObjects = m_includeSTO ? data.getSortedScreenTextureRenderableObjects(*camera) : emptyList;
 
     QSSG_ASSERT(reflectionPassObjects.isEmpty(), reflectionPassObjects.clear());
 
@@ -769,7 +762,7 @@ void ScreenMapPass::renderPrep(QSSGRenderer &renderer, QSSGLayerRenderData &data
             // Reflection cube maps are not available at this point, make sure they are turned off.
             bool recRef = handle.obj->renderableFlags.receivesReflections();
             handle.obj->renderableFlags.setReceivesReflections(false);
-            rhiPrepareRenderable(rhiCtx.get(), this, data, *handle.obj, rhiScreenTexture->rpDesc, &ps, shaderFeatures, 1, data.layer.viewCount);
+            rhiPrepareRenderableForScreenMapPass(rhiCtx.get(), this, data, *handle.obj, rhiScreenTexture->rpDesc, &ps, shaderFeatures, 1, data.layer.viewCount);
             handle.obj->renderableFlags.setReceivesReflections(recRef);
         }
     }
@@ -1970,8 +1963,10 @@ void UserRenderPass::renderPass(QSSGRenderer &renderer)
             } else {
                 // Regular User Passes
                 bool needsSetViewport = true;
-                for (const auto &handle : std::as_const(renderables))
-                    RenderHelpers::rhiRenderRenderable(rhiCtx.get(), ps, *handle.obj, &needsSetViewport, QSSGRenderTextureCubeFaceNone, qsizetype(passData.index));
+                if (passData.index >= 0) {
+                    for (const auto &handle : std::as_const(renderables))
+                        RenderHelpers::rhiRenderRenderable(rhiCtx.get(), ps, *handle.obj, &needsSetViewport, QSSGRenderTextureCubeFaceNone, qsizetype(passData.index));
+                }
             }
             QRhiResourceUpdateBatch *rub = nullptr;
 
@@ -1988,8 +1983,10 @@ void UserRenderPass::renderPass(QSSGRenderer &renderer)
                     subPassData.item2DPass->renderPass(renderer);
                 } else {
                     bool needsSetViewport = true;
-                    for (const auto &handle : std::as_const(subRenderables))
-                        RenderHelpers::rhiRenderRenderable(rhiCtx.get(), subPs, *handle.obj, &needsSetViewport, QSSGRenderTextureCubeFaceNone, qsizetype(subPassData.index));
+                    if (subPassData.index >= 0) {
+                        for (const auto &handle : std::as_const(subRenderables))
+                            RenderHelpers::rhiRenderRenderable(rhiCtx.get(), subPs, *handle.obj, &needsSetViewport, QSSGRenderTextureCubeFaceNone, qsizetype(subPassData.index));
+                    }
                 }
             }
 
@@ -2046,8 +2043,6 @@ void UserRenderPass::preparePassImpl(QSSGRenderer &renderer,
     UserPassData currentPassData;
     currentPassData.clearColor = passNode->clearColor;
     currentPassData.depthStencilClearValue = passNode->depthStencilClearValue;
-    const size_t userPassIndex = outData.size();
-    currentPassData.index = userPassIndex;
     if (isTopLevelPass)
         renderableTexture = currentPassData.renderableTexture = data.requestUserRenderPassManager()->getOrCreateRenderableTexture(*passNode);
     else
@@ -2343,19 +2338,19 @@ void UserRenderPass::preparePassImpl(QSSGRenderer &renderer,
             QSSGShaderFeatures shaderFeatures = data.getShaderFeatures();
             shaderFeatures.disableTonemapping();
 
-            RenderHelpers::rhiPrepareAugmentedUserPass(&(*rhiCtx), this, ps, renderTarget->getRenderPassDescriptor().get(), shaderAugmentation, data, renderables, shaderFeatures, userPassIndex);
+            currentPassData.index = RenderHelpers::rhiPrepareAugmentedUserPass(&(*rhiCtx), this, ps, renderTarget->getRenderPassDescriptor().get(), shaderAugmentation, data, renderables, shaderFeatures);
         } else if (passNode->materialMode == QSSGRenderUserPass::MaterialModes::OverrideMaterial) {
             // Every renderable will use the override material
             QSSGShaderFeatures shaderFeatures = data.getShaderFeatures();
             shaderFeatures.disableTonemapping();
 
-            RenderHelpers::rhiPrepareOverrideMaterialUserPass(&(*rhiCtx), this, ps, renderTarget->getRenderPassDescriptor().get(), passNode->overrideMaterial, data, renderables, shaderFeatures, userPassIndex);
+            currentPassData.index = RenderHelpers::rhiPrepareOverrideMaterialUserPass(&(*rhiCtx), this, ps, renderTarget->getRenderPassDescriptor().get(), passNode->overrideMaterial, data, renderables, shaderFeatures);
 
         } else {
             // Use original material of the renderables
             QSSGShaderFeatures shaderFeatures = data.getShaderFeatures();
             shaderFeatures.disableTonemapping();
-            RenderHelpers::rhiPrepareOriginalMaterialUserPass(&(*rhiCtx), this, ps, renderTarget->getRenderPassDescriptor().get(), data, renderables, shaderFeatures, userPassIndex);
+            currentPassData.index = RenderHelpers::rhiPrepareOriginalMaterialUserPass(&(*rhiCtx), this, ps, renderTarget->getRenderPassDescriptor().get(), data, renderables, shaderFeatures);
         }
         outData.push_back(currentPassData);
     } else {

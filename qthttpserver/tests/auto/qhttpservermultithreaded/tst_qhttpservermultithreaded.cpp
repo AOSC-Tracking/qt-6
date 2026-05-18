@@ -121,6 +121,8 @@ NQZlAZc2w1Ha9lqisaWWpt42QVhQM64=
 -----END CERTIFICATE-----)";
 #endif // QT_CONFIG(ssl)
 
+#include <atomic>
+
 QT_BEGIN_NAMESPACE
 
 using namespace Qt::StringLiterals;
@@ -262,7 +264,7 @@ QString LocalHttpClient::getSlowRead(const QString &url, qsizetype chunkSize, qs
         return u""_s; // No content
 
     read = 0;
-    QByteArray buffer(contentLength, 0);
+    QByteArray buffer(contentLength, Qt::Uninitialized);
     forever {
         qint64 result = socket->read(&buffer[read], qMin(contentLength - read, chunkSize));
         QVERIFY2(result >= 0, "IO error reading content");
@@ -274,7 +276,7 @@ QString LocalHttpClient::getSlowRead(const QString &url, qsizetype chunkSize, qs
         socket->waitForReadyRead(10);
     };
 
-    return QString::fromUtf8(buffer, contentLength);
+    return QString::fromUtf8(buffer);
 }
 
 QString LocalHttpClient::postSlow(const QString &url, const QHttpHeaders &headers, qsizetype mSleep)
@@ -647,9 +649,10 @@ void tst_QHttpServerMultithreaded::initTestCase()
     httpserver.route(
             "/sequential/<arg>/<arg>",
             [this](QString message, int times, QHttpServerResponder &&responder) {
+                auto r = std::make_shared<QHttpServerResponder>(std::move(responder));
                 return QtConcurrent::run(
                         &threadPool,
-                        [=, r = std::make_shared<QHttpServerResponder>(std::move(responder))]() {
+                        [this, message = std::move(message), times, r = std::move(r)]() {
                             ++callCounter;
                             auto device = new SequentialIODevice(message.toUtf8(), times, 50ms);
                             r->write(device, QHttpHeaders());
@@ -904,14 +907,17 @@ void tst_QHttpServerMultithreaded::useSemaphores()
     QThreadPool clientThreadPool;
     clientThreadPool.setMaxThreadCount(NumberProcessed);
     QList<QFuture<QString>> futures(NumberProcessed);
+    std::atomic<qsizetype> startedThreads = 0;
     for (qsizetype i = 0; i < NumberProcessed; ++i) {
         futures[i] = QtConcurrent::run(&clientThreadPool, [&, i]() {
             LocalHttpClient client(serverType);
+            ++startedThreads;
             return client.get(u"/semroute/%1"_s.arg(i));
         });
     }
 
     QTest::qWait(2000);
+    QTRY_COMPARE(startedThreads, NumberOfThreads);
     readySem.acquire(NumberProcessed);
     routeSem.release(NumberProcessed);
 

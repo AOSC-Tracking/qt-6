@@ -11,6 +11,8 @@
 
 #include "base/check.h"
 #include "base/containers/contains.h"
+#include "base/features.h"
+#include "base/feature_list.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
 #include "base/memory/raw_ptr.h"
@@ -57,6 +59,12 @@ bool HasElapsedCadenceInterval(
 }
 
 namespace viz {
+
+// TODO (crbug.com/495852034): Remove once M150 hits Stable.
+BASE_FEATURE(kDisconnectOnInvalidHitTestRegionList,
+             "DisconnectOnInvalidHitTestRegionList",
+             base::FEATURE_ENABLED_BY_DEFAULT);
+
 namespace {
 
 bool RecordShouldSendBeginFrame(const std::string& reason, bool should_send) {
@@ -920,8 +928,13 @@ SubmitResult CompositorFrameSinkSupport::MaybeSubmitCompositorFrame(
 
   // QueueFrame can fail in unit tests, so SubmitHitTestRegionList has to be
   // called before that.
-  frame_sink_manager()->SubmitHitTestRegionList(
-      last_created_surface_id_, frame_index, std::move(hit_test_region_list));
+  if (!frame_sink_manager()->SubmitHitTestRegionList(
+          last_created_surface_id_, frame_index,
+          std::move(hit_test_region_list))) {
+    if (base::FeatureList::IsEnabled(kDisconnectOnInvalidHitTestRegionList)) {
+      return SubmitResult::HIT_TEST_DATA_INVALID;
+    }
+  }
 
   Surface::QueueFrameResult result = current_surface->QueueFrame(
       std::move(frame), frame_index, std::move(frame_rejected_callback));
@@ -1360,6 +1373,8 @@ const char* CompositorFrameSinkSupport::GetSubmitResultAsString(
       return "LocalSurfaceId sequence numbers decreased";
     case SubmitResult::SURFACE_OWNED_BY_ANOTHER_CLIENT:
       return "Surface belongs to another client";
+    case SubmitResult::HIT_TEST_DATA_INVALID:
+      return "Invalid hit-test data";
   }
   NOTREACHED();
 }
@@ -1573,10 +1588,15 @@ void CompositorFrameSinkSupport::OnSaveTransitionDirectiveProcessed(
         directive.sequence_id());
   }
 
+  // Subtle: the iterator `it` may be invalidated after the call to
+  // `CacheSurfaceAnimationManager` due to new SurfaceAnimationManager being
+  // created and put into the map. This can happen due to the FrameSinkObserver
+  // getting notified of the view transition saving surface being activated.
   if (directive.maybe_cross_frame_sink()) {
     frame_sink_manager_->CacheSurfaceAnimationManager(
         directive.transition_token(), std::move(it->second));
-    view_transition_token_to_animation_manager_.erase(it);
+    view_transition_token_to_animation_manager_.erase(
+        directive.transition_token());
   }
 }
 

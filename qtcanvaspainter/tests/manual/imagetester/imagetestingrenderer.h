@@ -15,7 +15,7 @@ class ImageTestingRenderer : public QCanvasPainterItemRenderer
 
 public:
     explicit ImageTestingRenderer();
-    void synchronize(QCanvasPainterItem *item) override;
+    void synchronizeData(QCanvasPainterItem *item) override;
     void prePaint(QCanvasPainter *painter) override;
     void paint(QCanvasPainter *painter) override;
 

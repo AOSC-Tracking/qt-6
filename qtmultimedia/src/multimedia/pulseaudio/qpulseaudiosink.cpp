@@ -79,7 +79,12 @@ QPulseAudioSinkStream::QPulseAudioSinkStream(QAudioDevice device, const QAudioFo
     }
 }
 
-QPulseAudioSinkStream::~QPulseAudioSinkStream() = default;
+QPulseAudioSinkStream::~QPulseAudioSinkStream()
+{
+    QPulseAudioContextManager *pulseEngine = QPulseAudioContextManager::instance();
+    std::lock_guard engineLock{ *pulseEngine };
+    m_stream = {};
+}
 
 bool QPulseAudioSinkStream::start(QIODevice *device)
 {
@@ -121,7 +126,8 @@ void QPulseAudioSinkStream::stop(ShutdownPolicy policy)
 
     uninstallCallbacks();
     // Note: we need to cork to ensure that the stream is stopped immediately
-    std::ignore = streamCork(m_stream, true);
+    auto op = streamCork(m_stream, true);
+    pulseEngine->waitForAsyncOperation(op);
 
     if (m_audioCallback) {
         switch (policy) {
@@ -185,24 +191,6 @@ bool QPulseAudioSinkStream::open() const
 
 void QPulseAudioSinkStream::installCallbacks(StreamType streamType)
 {
-    pa_stream_set_overflow_callback(m_stream.get(), [](pa_stream *stream, void *data) {
-        auto *self = reinterpret_cast<QPulseAudioSinkStream *>(data);
-        Q_ASSERT(stream == self->m_stream.get());
-        self->underflowCallback();
-    }, this);
-
-    pa_stream_set_underflow_callback(m_stream.get(), [](pa_stream *stream, void *data) {
-        auto *self = reinterpret_cast<QPulseAudioSinkStream *>(data);
-        Q_ASSERT(stream == self->m_stream.get());
-        self->overflowCallback();
-    }, this);
-
-    pa_stream_set_state_callback(m_stream.get(), [](pa_stream *stream, void *data) {
-        auto *self = reinterpret_cast<QPulseAudioSinkStream *>(data);
-        Q_ASSERT(stream == self->m_stream.get());
-        self->stateCallback();
-    }, this);
-
     switch (streamType) {
     case StreamType::Ringbuffer:
         pa_stream_set_write_callback(m_stream.get(),
@@ -224,21 +212,11 @@ void QPulseAudioSinkStream::installCallbacks(StreamType streamType)
     default:
         Q_UNREACHABLE_RETURN();
     }
-
-    pa_stream_set_latency_update_callback(m_stream.get(), [](pa_stream *stream, void *data) {
-        auto *self = reinterpret_cast<QPulseAudioSinkStream *>(data);
-        Q_ASSERT(stream == self->m_stream.get());
-        self->latencyUpdateCallback();
-    }, this);
 }
 
 void QPulseAudioSinkStream::uninstallCallbacks()
 {
-    pa_stream_set_overflow_callback(m_stream.get(), nullptr, nullptr);
-    pa_stream_set_underflow_callback(m_stream.get(), nullptr, nullptr);
-    pa_stream_set_state_callback(m_stream.get(), nullptr, nullptr);
     pa_stream_set_write_callback(m_stream.get(), nullptr, nullptr);
-    pa_stream_set_latency_update_callback(m_stream.get(), nullptr, nullptr);
 }
 
 bool QPulseAudioSinkStream::startStream(StreamType streamType)

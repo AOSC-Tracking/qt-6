@@ -1,6 +1,7 @@
 // Copyright (C) 2021 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
+#include <QtCore/qtconfigmacros.h>
 #undef QT_NO_FOREACH // this file contains unported legacy Q_FOREACH uses
 
 #include <QtQuick/private/qsgcontext_p.h>
@@ -509,13 +510,13 @@ void fillUniformArrayFromImage(float* array, const QImage& img, int size)
     \table
     \row
     \li qrc:///particleresources/star.png
-    \li \inlineimage particles/star.png
+    \li \inlineimage particles/star.png {White star particle}
     \row
     \li qrc:///particleresources/glowdot.png
-    \li \inlineimage particles/glowdot.png
+    \li \inlineimage particles/glowdot.png {White glowing dot particle}
     \row
     \li qrc:///particleresources/fuzzydot.png
-    \li \inlineimage particles/fuzzydot.png
+    \li \inlineimage particles/fuzzydot.png {White fuzzy dot particle}
     \endtable
 
     Note that the images are white and semi-transparent, to allow colorization

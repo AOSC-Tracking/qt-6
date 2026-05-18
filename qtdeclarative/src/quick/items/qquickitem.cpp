@@ -2392,6 +2392,8 @@ QQuickItem::~QQuickItem()
 #if QT_CONFIG(accessibility)
     if (QGuiApplicationPrivate::is_app_running && !QGuiApplicationPrivate::is_app_closing && QAccessible::isActive())
         QAccessibleCache::instance()->sendObjectDestroyedEvent(this);
+
+    d->isAccessible = false;
 #endif
 
     if (d->windowRefCount > 1)
@@ -2662,9 +2664,9 @@ QQuickItem* QQuickItemPrivate::nextPrevItemInTabFocusChain(QQuickItem *item, boo
             }
             current = parent;
         } else if (hasChildren) {
-            if (!wrap) {
+            if (!wrap && !isTabFence) {
                 qCDebug(lcFocus) << "QQuickItemPrivate::nextPrevItemInTabFocusChain:"
-                                 << "Focus chain about to wrap but wrapping was set to false."
+                                 << "Focus chain about to wrap but we're outside a tab fence and wrapping was set to false."
                                  << "Returning.";
                 return nullptr;
             }
@@ -8137,7 +8139,7 @@ void QQuickItem::setFocus(bool focus, Qt::FocusReason reason)
     while (scope && !scope->isFocusScope() && scope->parentItem())
         scope = scope->parentItem();
 
-    if (d->focus == focus && (!focus || !scope || QQuickItemPrivate::get(scope)->subFocusItem == this))
+    if (d->focus == focus && d->activeFocus == focus && (!focus || !scope || QQuickItemPrivate::get(scope)->subFocusItem == this))
         return;
 
     bool notifyListeners = false;
@@ -8447,7 +8449,7 @@ void QQuickItemPrivate::setHasCursorInChild(bool hc)
     // if we're asked to turn it off (because of an unsetcursor call, or a node
     // removal) then we should make sure it's really ok to turn it off.
     if (!hc && subtreeCursorEnabled) {
-        if (hasCursor)
+        if (hasCursor || hasCursorHandler)
             return; // nope! sorry, I have a cursor myself
         for (QQuickItem *otherChild : std::as_const(childItems)) {
             QQuickItemPrivate *otherChildPrivate = QQuickItemPrivate::get(otherChild);
@@ -8999,7 +9001,7 @@ void QQuickItem::setContainmentMask(QObject *mask)
     if (!extraDataExists)
         d->extra.value(); // ensure extra exists
     if (mask) {
-        int methodIndex = mask->metaObject()->indexOfMethod(QByteArrayLiteral("contains(QPointF)"));
+        int methodIndex = mask->metaObject()->indexOfMethod("contains(QPointF)");
         if (methodIndex < 0) {
             qmlWarning(this) << QStringLiteral("QQuickItem: Object set as mask does not have an invokable contains method, ignoring it.");
             return;
@@ -10294,13 +10296,15 @@ QQuickItemPrivate::ExtraData::ExtraData()
 #if QT_CONFIG(accessibility)
 QAccessible::Role QQuickItemPrivate::effectiveAccessibleRole() const
 {
-    Q_Q(const QQuickItem);
-    auto *attached = qmlAttachedPropertiesObject<QQuickAccessibleAttached>(q, false);
     auto role = QAccessible::NoRole;
-    if (auto *accessibleAttached = qobject_cast<QQuickAccessibleAttached *>(attached))
-        role = accessibleAttached->role();
-    if (role == QAccessible::NoRole)
-        role = accessibleRole();
+    if (!inDestructor) { // we might get called back while emitting QAccessible::ObjectDestroy
+        Q_Q(const QQuickItem);
+        auto *attached = qmlAttachedPropertiesObject<QQuickAccessibleAttached>(q, false);
+        if (auto *accessibleAttached = qobject_cast<QQuickAccessibleAttached *>(attached))
+            role = accessibleAttached->role();
+        if (role == QAccessible::NoRole)
+            role = accessibleRole();
+    }
     return role;
 }
 

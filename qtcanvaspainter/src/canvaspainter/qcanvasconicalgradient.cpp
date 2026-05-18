@@ -213,11 +213,10 @@ void QCanvasConicalGradientPrivate::createConicalGradient(const QColor &iColor, 
     p.brushType = BrushConicalGradient;
     p.transform = QTransform::fromTranslate(dd.cx, dd.cy);
 
-    // Note: p.extent not used
+    // Note: p.extent and p.radius not used
 
-    // Angle is in radius variable, as radians
     // Rotating clockwise, starting from east
-    p.radius = dd.angle + M_PI_2;
+    p.transform.rotateRadians(dd.angle + M_PI_2);
 
     if (imageId != 0) {
         // Multistop gradient

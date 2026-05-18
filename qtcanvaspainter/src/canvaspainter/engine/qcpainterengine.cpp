@@ -49,8 +49,19 @@ QT_BEGIN_NAMESPACE
 
 static const float QCPAINTER_MAX_STROKE_WIDTH = 1000.0f;
 static const float QCPAINTER_MAX_ANTIALIAS_WIDTH = 10.0f;
-static const int QCPAINTER_MAX_TESSELATE_LEVEL = 11;
+static const int QCPAINTER_MAX_TESSELLATION_LEVEL = 11;
 static const float QCPAINTER_ANTIALIAS_MULTIPLIER = 1.25f;
+
+// Returns value of 'name' env variable as float, or
+// defaultValue when not set.
+static float qt_qc_envFloat(const char *name, float defaultValue)
+{
+    if (Q_LIKELY(!qEnvironmentVariableIsSet(name)))
+        return defaultValue;
+    bool ok = false;
+    const float value = qgetenv(name).toFloat(&ok);
+    return ok ? value : defaultValue;
+}
 
 QCContext* QCPainterEngine::initialize(QCPainterRhiRenderer *renderer)
 {
@@ -181,9 +192,7 @@ void QCPainterEngine::reset()
     ctx.commandsCount = 0;
     ctx.commandsDataCount = 0;
     ctx.currentPath = nullptr;
-    ctx.currentPainterPath = nullptr;
-    ctx.currentPathGroup = -1;
-    ctx.preparedPainterPath = nullptr;
+    ctx.preparedPath = nullptr;
     ctx.renderHints = QCanvasPainter::RenderHint::Antialiasing;
 }
 
@@ -338,16 +347,37 @@ bool QCPainterEngine::deleteImage(int imageId)
     return m_renderer->renderDeleteTexture(imageId);
 }
 
+// Fills a rect (x, y, width, height) with the given paint and
+// antialiasing turned off. After painting, the antialiasing
+// state and previous fill brush are returned back into use.
+void QCPainterEngine::fillPlainRect(const QCPaint &paint, float x, float y, float width, float height)
+{
+    const QCPaint prevFill = state.fill;
+    const auto prevCustomFill = state.customFill;
+    const bool prevAA = m_renderer->testFlag(QCPainterRhiRenderer::Antialiasing);
+    m_renderer->setFlag(QCPainterRhiRenderer::Antialiasing, false);
+    state.fill = paint;
+    state.customFill = nullptr;
+    beginPath();
+    addRect(x, y, width, height);
+    fill();
+    m_renderer->setFlag(QCPainterRhiRenderer::Antialiasing, prevAA);
+    state.fill = prevFill;
+    state.customFill = prevCustomFill;
+}
+
 void QCPainterEngine::drawImageId(int imageId, float x, float y, float width, float height, const QColor &tintColor)
 {
     QCPaint ip = createImagePattern(x, y, width, height, imageId, 0.0f, tintColor);
-    save();
-    setAntialias(0);
-    beginPath();
-    addRect(x, y, width, height);
-    setFillPaint(ip);
-    fill();
-    restore();
+    fillPlainRect(ip, x, y, width, height);
+}
+
+void QCPainterEngine::drawImageIdAt(int imageId, float x, float y, float width, float height,
+                                    float dX, float dY, float dWidth, float dHeight,
+                                    const QColor &tintColor)
+{
+    QCPaint ip = createImagePattern(x, y, width, height, imageId, 0.0f, tintColor);
+    fillPlainRect(ip, dX, dY, dWidth, dHeight);
 }
 
 QCPaint QCPainterEngine::createImagePattern(float x, float y, float width, float height,
@@ -380,7 +410,7 @@ void QCPainterEngine::beginPath()
     ctx.pathsCount = 0;
     ctx.pointsCount = 0;
     ctx.currentPath = nullptr;
-    ctx.preparedPainterPath = nullptr;
+    ctx.preparedPath = nullptr;
     ctx.verticesCount = 0;
 }
 
@@ -765,23 +795,44 @@ void QCPainterEngine::setPathWinding(QCanvasPainter::PathWinding winding)
     appendCommand(c);
 }
 
-void QCPainterEngine::fill()
+void QCPainterEngine::fill(QCanvasPath *maybePath, int pathGroup, bool cachedPathUpdateRequired)
 {
-    if (ctx.commandsCount < 3)
+    const bool usingPathCaching = maybePath && pathGroup != -1;
+    if (!usingPathCaching && ctx.commandsCount < 3)
         return;
 
 #ifdef QCPAINTER_PERF_DEBUG
     perf.logStart(QCPerfLogging::FILL);
 #endif
-    commandsToPaths();
-    expandFill();
 
-    const bool ignoreTransform = (ctx.currentPathGroup != -1);
-    const QCPaint fillPaint = getFillPaint(ignoreTransform);
-    m_renderer->renderFill(fillPaint, state,
-                           ctx.bounds, ctx.paths, ctx.pathsCount,
-                           ctx.currentPainterPath, ctx.currentPathGroup,
-                           ctx.currentPathTransform);
+    if (!usingPathCaching) {
+        commandsToPaths();
+        expandFill();
+
+        const bool ignoreTransform = false;
+        const QCPaint fillPaint = getFillPaint(ignoreTransform);
+
+        QCRhiUncachedPathDrawArgs args { ctx.paths, ctx.pathsCount };
+        m_renderer->renderFill(fillPaint, state, ctx.bounds, args, std::nullopt);
+    } else {
+        if (cachedPathUpdateRequired) {
+            commandsToPaths();
+            expandFill();
+        }
+
+        const bool ignoreTransform = true;
+        const QCPaint fillPaint = getFillPaint(ignoreTransform);
+
+        if (cachedPathUpdateRequired) {
+            QCRhiCachedPathDrawArgs args { maybePath, pathGroup, state.transform, { { ctx.paths, ctx.pathsCount } } };
+            m_renderer->renderFill(fillPaint, state, ctx.bounds, std::nullopt, args);
+        } else {
+            QCRhiCachedPathDrawArgs args { maybePath, pathGroup, state.transform, std::nullopt };
+            // there was no commandsToPath -> ctx.bounds is stale -> do not pass it, should use the cached one anyway
+            m_renderer->renderFill(fillPaint, state, QRectF(), std::nullopt, args);
+        }
+    }
+
 #ifdef QCPAINTER_PERF_DEBUG
     perf.logEnd(QCPerfLogging::FILL);
 #endif
@@ -804,10 +855,8 @@ void QCPainterEngine::fillForClear()
 
     const bool wasBlendEnabled = state.blendEnable;
     state.blendEnable = false;
-    m_renderer->renderFill(fillPaint, state,
-                           ctx.bounds, ctx.paths, ctx.pathsCount,
-                           ctx.currentPainterPath, ctx.currentPathGroup,
-                           ctx.currentPathTransform);
+    QCRhiUncachedPathDrawArgs args { ctx.paths, ctx.pathsCount };
+    m_renderer->renderFill(fillPaint, state, ctx.bounds, args, std::nullopt);
     state.blendEnable = wasBlendEnabled;
 
 #ifdef QCPAINTER_PERF_DEBUG
@@ -815,9 +864,10 @@ void QCPainterEngine::fillForClear()
 #endif
 }
 
-void QCPainterEngine::stroke()
+void QCPainterEngine::stroke(QCanvasPath *maybePath, int pathGroup, bool cachedPathUpdateRequired)
 {
-    if (ctx.commandsCount < 2)
+    const bool usingPathCaching = maybePath && pathGroup != -1;
+    if (!usingPathCaching && ctx.commandsCount < 2)
         return;
 
 #ifdef QCPAINTER_PERF_DEBUG
@@ -825,15 +875,28 @@ void QCPainterEngine::stroke()
 #endif
 
     float strokeWidth;
-    const bool ignoreTransform = (ctx.currentPathGroup != -1);
+    const bool ignoreTransform = usingPathCaching;
     const QCPaint strokePaint = getStrokePaint(&strokeWidth, ignoreTransform);
 
-    commandsToPaths();
-    expandStroke(strokeWidth * 0.5f, state.lineCap, state.lineJoin, state.miterLimit);
-    m_renderer->renderStroke(strokePaint, state,
-                             strokeWidth, ctx.paths, ctx.pathsCount,
-                             ctx.currentPainterPath, ctx.currentPathGroup,
-                             ctx.currentPathTransform);
+    if (!usingPathCaching) {
+        commandsToPaths();
+        expandStroke(strokeWidth * 0.5f, state.lineCap, state.lineJoin, state.miterLimit);
+
+        QCRhiUncachedPathDrawArgs args { ctx.paths, ctx.pathsCount };
+        m_renderer->renderStroke(strokePaint, state, strokeWidth, args, std::nullopt);
+    } else {
+        if (cachedPathUpdateRequired) {
+            commandsToPaths();
+            expandStroke(strokeWidth * 0.5f, state.lineCap, state.lineJoin, state.miterLimit);
+
+            QCRhiCachedPathDrawArgs args { maybePath, pathGroup, state.transform, { { ctx.paths, ctx.pathsCount } } };
+            m_renderer->renderStroke(strokePaint, state, strokeWidth, std::nullopt, args);
+        } else {
+            QCRhiCachedPathDrawArgs args { maybePath, pathGroup, state.transform, std::nullopt };
+            m_renderer->renderStroke(strokePaint, state, strokeWidth, std::nullopt, args);
+        }
+    }
+
 #ifdef QCPAINTER_PERF_DEBUG
     perf.logEnd(QCPerfLogging::STROKE);
 #endif
@@ -845,37 +908,36 @@ void QCPainterEngine::fill(const QCanvasPath &path, int pathGroup)
         return;
 
     QCanvasPath *p = const_cast<QCanvasPath *>(&path);
-    const bool cacheGeometry = (pathGroup != -1);
-    const bool pathUpdateRequired = fillPathUpdateRequired(p, pathGroup);
-    if (!cacheGeometry) {
+    if (pathGroup == -1) {
         // Not caching, so prepare and fill normally.
         // In this case we apply state transformation into commands data points.
         // So data needs to be prepared again if state transformation has changed.
-        if (pathUpdateRequired || ctx.preparedPainterPath != &path || ctx.preparedTransform != state.transform)
-            preparePainterPath(path, state.transform);
-        fill();
-    } else if (pathUpdateRequired) {
-        // Caching - Update required.
-        // In this case data points are untransformed, and transformation is applied in vertex shader.
-        if (ctx.preparedPainterPath != &path)
-            preparePainterPath(path);
-        // Fill with currently rendering painterpath
-        ctx.currentPainterPath = p;
-        ctx.currentPathGroup = pathGroup;
-        ctx.currentPathTransform = state.transform;
-        fill();
-        ctx.currentPainterPath = nullptr;
-        ctx.currentPathGroup = -1;
-        ctx.currentPathTransform.reset();
-    } else {
-        // Caching - No need to update.
-        // In this case data points are untransformed, and transformation is applied in vertex shader.
-        const QCPaint fillPaint = getFillPaint(true);
 
-        // Uses pathsCount 0, meaning that previous path data can be reused.
-        m_renderer->renderFill(fillPaint, state,
-                               ctx.bounds, ctx.paths, 0,
-                               p, pathGroup, state.transform);
+        const QCanvasPathPrivate *pathd = QCanvasPathPrivate::get(&path);
+        if (ctx.preparedPath != &path
+            || ctx.preparedPathTransform != state.transform
+            || ctx.preparedPathCommandsCount != pathd->commandsCount
+            || ctx.preparedPathIterations != pathd->pathIterations)
+        {
+            preparePainterPath(path);
+            ctx.preparedPath = &path;
+            ctx.preparedPathTransform = state.transform;
+            ctx.preparedPathCommandsCount = pathd->commandsCount;
+            ctx.preparedPathIterations = pathd->pathIterations;
+        }
+
+        fill();
+    } else {
+        // Caching.
+        // In this case data points are untransformed, and transformation is applied in vertex shader.
+
+        const bool pathUpdateRequired = fillCachedPathUpdateRequired(p, pathGroup);
+        if (pathUpdateRequired) {
+            const bool ignoreTransform = true;
+            preparePainterPath(path, ignoreTransform);
+        }
+
+        fill(p, pathGroup, pathUpdateRequired);
     }
 }
 
@@ -885,37 +947,36 @@ void QCPainterEngine::stroke(const QCanvasPath &path, int pathGroup)
         return;
 
     QCanvasPath *p = const_cast<QCanvasPath *>(&path);
-    const bool cacheGeometry = (pathGroup != -1);
-    const bool pathUpdateRequired = strokePathUpdateRequired(p, pathGroup);
-    if (!cacheGeometry) {
+    if (pathGroup == -1) {
         // Not caching, so prepare and stroke normally.
         // In this case we apply state transformation into commands data points.
         // So data needs to be prepared again if state transformation has changed.
-        if (pathUpdateRequired || ctx.preparedPainterPath != &path || ctx.preparedTransform != state.transform)
-            preparePainterPath(path, state.transform);
-        stroke();
-    } else if (pathUpdateRequired) {
-        // Caching - Update required.
-        // In this case data points are untransformed, and transformation is applied in vertex shader.
-        if (ctx.preparedPainterPath != &path)
+
+        const QCanvasPathPrivate *pathd = QCanvasPathPrivate::get(&path);
+        if (ctx.preparedPath != &path
+            || ctx.preparedPathTransform != state.transform
+            || ctx.preparedPathCommandsCount != pathd->commandsCount
+            || ctx.preparedPathIterations != pathd->pathIterations)
+        {
             preparePainterPath(path);
-        // Stroke with currently rendering painterpath
-        ctx.currentPainterPath = p;
-        ctx.currentPathGroup = pathGroup;
-        ctx.currentPathTransform = state.transform;
+            ctx.preparedPath = &path;
+            ctx.preparedPathTransform = state.transform;
+            ctx.preparedPathCommandsCount = pathd->commandsCount;
+            ctx.preparedPathIterations = pathd->pathIterations;
+        }
+
         stroke();
-        ctx.currentPainterPath = nullptr;
-        ctx.currentPathGroup = -1;
-        ctx.currentPathTransform.reset();
     } else {
-        // Caching - No need to update.
+        // Caching.
         // In this case data points are untransformed, and transformation is applied in vertex shader.
-        float strokeWidth;
-        const QCPaint strokePaint = getStrokePaint(&strokeWidth, true);
-        // Uses pathsCount 0, meaning that previous path data can be reused.
-        m_renderer->renderStroke(strokePaint, state,
-                                 strokeWidth, ctx.paths, 0,
-                                 p, pathGroup, state.transform);
+
+        const bool pathUpdateRequired = strokeCachedPathUpdateRequired(p, pathGroup);
+        if (pathUpdateRequired) {
+            const bool ignoreTransform = true;
+            preparePainterPath(path, ignoreTransform);
+        }
+
+        stroke(p, pathGroup, pathUpdateRequired);
     }
 }
 
@@ -1147,10 +1208,10 @@ void QCPainterEngine::setMiterLimit(float limit)
 void QCPainterEngine::removePathGroup(int pathGroup)
 {
     // Remove from engine side
-    erase_if(ctx.cachedStrokePaths, [pathGroup](const QHash<const QCanvasPath*, QCCachedPath>::iterator it) {
+    erase_if(ctx.cachedStrokePaths, [pathGroup](const QHash<QCanvasPath *, QCCachedPath>::iterator it) {
         return it->pathGroup == pathGroup;
     });
-    erase_if(ctx.cachedFillPaths, [pathGroup](const QHash<const QCanvasPath*, QCCachedPath>::iterator it) {
+    erase_if(ctx.cachedFillPaths, [pathGroup](const QHash<QCanvasPath *, QCCachedPath>::iterator it) {
         return it->pathGroup == pathGroup;
     });
     // Remove from renderer side
@@ -1181,7 +1242,9 @@ QCanvasPainter::RenderHints QCPainterEngine::renderHints() const
 void QCPainterEngine::setDevicePixelRatio(float ratio)
 {
     if (ratio > 0.0f) {
-        ctx.tessTol = 0.25f / ratio;
+        static const float tessTol = qt_qc_envFloat("QCPAINTER_TESSELLATION_TOLERANCE", 0.25f);
+        ctx.tessTol = tessTol / ratio;
+        ctx.divsTol = 0.25f / ratio;
         ctx.distTol = 0.01f / ratio;
         // Note: This is not called during the paint operations,
         // so it can set antialias to default value.
@@ -1468,10 +1531,10 @@ void QCPainterEngine::tesselateBezier(float x1, float y1, float x2, float y2,
                                          float x3, float y3, float x4, float y4,
                                          int level, QCPointFlags flags)
 {
-    if (Q_UNLIKELY(level > QCPAINTER_MAX_TESSELATE_LEVEL)) {
+    if (Q_UNLIKELY(level > QCPAINTER_MAX_TESSELLATION_LEVEL)) {
         // This shouldn't usually happen, as we will
         // reach the tessTol accuracy. In case of e.g. huge circles, increase
-        // the QCPAINTER_MAX_TESSELATE_LEVEL.
+        // the QCPAINTER_MAX_TESSELLATION_LEVEL.
         return;
     }
 
@@ -1624,7 +1687,7 @@ void QCPainterEngine::expandStroke(float w, QCanvasPainter::LineCap cap, QCanvas
     calculateJoins(w, join, miterLimit);
     const int pCount = ctx.pathsCount;
     const int roundDivs = (join == QCanvasPainter::LineJoin::Round) || (cap == QCanvasPainter::LineCap::Round)
-                              ? curveDivs(w, ctx.tessTol)
+                              ? curveDivs(w, ctx.divsTol)
                               : 0;
 
     // Calculate max vertex usage
@@ -2062,20 +2125,12 @@ void QCPainterEngine::ensureVertices(int count)
 }
 
 // Prepare current commands to match \a path before the fill/stroke.
-void QCPainterEngine::preparePainterPath(const QCanvasPath &path,
-                                         const QTransform &transform)
+void QCPainterEngine::preparePainterPath(const QCanvasPath &path, bool ignoreTransform)
 {
-    // Create new path, without applying transformation is not needed.
     beginPath();
     const QCanvasPathPrivate *pathd = QCanvasPathPrivate::get(&path);
-    const bool ignoreTransforms = transform.isIdentity();
-    appendCommandsData(pathd->commandsData.constData(), pathd->commandsDataCount, ignoreTransforms);
+    appendCommandsData(pathd->commandsData.constData(), pathd->commandsDataCount, ignoreTransform);
     appendCommands(pathd->commands.constData(), pathd->commandsCount);
-
-    // Store currently prepared path so subsequential fill & stroke calls
-    // with same (unchanged) path & transform require preparing commands only once.
-    ctx.preparedPainterPath = &path;
-    ctx.preparedTransform = transform;
 }
 
 // Append \a path into current commands.
@@ -2146,50 +2201,48 @@ void QCPainterEngine::appendPainterPath(const QCanvasPath &path,
 
 // Returns true if path has changed or some state property related
 // to fill vertices generation has changed compared to cached path.
-bool QCPainterEngine::fillPathUpdateRequired(QCanvasPath *path, int pathGroup)
+// Note: excluding the transform, because cached paths do not bake in the
+// transform in the geometry.
+bool QCPainterEngine::fillCachedPathUpdateRequired(QCanvasPath *path, int pathGroup)
 {
+    Q_ASSERT(pathGroup != -1);
     QCanvasPathPrivate *pathd = QCanvasPathPrivate::get(path);
     QCCachedPath &cp = ctx.cachedFillPaths[path];
+    QCCachedPathFillProperties fillProps { state.antialias, int(ctx.renderHints) };
     bool updateRequired = false;
-    if (pathGroup != cp.pathGroup ||
-        pathd->pathIterations != cp.pathIterations ||
-        pathd->commandsCount != cp.commandsCount ||
-        !qFuzzyCompare(state.antialias, cp.edgeAAWidth) ||
-        !m_renderer->isPathCached(path, pathGroup)) {
+    if (pathGroup != cp.pathGroup
+        || pathd->pathIterations != cp.pathIterations
+        || pathd->commandsCount != cp.commandsCount
+        || !m_renderer->isPathCachedForFill(path, pathGroup, fillProps))
+    {
         updateRequired = true;
-        // Reset cache states
         cp.pathGroup = pathGroup;
         cp.pathIterations = pathd->pathIterations;
         cp.commandsCount = pathd->commandsCount;
-        cp.edgeAAWidth = state.antialias;
     }
     return updateRequired;
 }
 
 // Returns true if path has changed or some state property related
 // to stroke vertices generation has changed compared to cached path.
-bool QCPainterEngine::strokePathUpdateRequired(QCanvasPath *path, int pathGroup)
+// Note: excluding the transform, because cached paths do not bake in the
+// transform in the geometry.
+bool QCPainterEngine::strokeCachedPathUpdateRequired(QCanvasPath *path, int pathGroup)
 {
+    Q_ASSERT(pathGroup != -1);
     QCanvasPathPrivate *pathd = QCanvasPathPrivate::get(path);
     QCCachedPath &cp = ctx.cachedStrokePaths[path];
+    QCCachedPathStrokeProperties strokeProps { state.antialias, state.strokeWidth, state.lineCap, state.lineJoin, int(ctx.renderHints) };
     bool updateRequired = false;
-    if (pathGroup != cp.pathGroup ||
-        pathd->pathIterations != cp.pathIterations ||
-        pathd->commandsCount != cp.commandsCount ||
-        !qFuzzyCompare(state.antialias, cp.edgeAAWidth) ||
-        !qFuzzyCompare(state.strokeWidth, cp.strokeWidth) ||
-        state.lineCap != cp.lineCap ||
-        state.lineJoin != cp.lineJoin ||
-        !m_renderer->isPathCached(path, pathGroup)) {
+    if (pathGroup != cp.pathGroup
+        || pathd->pathIterations != cp.pathIterations
+        || pathd->commandsCount != cp.commandsCount
+        || !m_renderer->isPathCachedForStroke(path, pathGroup, strokeProps))
+    {
         updateRequired = true;
-        // Reset cache states
         cp.pathGroup = pathGroup;
         cp.pathIterations = pathd->pathIterations;
         cp.commandsCount = pathd->commandsCount;
-        cp.edgeAAWidth = state.antialias;
-        cp.strokeWidth = state.strokeWidth;
-        cp.lineCap = state.lineCap;
-        cp.lineJoin = state.lineJoin;
     }
     return updateRequired;
 }
@@ -2285,14 +2338,6 @@ QCanvasPainter::TextAlign QCPainterEngine::effectiveTextAlign(QStringView text) 
 
 #ifndef QCPAINTER_DISABLE_TEXT_SUPPORT
 // *** From QSGDistanceFieldGlyphNode - Start ***
-static float qt_qc_envFloat(const char *name, float defaultValue)
-{
-    if (Q_LIKELY(!qEnvironmentVariableIsSet(name)))
-        return defaultValue;
-    bool ok = false;
-    const float value = qgetenv(name).toFloat(&ok);
-    return ok ? value : defaultValue;
-}
 
 static float thresholdFunc(float glyphScale)
 {
@@ -2347,6 +2392,11 @@ void fillDebugCounters(QVariantMap *dst, const QCDebugCounters &src)
     dst->insert(QStringLiteral(u"textTriangleCount"), src.textTriangleCount);
     dst->insert(QStringLiteral(u"drawCallCount"), src.drawCallCount);
     dst->insert(QStringLiteral(u"triangleCount"), src.triangleCount);
+    dst->insert(QStringLiteral(u"imageMemoryUsage"), src.imageMemoryUsage);
+    dst->insert(QStringLiteral(u"imageCount"), src.imageCount);
+    dst->insert(QStringLiteral(u"pathGroupCount"), src.pathGroupCount);
+    dst->insert(QStringLiteral(u"cachedSubpathCount"), src.cachedSubpathCount);
+    dst->insert(QStringLiteral(u"cachedPathVertexDataSize"), src.cachedPathVertexDataSize);
 }
 
 } // namespace QQCanvasPainterDebugCounterUtils

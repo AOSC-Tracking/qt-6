@@ -163,6 +163,10 @@ class COMPONENT_EXPORT(VIZ_SHARED_IMAGE_FORMAT) SharedImageFormat final {
   // Returns the bit depth for multiplanar format based on the channel format.
   int MultiplanarBitDepth() const;
 
+  // Returns the number of bytes per channel for multiplanar format based on the
+  // channel format.
+  uint64_t MultiplanarStorageBytesPerChannel() const;
+
   // Returns a std::string for the format.
   std::string ToString() const;
 
@@ -177,6 +181,10 @@ class COMPONENT_EXPORT(VIZ_SHARED_IMAGE_FORMAT) SharedImageFormat final {
 
   // NOTE: Supported only for true single-plane formats.
   int BitsPerPixel() const;
+
+  // NOTE: Supported only for true single-plane formats that have a fixed number
+  // of bytes per pixel, eg. not ETC1.
+  int BytesPerPixel() const;
 
   // Returns a SharedImageFormat that matches Skia's kN32_SkColorType.  Use this
   // function to get optimal 8 bit format for the Skia CPU backend.

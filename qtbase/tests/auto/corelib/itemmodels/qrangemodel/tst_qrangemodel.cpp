@@ -100,6 +100,8 @@ private slots:
     void treeMoveRowBranches();
 
     void adlTest();
+
+    void itemAccess_data();
     void itemAccess();
 
 private:
@@ -110,10 +112,12 @@ private:
     {
         QList<QPersistentModelIndex> pmiList;
         for (int row = 0; row < model->rowCount(parent); ++row) {
-            const QModelIndex mi = model->index(row, 0, parent);
-            pmiList += mi;
-            if (model->hasChildren(mi))
-                pmiList += allIndexes(model, mi);
+            for (int column = 0; column < model->columnCount(parent); ++column) {
+                const QModelIndex mi = model->index(row, column, parent);
+                pmiList += mi;
+                if (model->hasChildren(mi))
+                    pmiList += allIndexes(model, mi);
+            }
         }
         return pmiList;
     }
@@ -2263,19 +2267,46 @@ struct QRangeModel::ItemAccess<ItemAccessItem>
     }
 };
 
+void tst_QRangeModel::itemAccess_data()
+{
+    QTest::addColumn<std::shared_ptr<QRangeModel>>("model");
+
+    QTest::addRow("raw")
+        << std::make_shared<QRangeModel>(QList<ItemAccessItem *>{
+            new ItemAccessItem{"one", Qt::red}
+        });
+
+    QTest::addRow("std::shared_ptr")
+        << std::make_shared<QRangeModel>(QList<std::shared_ptr<ItemAccessItem>>{
+            std::make_shared<ItemAccessItem>("one", Qt::red),
+        });
+
+    {
+        auto data = std::vector<std::unique_ptr<ItemAccessItem>>{};
+        data.emplace_back(std::make_unique<ItemAccessItem>("one", Qt::red));
+        auto model = std::make_shared<QRangeModel>(std::move(data));
+        QTest::addRow("std::unique_ptr")
+            << model;
+    }
+
+    QTest::addRow("QSharedPtr")
+        << std::make_shared<QRangeModel>(QList<QSharedPointer<ItemAccessItem>>{
+            QSharedPointer<ItemAccessItem>(new ItemAccessItem{"one", Qt::red})
+        });
+}
+
 void tst_QRangeModel::itemAccess()
 {
-    QRangeModel model(QList<ItemAccessItem *>{
-        new ItemAccessItem{"one", Qt::red}
-    });
-    const QModelIndex index = model.index(0, 0);
-    QCOMPARE(model.columnCount(), 1);
-    QCOMPARE(model.data(index), "ONE");
-    QCOMPARE(model.data(index, Qt::DecorationRole).value<QColor>().alpha(), 128);
-    QVERIFY(model.setData(index, "Two"));
-    QCOMPARE(model.data(index), "TWO");
-    QVERIFY(!model.setData(index, QVariant::fromValue(Qt::blue), Qt::DecorationRole));
-};
+    QFETCH(std::shared_ptr<QRangeModel>, model);
+
+    QCOMPARE(model->columnCount(), 1);
+    const QModelIndex index = model->index(0, 0);
+    QCOMPARE(model->data(index), "ONE");
+    QCOMPARE(model->data(index, Qt::DecorationRole).value<QColor>().alpha(), 128);
+    QVERIFY(model->setData(index, "Two"));
+    QCOMPARE(model->data(index), "TWO");
+    QVERIFY(!model->setData(index, QVariant::fromValue(Qt::blue), Qt::DecorationRole));
+}
 
 QTEST_MAIN(tst_QRangeModel)
 #include "tst_qrangemodel.moc"

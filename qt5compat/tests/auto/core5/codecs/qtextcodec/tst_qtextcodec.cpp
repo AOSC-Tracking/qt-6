@@ -1822,8 +1822,8 @@ void tst_QTextCodec::utf8stateful_data()
 
 void tst_QTextCodec::utf8stateful()
 {
-    QFETCH(QByteArray, buffer1);
-    QFETCH(QByteArray, buffer2);
+    QFETCH(const QByteArray, buffer1);
+    QFETCH(const QByteArray, buffer2);
     QFETCH(QString, result);
 
     QTextCodec *utf8codec = QTextCodec::codecForName("utf-8");
@@ -1831,20 +1831,20 @@ void tst_QTextCodec::utf8stateful()
 
     QTextCodec::ConverterState state;
 
-    QString decoded1 = utf8codec->toUnicode(buffer1, buffer1.size(), &state);
+    QString decoded1 = utf8codec->toUnicode(buffer1.data(), buffer1.size(), &state);
     if (result.isNull()) {
         // the decoder may have found an early error (invalidChars > 0):
         // if it has, remainingChars == 0;
         // if it hasn't, then it must have a state
         QVERIFY2((state.remainingChars == 0) != (state.invalidChars == 0),
-                 "remainingChars = " + QByteArray::number(state.remainingChars) +
-                 "; invalidChars = " + QByteArray::number(state.invalidChars));
+                 ("remainingChars = " + QByteArray::number(state.remainingChars) +
+                  "; invalidChars = " + QByteArray::number(state.invalidChars)).constData());
     } else {
         QVERIFY(state.remainingChars > 0);
         QCOMPARE(state.invalidChars, 0);
     }
 
-    QString decoded2 = utf8codec->toUnicode(buffer2, buffer2.size(), &state);
+    QString decoded2 = utf8codec->toUnicode(buffer2.data(), buffer2.size(), &state);
     QCOMPARE(state.remainingChars, 0);
     if (result.isNull()) {
         QVERIFY(state.invalidChars > 0);
@@ -2331,6 +2331,14 @@ void tst_QTextCodec::invalidNames()
     huge = huge + huge + huge + huge + huge + huge + huge + huge;
     huge = huge + huge + huge + huge + huge + huge + huge + huge;
     QVERIFY(!QTextCodec::codecForName(huge));
+    // check we don't read past the end of a non-null-terminated QBA:
+    {
+        constexpr char ISO_8859_15[] = "ISO-8859-15";
+        const QByteArray ISO_8859_1 = QByteArray::fromRawData(ISO_8859_15, sizeof ISO_8859_15 - 2);
+        const auto codec = QTextCodec::codecForName(ISO_8859_1);
+        QVERIFY(codec);
+        QCOMPARE(codec->name(), "ISO-8859-1");
+    }
 }
 
 void tst_QTextCodec::checkAliases_data()

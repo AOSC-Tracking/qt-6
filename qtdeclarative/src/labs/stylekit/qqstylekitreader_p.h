@@ -29,7 +29,7 @@ class QQuickPalette;
 class QQStyleKitVariation;
 class QQStyleKitPropertyResolver;
 
-class QQStyleKitReader : public QQStyleKitControlProperties
+class Q_LABSSTYLEKIT_EXPORT QQStyleKitReader : public QQStyleKitControlProperties
 {
     Q_OBJECT
     Q_PROPERTY(QQStyleKitExtendableControlType controlType READ controlType WRITE setControlType NOTIFY controlTypeChanged FINAL)
@@ -197,8 +197,7 @@ private:
     QQSK::Delegates m_trackedDelegates = QQSK::Delegate::NoDelegate;
 
     QPointer<QQStyleKitReader> m_parentReader;
-    QList<QPointer<QQStyleKitVariation>> m_effectiveInAppVariations;
-    QList<QPointer<QQStyleKitVariation>> m_effectiveInStyleVariations;
+    QList<QPointer<QQStyleKitVariation>> m_effectiveVariations;
 
     QQStyleKitControlProperties m_global;
 

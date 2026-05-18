@@ -79,26 +79,22 @@ void QColumnViewPrivate::initialize()
     q->setItemDelegate(new QColumnViewDelegate(q));
 }
 
-void QColumnViewPrivate::clearConnections()
-{
-#if QT_CONFIG(animation)
-    QObject::disconnect(animationConnection);
-#endif
-    for (const QMetaObject::Connection &connection : gripConnections)
-        QObject::disconnect(connection);
-    const auto copy = viewConnections;  // disconnectView modifies this container
-    for (auto it = copy.keyBegin(); it != copy.keyEnd(); ++it)
-        disconnectView(*it);
-}
-
-
 /*!
     Destroys the column view.
 */
 QColumnView::~QColumnView()
 {
     Q_D(QColumnView);
-    d->clearConnections();
+    // clear all connections:
+#if QT_CONFIG(animation)
+    disconnect(d->animationConnection);
+#endif
+    for (QMetaObject::Connection &conn : d->gripConnections)
+        disconnect(conn);
+    for (auto &&[_, conns] : d->viewConnections) {
+        for (QMetaObject::Connection &conn : conns)
+            disconnect(conn);
+    }
 }
 
 /*!
@@ -648,7 +644,7 @@ void QColumnViewPrivate::disconnectView(QAbstractItemView *view)
     const auto it = viewConnections.find(view);
     if (it == viewConnections.end())
         return;
-    for (const QMetaObject::Connection &connection : it.value())
+    for (QMetaObject::Connection &connection : it.value())
         QObject::disconnect(connection);
     viewConnections.erase(it);
 }
@@ -705,7 +701,7 @@ QAbstractItemView *QColumnViewPrivate::createColumn(const QModelIndex &index, bo
         QObject::connect(view, &QAbstractItemView::doubleClicked, q, &QColumnView::doubleClicked),
         QObject::connect(view, &QAbstractItemView::entered, q, &QColumnView::entered),
         QObject::connect(view, &QAbstractItemView::pressed, q, &QColumnView::pressed),
-        clickedConnection
+        std::move(clickedConnection),
     };
 
     view->setFocusPolicy(Qt::NoFocus);

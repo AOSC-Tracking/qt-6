@@ -2,9 +2,15 @@
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
 
 
-#include <QtTest/QtTest>
+#include <QtTest/QTest>
+#include <QIcon>
+#include <QImage>
 #include <QImageReader>
-#include <QtGui>
+#include <QList>
+#include <QPixmap>
+#include <QRegularExpression>
+#include <QSize>
+#include <QString>
 
 class tst_QIcon_Svg : public QObject
 {
@@ -127,9 +133,12 @@ void tst_QIcon_Svg::availableSizes()
 
 void tst_QIcon_Svg::isNull()
 {
+    const QString nonExistentFilePath{ prefix + "nonExistentFile.svg" };
+    const QRegularExpression cannotOpenMsg{ "Cannot open file '" + nonExistentFilePath + "'" };
     {
         //checks that an invalid file results in the icon being null
-        QIcon icon(prefix + "nonExistentFile.svg");
+        QTest::ignoreMessage(QtWarningMsg, cannotOpenMsg);
+        QIcon icon(nonExistentFilePath);
         QVERIFY(icon.isNull());
     }
     {
@@ -149,7 +158,8 @@ void tst_QIcon_Svg::isNull()
     }
     {
         //invalid svg, but a pixmap added means we're not null
-        QIcon icon(prefix + "nonExistentFile.svg");
+        QTest::ignoreMessage(QtWarningMsg, cannotOpenMsg);
+        QIcon icon(nonExistentFilePath);
         icon.addFile(prefix + "image.png", QSize(32,32));
         QVERIFY(!icon.isNull());
     }

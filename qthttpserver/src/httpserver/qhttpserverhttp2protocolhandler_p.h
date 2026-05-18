@@ -11,10 +11,13 @@
 #include <QtHttpServer/private/qhttpserverrequestfilter_p.h>
 #include <QtHttpServer/private/qhttpserverresponder_p.h>
 #include <QtNetwork/private/hpack_p.h>
-#include <QtCore/qbytearray.h>
-#include <QtCore/qqueue.h>
 
+#include <QtCore/qbytearray.h>
+#include <QtCore/qhash.h>
+#include <QtCore/qqueue.h>
 #include <QtCore/qelapsedtimer.h>
+
+#include <array>
 
 //
 //  W A R N I N G
@@ -104,7 +107,7 @@ private:
     QTcpSocket *m_tcpSocket;
     QHttpServerRequestFilter *m_filter;
     QHttp2Connection *m_connection;
-    QHash<quint32, QList<QMetaObject::Connection>> m_streamConnections;
+    QHash<quint32, std::array<QMetaObject::Connection, 4>> m_streamConnections;
     QHash<quint32, QHttpServerHttp2Queue> m_streamQueue;
     QHash<quint32, QHttpServerHttp2Data> m_streamData;
     QHash<quint32, QHttpServerResponderPrivate *> m_responders;

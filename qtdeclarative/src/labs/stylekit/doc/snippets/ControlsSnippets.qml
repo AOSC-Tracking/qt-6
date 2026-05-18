@@ -175,6 +175,11 @@ ApplicationWindow {
                 color: "white"
                 border.width: 0
             }
+            variations: StyleVariation {
+                toolBar.background.color: "cornflowerblue"
+                toolButton.background.color: "skyblue"
+                toolButton.background.border.color: "aliceblue"
+            }
         }
         //! [page]
 
@@ -273,15 +278,9 @@ ApplicationWindow {
         scrollBar {
             padding: 0
             background {
-                // For scroll bars, we typically don't want a background, only a
-                // draggable indicator and a groove.
-                visible: false
-                // Note: even if the background is hidden, its implicit size is still used to
-                // determine the overall size of the scroll bar. So we set implicitHeight equal to
-                // the height of the indicator, to make it appear on the side of, and not on top
-                // of, the content area in a ScrollView. For a horizontal scroll bar, on the other
-                // hand, the width is automatically set by the view to match its own width.
+                // Set the groove size and color
                 implicitHeight: 10
+                color: "white"
             }
             indicator {
                 radius: 255
@@ -289,6 +288,7 @@ ApplicationWindow {
                 // view to be the relative size of the view's content that is currently visible.
                 implicitHeight: 10
                 color: "#c0c0c0"
+                // The indicator is so simple that it doesn't need a foreground
                 foreground.visible: false
             }
             vertical {
@@ -303,8 +303,8 @@ ApplicationWindow {
 
         //! [scrollIndicator]
         scrollIndicator {
-             // For scroll indicators, we typically don't want a background, only a
-             // sliding indicator
+            // A scroll indicator typically has no groove, just a sliding
+            // indicator. So hide the background, since it represents the groove.
             background.visible: false
             indicator {
                 // For horizontal indicators, we only set the height. The width is set by the
@@ -632,6 +632,14 @@ ApplicationWindow {
             TextField {
                 width: 200
                 text: "TextField"
+            }
+
+            Page {
+                header: ToolBar {
+                    ToolButton {
+                        text: "<"
+                    }
+                }
             }
         }
     }

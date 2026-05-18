@@ -25,6 +25,7 @@ qt_add_library(OpenapiBackportClient)
 qt_add_openapi_client(OpenapiBackportClient
     SPEC_FILE
         ${CMAKE_CURRENT_SOURCE_DIR}/openapi2.0.yaml
+    GENERATE_DOCUMENTATION # test documentation generation for older format
 )
 
 target_compile_definitions(cpp-qt-operations-parameters-backport

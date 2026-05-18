@@ -79,6 +79,7 @@ QGstCaps QGstVideoRenderer::createSurfaceCaps([[maybe_unused]] QGstreamerRelayVi
                    << QVideoFrameFormat::Format_Y8
                    << QVideoFrameFormat::Format_Y16
         ;
+    caps.addPixelFormats(formats);
 #if QT_CONFIG(gstreamer_gl)
     QRhi *rhi = sink->rhi();
     if (rhi && rhi->backend() == QRhi::OpenGLES2) {
@@ -90,7 +91,6 @@ QGstCaps QGstVideoRenderer::createSurfaceCaps([[maybe_unused]] QGstreamerRelayVi
 #  endif
     }
 #endif
-    caps.addPixelFormats(formats);
     return caps;
 }
 
@@ -122,8 +122,8 @@ QT_WARNING_POP
 
 void QGstVideoRenderer::handleNewBuffer(RenderBufferState state)
 {
-    auto videoBuffer = std::make_unique<QGstVideoBuffer>(state.buffer, state.videoInfo, m_sink,
-                                                         state.format, state.memoryFormat);
+    auto videoBuffer =
+            std::make_unique<QGstVideoBuffer>(state.buffer, state.videoInfo, state.format);
     QVideoFrame frame = QVideoFramePrivate::createFrame(std::move(videoBuffer), state.format);
     QGstUtils::setFrameTimeStampsFromBuffer(&frame, state.buffer.get());
     m_currentPipelineFrame = std::move(frame);
@@ -146,9 +146,10 @@ bool QGstVideoRenderer::start(const QGstCaps& caps)
 {
     qCDebug(qLcGstVideoRenderer) << "QGstVideoRenderer::start" << caps;
 
-    auto optionalFormatAndVideoInfo = caps.formatAndVideoInfo();
-    if (optionalFormatAndVideoInfo) {
-        std::tie(m_format, m_videoInfo) = std::move(*optionalFormatAndVideoInfo);
+    auto optionalVideoInfo = caps.videoInfo();
+    if (optionalVideoInfo) {
+        m_videoInfo = std::move(*optionalVideoInfo);
+        m_format = qVideoFrameFormatFromGstVideoInfo(m_videoInfo);
     } else {
         m_format = {};
         m_videoInfo = {};
@@ -206,6 +207,9 @@ bool QGstVideoRenderer::proposeAllocation(GstQuery *query)
     // The driver can force a higher minimum if minBuffers is set too low, making 3 sufficient.
     gst_query_add_allocation_pool(query, nullptr, size, minBuffers, 0);
 
+    // Advertise GstVideoMeta support, often needed for DMA buffer negotiation.
+    gst_query_add_allocation_meta(query, GST_VIDEO_META_API_TYPE, nullptr);
+
     return true;
 }
 
@@ -237,16 +241,7 @@ GstFlowReturn QGstVideoRenderer::render(GstBuffer *buffer)
         if (m_capsMemoryFormat != QGstCaps::CpuMemory)
             return m_capsMemoryFormat;
 
-        [[maybe_unused]] GstMemory *mem = gst_buffer_peek_memory(buffer, 0);
-#if QT_CONFIG(gstreamer_gl_egl) && QT_CONFIG(linux_dmabuf)
-        if (gst_is_dmabuf_memory(mem))
-            return QGstCaps::DMABuf;
-#endif
-#if QT_CONFIG(gstreamer_gl)
-        if (gst_is_gl_memory(mem))
-            return QGstCaps::GLTexture;
-#endif
-        return QGstCaps::CpuMemory;
+        return qMemoryFormatFromGstBuffer(buffer);
     }();
 
     qCDebug(qLcGstVideoRenderer) << "m_capsMemoryFormat" << m_capsMemoryFormat

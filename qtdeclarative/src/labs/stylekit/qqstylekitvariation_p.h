@@ -22,6 +22,8 @@
 QT_BEGIN_NAMESPACE
 
 class QQStyleKitVariationAttached;
+class QQStyleKitStyleAndThemeBase;
+class QQStyleKitStyle;
 
 class QQStyleKitVariation : public QQStyleKitControls
 {
@@ -32,6 +34,8 @@ class QQStyleKitVariation : public QQStyleKitControls
 
 public:
     QQStyleKitVariation(QObject *parent = nullptr);
+
+    void componentComplete() override;
 
     QString name() const;
     void setName(const QString &name);
@@ -44,11 +48,13 @@ Q_SIGNALS:
 private:
     Q_DISABLE_COPY(QQStyleKitVariation)
 
-    QString m_name;
+    static void resetVariationsForStyle(QQStyleKitStyle *style);
 
-    static int s_typeVariationCount;
+    QString m_name;
+    QList<QPointer<const QQStyleKitStyleAndThemeBase>> m_usageContext;
 
     friend class QQStyleKitPropertyResolver;
+    friend class QQStyleKitStyle;
 };
 
 class QQStyleKitVariationAttached : public QObject
@@ -63,7 +69,7 @@ public:
      QStringList variations() const;
      void setVariations(const QStringList &variations);
 
-     QQStyleKitExtendableControlType controlType();
+     QQStyleKitExtendableControlType controlType() const;
      void setControlType(QQStyleKitExtendableControlType type);
 
  signals:
@@ -73,8 +79,6 @@ public:
  private:
      QStringList m_variations;
      QQStyleKitExtendableControlType m_controlType = QQStyleKitReader::ControlType::Unspecified;
-
-     static int s_instanceVariationCount;
 
      friend class QQStyleKit;
      friend class QQStyleKitPropertyResolver;

@@ -191,6 +191,7 @@ void QSSGCustomMaterialSystem::rhiPrepareRenderable(QSSGRhiGraphicsPipelineState
                                                     QRhiRenderPassDescriptor *renderPassDescriptor,
                                                     int samples,
                                                     int viewCount,
+                                                    bool screenMapPass,
                                                     QSSGRenderCamera *alteredCamera,
                                                     QSSGRenderTextureCubeFace cubeFace,
                                                     QMatrix4x4 *alteredModelViewProjection,
@@ -360,9 +361,12 @@ void QSSGCustomMaterialSystem::rhiPrepareRenderable(QSSGRhiGraphicsPipelineState
         // values for the light probe.
         if (featureSet.isSet(QSSGShaderFeatures::Feature::ReflectionProbe)) {
             int reflectionSampler = shaderPipeline->bindingForTexture("qt_reflectionMap");
-            QRhiSampler *sampler = rhiCtx->sampler({ QRhiSampler::Linear, QRhiSampler::Linear, QRhiSampler::Linear,
-                                                     QRhiSampler::ClampToEdge, QRhiSampler::ClampToEdge, QRhiSampler::Repeat });
             QRhiTexture* reflectionTexture = layerData.getReflectionMapManager()->reflectionMapEntry(renderable.reflectionProbeIndex)->m_rhiPrefilteredCube;
+            const auto mipMapFilter = reflectionTexture && reflectionTexture->flags().testFlag(QRhiTexture::Flag::MipMapped)
+                    ? QRhiSampler::Linear
+                    : QRhiSampler::None;
+            QRhiSampler *sampler = rhiCtx->sampler(
+                    { QRhiSampler::Linear, QRhiSampler::Linear, mipMapFilter, QRhiSampler::ClampToEdge, QRhiSampler::ClampToEdge, QRhiSampler::Repeat });
             if (reflectionSampler >= 0 && reflectionTexture) {
                 bindings.addTexture(reflectionSampler, QRhiShaderResourceBinding::FragmentStage, reflectionTexture, sampler);
                 samplerBindingsSpecified.setBit(reflectionSampler);
@@ -384,6 +388,16 @@ void QSSGCustomMaterialSystem::rhiPrepareRenderable(QSSGRhiGraphicsPipelineState
             const int screenTextureBinding = shaderPipeline->bindingForTexture("qt_screenTexture", int(QSSGRhiSamplerBindingHints::ScreenTexture));
             const int screenTextureArrayBinding = shaderPipeline->bindingForTexture("qt_screenTextureArray", int(QSSGRhiSamplerBindingHints::ScreenTextureArray));
             if (screenTextureBinding >= 0 || screenTextureArrayBinding >= 0) {
+                QRhiTexture *screenTexture = shaderPipeline->screenTexture();
+                // If we're called as part of the screen map pass there's obviously no screen texture available, but the shader may still expect it, so bind a dummy texture.
+                if (screenMapPass) {
+                    QRhiResourceUpdateBatch *resourceUpdates = rhiCtx->rhi()->nextResourceUpdateBatch();
+                    // Just mirror what is set up by the ScreenMap pass.
+                    const QRhiTexture::Flags flags = screenTexture->flags();
+                    // and set the dummy texture so there's something for the shader to sample.
+                    screenTexture = rhiCtx->dummyTexture(flags, resourceUpdates);
+                    rhiCtx->commandBuffer()->resourceUpdate(resourceUpdates);
+                }
                 // linear min/mag, mipmap filtering depends on the
                 // texture, with SCREEN_TEXTURE there are no mipmaps, but
                 // once SCREEN_MIP_TEXTURE is seen the texture (the same
@@ -396,13 +410,13 @@ void QSSGCustomMaterialSystem::rhiPrepareRenderable(QSSGRhiGraphicsPipelineState
                     samplerBindingsSpecified.setBit(screenTextureBinding);
                     bindings.addTexture(screenTextureBinding,
                                         QRhiShaderResourceBinding::FragmentStage,
-                                        shaderPipeline->screenTexture(), sampler);
+                                        screenTexture, sampler);
                 }
                 if (screenTextureArrayBinding >= 0) {
                     samplerBindingsSpecified.setBit(screenTextureArrayBinding);
                     bindings.addTexture(screenTextureArrayBinding,
                                         QRhiShaderResourceBinding::FragmentStage,
-                                        shaderPipeline->screenTexture(), sampler);
+                                        screenTexture, sampler);
                 }
             } // else ignore, not an error
         }

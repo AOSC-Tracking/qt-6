@@ -24,6 +24,9 @@
 #include <QtMultimedia/qaudiodecoder.h>
 #include <QtMultimedia/qaudiobuffer.h>
 
+#include <atomic>
+#include <memory>
+
 QT_BEGIN_NAMESPACE
 
 class QAudioEngine;
@@ -33,7 +36,8 @@ class QAmbientSoundPrivate : public QObjectPrivate
     Q_DECLARE_PUBLIC(QAmbientSound)
 
 public:
-    explicit QAmbientSoundPrivate(int nchannels = 2) : nchannels(nchannels) { }
+    explicit QAmbientSoundPrivate(QAudioEngine *engine, int nchannels = 2);
+    ~QAmbientSoundPrivate();
 
     template <typename T>
     static QAmbientSoundPrivate *get(T *soundSource)
@@ -42,11 +46,20 @@ public:
     }
 
     QUrl url;
-    float volume = 1.;
-    int nchannels = 2;
+    void setVolume(float volume);
+    float volume() const { return m_volume; }
+
+protected:
+    virtual void applyVolume();
+
+private:
+    float m_volume = 1.f;
+
+public:
+    const int nchannels = 2;
     std::unique_ptr<QAudioDecoder> decoder;
     std::unique_ptr<QFile> sourceDeviceFile;
-    QAudioEngine *engine = nullptr;
+    QAudioEngine *const engine;
 
     QMutex mutex;
     int currentBuffer = 0;
@@ -55,10 +68,10 @@ public:
     QList<QAudioBuffer> buffers;
     int sourceId = -1; // kInvalidSourceId
 
-    QAtomicInteger<bool> m_autoPlay = true;
-    QAtomicInteger<bool> m_playing = false;
-    QAtomicInt m_loops = 1;
-    bool m_loading = false;
+    std::atomic_bool m_autoPlay = true;
+    std::atomic_bool m_playing = false;
+    std::atomic_int m_loops = 1;
+    std::atomic_bool m_loading = false;
 
     void play() {
         m_playing = true;
@@ -75,7 +88,7 @@ public:
     }
 
     void load();
-    void getBuffer(float *buf, int frames, int channels);
+    void getBuffer(QSpan<float> buf, int frames, int channels);
 };
 
 QT_END_NAMESPACE

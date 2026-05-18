@@ -35,7 +35,7 @@ public:
             logo = p->addImage(logoImage, QCanvasPainter::ImageFlag::Repeat);
     }
 
-    inline void synchronize(QCanvasPainterItem *painterItem) override;
+    inline void synchronizeData(QCanvasPainterItem *painterItem) override;
 
     void paint(QCanvasPainter *p) override
     {
@@ -80,9 +80,9 @@ public:
     float m_aa = 1.0f;
 };
 
-inline void HelloItemRenderer::synchronize(QCanvasPainterItem *painterItem)
+inline void HelloItemRenderer::synchronizeData(QCanvasPainterItem *painterItem)
 {
-    //qDebug() << "synchronize";
+    //qDebug() << "synchronizeData";
 
     auto *item = static_cast<HelloItem *>(painterItem);
     m_antialiasAmount = item->m_aa;

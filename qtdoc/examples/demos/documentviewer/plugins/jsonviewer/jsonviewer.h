@@ -36,7 +36,6 @@ public:
 //! [pluginReimp]
     QByteArray saveState() const override;
     bool restoreState(QByteArray &) override;
-    void retranslate() override;
 
 #ifdef DOCUMENTVIEWER_PRINTSUPPORT
 protected:
@@ -54,13 +53,12 @@ private slots:
 
 //! [pluginPrivateMembers]
 private:
+    void retranslate() override;
     bool openJsonFile();
 
-    QTreeView *m_tree;
+    QTreeView *m_tree = nullptr;
     QListWidget *m_toplevel = nullptr;
     QJsonDocument m_root;
-    QMenu *m_jsonMenu = nullptr;
-    QToolBar *m_jsonToolBar = nullptr;
     QAction *m_expandAllAction = nullptr;
     QAction *m_collapseAllAction = nullptr;
 };

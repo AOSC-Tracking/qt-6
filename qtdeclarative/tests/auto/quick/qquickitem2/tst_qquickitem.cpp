@@ -150,6 +150,7 @@ private slots:
     void embeddedInWidgetsFocus();
 #endif
     void gcIntegration();
+    void focusWorksAfterEnablingRootItem();
 
 private:
     QQmlEngine engine;
@@ -3915,6 +3916,9 @@ void tst_QQuickItem::grab()
     QVERIFY(root);
     QQuickItem *item = root->findChild<QQuickItem *>("myItem");
     QVERIFY(item);
+
+    // The actual grabbed item size can be different, depending on DPR.
+    const auto dpr = view.screen()->devicePixelRatio();
 #if QT_CONFIG(opengl)
     { // Default size (item is 100x100)
         QSharedPointer<QQuickItemGrabResult> result = item->grabToImage();
@@ -3923,7 +3927,9 @@ void tst_QQuickItem::grab()
         QVERIFY(!result->url().isEmpty());
         QImage image = result->image();
         QCOMPARE(image.pixel(0, 0), qRgb(255, 0, 0));
-        QCOMPARE(image.pixel(99, 99), qRgb(0, 0, 255));
+        // Take DPR into account
+        const QPoint bottomRight = QPoint(99, 99) * dpr;
+        QCOMPARE(image.pixel(bottomRight), qRgb(0, 0, 255));
     }
 
     { // Smaller size
@@ -3934,9 +3940,25 @@ void tst_QQuickItem::grab()
         QVERIFY(!result->url().isEmpty());
         QImage image = result->image();
         QCOMPARE(image.pixel(0, 0), qRgb(255, 0, 0));
-        QCOMPARE(image.pixel(49, 49), qRgb(0, 0, 255));
+        // Take DPR into account
+        const QPoint bottomRight = QPoint(49, 49) * dpr;
+        QCOMPARE(image.pixel(bottomRight), qRgb(0, 0, 255));
     }
 #endif
+    {
+        // Make sure that we do not deadlock when calling getters in the
+        // slot connected to the ready() signal.
+        QSharedPointer<QQuickItemGrabResult> result = item->grabToImage();
+        QImage capturedImage;
+        QUrl capturedUrl;
+        connect(result.data(), &QQuickItemGrabResult::ready, result.data(),
+                [result, &capturedImage, &capturedUrl]() {
+                    capturedImage = result->image();
+                    capturedUrl = result->url();
+                });
+        QTRY_VERIFY(!capturedImage.isNull());
+        QVERIFY(!capturedUrl.isEmpty());
+    }
 }
 
 void tst_QQuickItem::isAncestorOf()
@@ -4707,6 +4729,39 @@ void tst_QQuickItem::gcIntegration()
     QVERIFY(!child->parent());
     gc(*v4);
     QVERIFY(!observer);
+}
+
+void tst_QQuickItem::focusWorksAfterEnablingRootItem() // QTBUG-135624
+{
+    QQmlEngine e;
+    QQmlComponent comp(&e);
+    comp.loadUrl(testFileUrl("DisabledRootItemWithTextInput.qml"));
+    QQuickWindow *window = qobject_cast<QQuickWindow *>(comp.create());
+    window->requestActivate();
+    QVERIFY(QTest::qWaitForWindowFocused(window));
+
+    QList<QQuickItem *> childItems = window->contentItem()->childItems();
+    QVERIFY(!childItems.isEmpty());
+    QQuickTextInput *textInput = qobject_cast<QQuickTextInput *>(childItems.first());
+    QVERIFY(textInput);
+
+    // Should be set to false in the QML file
+    QCOMPARE(window->contentItem()->isEnabled(), false);
+    QCOMPARE(textInput->hasFocus(), false);
+
+    // The click won't do anything when the item is effectively disabled
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, textInput->mapToScene(textInput->boundingRect().center()).toPoint());
+    QCOMPARE(textInput->hasFocus(), false);
+    QCOMPARE(window->activeFocusItem(), nullptr);
+
+    // Enable the root item and verify that focus works normally
+    window->contentItem()->setEnabled(true);
+    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, textInput->mapToScene(textInput->boundingRect().center()).toPoint());
+    QTRY_COMPARE(textInput->hasFocus(), true);
+    QCOMPARE(window->activeFocusItem(), textInput);
+    textInput->clear();
+    QTest::keyClick(window, Qt::Key_A);
+    QTRY_COMPARE(textInput->text(), "a");
 }
 
 QTEST_MAIN(tst_QQuickItem)

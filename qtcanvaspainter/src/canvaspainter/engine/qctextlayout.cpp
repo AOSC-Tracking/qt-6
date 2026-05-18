@@ -69,4 +69,19 @@ float QCTextLayout::calculateVerticalAlignment(QCanvasPainter::TextBaseline base
     return offset;
 }
 
+Qt::LayoutDirection QCTextLayout::convertToQtDirection(QCanvasPainter::TextDirection direction)
+{
+    switch (direction) {
+    case QCanvasPainter::TextDirection::LeftToRight:
+        return Qt::LeftToRight;
+    case QCanvasPainter::TextDirection::RightToLeft:
+        return Qt::RightToLeft;
+    case QCanvasPainter::TextDirection::Inherit:
+        return QGuiApplication::layoutDirection();
+    case QCanvasPainter::TextDirection::Auto:
+        return Qt::LayoutDirectionAuto;
+    }
+    Q_UNREACHABLE_RETURN(Qt::LayoutDirectionAuto);
+}
+
 QT_END_NAMESPACE

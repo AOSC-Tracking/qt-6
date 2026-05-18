@@ -4,38 +4,55 @@
 #ifndef QRPCBENCH_COMMON_H
 #define QRPCBENCH_COMMON_H
 
+#if defined QTGRPCCLIENT
+#  include "google/protobuf/timestamp.qpb.h"
+#else
+#  include <google/protobuf/timestamp.pb.h>
+#endif
+
 #include <QtCore/qcommandlineoption.h>
 #include <QtCore/qcommandlineparser.h>
-#include <QtCore/qelapsedtimer.h>
+#include <QtCore/qcompilerdetection.h>
 #include <QtCore/qstringlist.h>
 #include <QtCore/qsysinfo.h>
 
+#include <algorithm>
 #include <chrono>
 #include <concepts>
 #include <cstdlib>
 #include <format>
 #include <iomanip>
 #include <iostream>
+#include <random>
 #include <ranges>
+#include <string>
 #include <string_view>
+#include <vector>
+
+namespace Bench {
 
 inline std::string getTransportAddress(QAnyStringView transport)
 {
-    if (transport == "http") {
+    if (transport == "http")
         return "localhost:65002";
-    } else if (transport == "https") {
+    if (transport == "https")
         return "localhost:65003";
-    }
+
 #ifndef Q_OS_WINDOWS
-    else if (transport == "unix") {
+    if (transport == "unix") {
+#  if defined(Q_OS_LINUX)
         return "unix-abstract:bench";
+#  elif defined(Q_OS_BSD4)
+        return "unix:///tmp/bench.sock";
+#  else
+        std::cerr << "Unix transport not supported on this platform!" << std::endl;
+        std::exit(EXIT_FAILURE);
+#  endif
     }
 #endif
-    else {
-        std::cerr << "Invalid transport specified: " << transport.toString().toStdString()
-                  << std::endl;
-        std::exit(EXIT_FAILURE);
-    }
+
+    std::cerr << "Invalid transport specified: " << transport.toString().toStdString() << std::endl;
+    std::exit(EXIT_FAILURE);
 }
 
 // Valid for the next 100 years.
@@ -140,13 +157,7 @@ struct BenchmarkData
     int64_t elapsedNanos = {};
 };
 
-#if defined QTGRPCCLIENT
-#  include "google/protobuf/timestamp.qpb.h"
-#else
-#  include <google/protobuf/timestamp.pb.h>
-#endif
-
-static google::protobuf::Timestamp getTimestamp()
+inline google::protobuf::Timestamp getTimestamp()
 {
     google::protobuf::Timestamp ts;
     auto now = std::chrono::system_clock::now();
@@ -163,7 +174,7 @@ static google::protobuf::Timestamp getTimestamp()
     return ts;
 }
 
-[[maybe_unused]] static int64_t calculateLatencyNanos(const google::protobuf::Timestamp &start,
+[[maybe_unused]] inline int64_t calculateLatencyNanos(const google::protobuf::Timestamp &start,
                                                       const google::protobuf::Timestamp &end)
 {
     int64_t startNanos = (start.seconds() * 1'000'000'000LL) + start.nanos();
@@ -171,7 +182,7 @@ static google::protobuf::Timestamp getTimestamp()
     return endNanos - startNanos;
 }
 
-[[maybe_unused]] static int64_t calculateLatencyNanosNow(const google::protobuf::Timestamp &start)
+[[maybe_unused]] inline int64_t calculateLatencyNanosNow(const google::protobuf::Timestamp &start)
 {
     int64_t startNanos = (start.seconds() * 1'000'000'000LL) + start.nanos();
     int64_t endNanos = std::chrono::time_point_cast<
@@ -180,6 +191,27 @@ static google::protobuf::Timestamp getTimestamp()
                            .count();
     return endNanos - startNanos;
 }
+
+template <typename Buffer>
+[[nodiscard]] inline std::vector<Buffer> generatePayloads(std::size_t size, std::size_t count = 8)
+{
+    std::mt19937_64 rng(42);
+    std::vector<Buffer> payloads(count);
+    for (auto &buf : payloads) {
+        buf.resize(size);
+        std::generate(buf.begin(), buf.end(),
+                      [&] { return static_cast<typename Buffer::value_type>(rng()); });
+    }
+    return payloads;
+}
+
+[[nodiscard]] inline const auto &nextPayload(const auto &payloads) noexcept
+{
+    static std::size_t cursor{ 0 };
+    return payloads[(cursor += 1) % payloads.size()];
+}
+
+} // namespace Bench
 
 namespace Client {
 
@@ -243,7 +275,7 @@ inline void benchmarkMain(std::string_view name, int argc, char *argv[])
     std::cout << std::format("  kernel: {}, {}\n", QSysInfo::kernelType().toStdString(),
                              QSysInfo::kernelVersion().toStdString());
     std::cout << std::format("  host URI: {}, {}\n\n", transportValue,
-                             getTransportAddress(transportValue));
+                             Bench::getTransportAddress(transportValue));
 
     if (parser.isSet(payload))
         std::cout << std::format("  Option: payload per message {} bytes\n", payloadSize);
@@ -366,7 +398,7 @@ inline void printLatencyStats(const std::vector<uint64_t> &latencies, const std:
                              l[5], valWidth);
 }
 
-void printBenchmarkResult(const std::string &title, const BenchmarkData &data)
+inline void printBenchmarkResult(const std::string &title, const Bench::BenchmarkData &data)
 {
     assert(data.callCount > 0);
     std::string titleString = "========== Benchmark Results: " + title + " ==========";

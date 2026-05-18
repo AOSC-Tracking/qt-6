@@ -562,8 +562,9 @@ struct PassRequirmentsState {
     bool needsSpecularLight = false; // global_specular_light
     bool needsEmission = false;      // global_emission
     bool needsWorldNormal = false;   // qt_world_normal
-    bool needsWorldTangent = false;  // qt_world_tangent
-    bool needsWorldBinormal = false; // qt_world_binormal
+    bool needsWorldTangent = false;  // qt_tangent
+    bool needsWorldBinormal = false; // qt_binormal
+
     bool needsF0 = false;            // qt_f0
     bool needsF90 = false;           // qt_f90
     bool needsAmbientOcclusion = false; // qt_ao_factor
@@ -679,8 +680,10 @@ struct PassRequirmentsState {
             needsMetalness = shaderAugmentation.needsMetalness;
             needsEmission = shaderAugmentation.needsEmissiveLight;
             needsWorldNormal = shaderAugmentation.needsWorldNormal;
-            needsWorldTangent = shaderAugmentation.needsWorldTangent;
-            needsWorldBinormal = shaderAugmentation.needsWorldBinormal;
+            // WORLD_NORMAL for a normal-mapped material requires tangent space to be set up.
+            // Ensure tangent/binormal are generated whenever the world normal is requested.
+            needsWorldTangent = shaderAugmentation.needsWorldTangent || shaderAugmentation.needsWorldNormal;
+            needsWorldBinormal = shaderAugmentation.needsWorldBinormal || shaderAugmentation.needsWorldNormal;
 
             if (shaderAugmentation.needsDiffuseLight ||
                 shaderAugmentation.needsSpecularLight ||
@@ -791,12 +794,31 @@ struct PassRequirmentsState {
                 }
             }
         }
+
+        // Parallax mapping requires world tangent/binormal in all pass types,
+        // since qt_tangent and qt_binormal are passed to qt_parallaxMapping().
+        if (hasParallaxMapping) {
+            needsWorldNormal = true;
+            needsWorldTangent = true;
+            needsWorldBinormal = true;
+        }
+
+        // Normal/bump map sampling uses the TBN matrix (qt_tangent, qt_binormal)
+        // to transform the sampled normal to world space. Ensure tangent and binormal
+        // are generated whenever a normal map is present and the world normal is needed.
+        if (needsWorldNormal && hasBumpNormalMap) {
+            needsWorldTangent = true;
+            needsWorldBinormal = true;
+        }
     }
 
     bool shouldIncludeCustomFragmentMain() const {
-        if (needsBaseColor || needsRoughness || needsMetalness || needsDiffuseLight || needsSpecularLight || needsEmission)
+        // In debug passes, the custom fragment main must be called so that
+        // material-derived values (e.g. NORMAL modified by normal-map sampling code in
+        // MAIN()) are applied before the debug output is generated.
+        if (passType == Debug)
             return true;
-        return false;
+        return needsBaseColor || needsRoughness || needsMetalness || needsDiffuseLight || needsSpecularLight || needsEmission;
     }
 
     bool shouldDiscardNonOpaque() const {
@@ -997,6 +1019,10 @@ static void generateFragmentShader(QSSGStageGeneratorBase &fragmentShader,
                 } else if (samplerState.hasImage(QSSGRenderableImage::Type::ClearcoatNormal)) {
                     // For the corner case that there is only a clearcoat normal map
                     id = QSSGRenderableImage::Type::ClearcoatNormal;
+                } else if (passRequirmentState.hasParallaxMapping) {
+                    // For the corner case that there is only a height map (parallax mapping),
+                    // use its UV coordinates to derive tangents analytically.
+                    id = QSSGRenderableImage::Type::Height;
                 }
 
                 if (id > QSSGRenderableImage::Type::Unknown) {

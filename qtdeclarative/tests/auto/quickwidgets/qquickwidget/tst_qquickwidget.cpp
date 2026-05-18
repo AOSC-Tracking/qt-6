@@ -169,6 +169,8 @@ private slots:
     void fromModuleCtor();
     void loadFromModule_data();
     void loadFromModule();
+    void nonItem();
+    void focusTabFence();
 
 private:
     QPointingDevice *device = QTest::createTouchDevice();
@@ -434,8 +436,8 @@ void tst_qquickwidget::readback()
 
     QImage img = view->grabFramebuffer();
     QVERIFY(!img.isNull());
-    QCOMPARE(img.width(), qCeil(view->width() * view->devicePixelRatio()));
-    QCOMPARE(img.height(), qCeil(view->height() * view->devicePixelRatio()));
+    // Match QQuickWidget's internal FBO size: size() * devicePixelRatio() via QSize::operator*(qreal).
+    QCOMPARE(img.size(), view->size() * view->devicePixelRatio());
 
     QRgb pix = img.pixel(5, 5);
     QCOMPARE(pix, qRgb(255, 0, 0));
@@ -897,7 +899,7 @@ void tst_qquickwidget::focusChain()
     layout.addWidget(&middleWidget);
     layout.addWidget(&qqw2);
     window.show();
-    window.windowHandle()->requestActivate();
+    QVERIFY(QTest::qWaitForWindowActive(&window));
     QVERIFY(QTest::qWaitForWindowExposed(&window));
 
     QQuickItem *root1 = qqw1.rootObject();
@@ -1435,6 +1437,49 @@ void tst_qquickwidget::loadFromModule()
         QCOMPARE(widget.status(), QQuickWidget::Ready);
         QVERIFY(widget.source().toString().endsWith("SignalSpy.qml"));
     }
+}
+
+void tst_qquickwidget::nonItem()
+{
+    QQuickWidget widget;
+    QTest::ignoreMessage(QtDebugMsg, "Completed");
+    QTest::ignoreMessage(
+            QtWarningMsg,
+            QRegularExpression(
+                    "QQuickWidget only supports loading of root objects "
+                    "that derive from QQuickItem"));
+    widget.setSource(testFileUrl("nonItem.qml"));
+    QCOMPARE(widget.status(), QQuickWidget::Error);
+    QCOMPARE(widget.rootObject(), nullptr);
+}
+
+void tst_qquickwidget::focusTabFence()
+{
+    QWidget widget;
+    auto *quickWidget = new QQuickWidget;
+    quickWidget->setSource(testFileUrl("itemWithPopupInside.qml"));
+    quickWidget->setParent(&widget);
+    widget.show();
+    QVERIFY(QTest::qWaitForWindowExposed(widget.windowHandle()));
+
+    auto *textField1 = quickWidget->rootObject()->findChild<QQuickItem *>("textField1");
+    QVERIFY(textField1);
+    auto *textField2 = quickWidget->rootObject()->findChild<QQuickItem *>("textField2");
+    QVERIFY(textField2);
+
+    widget.setFocus();
+    QTRY_VERIFY(widget.hasFocus());
+    textField1->forceActiveFocus();
+    QTRY_COMPARE(quickWidget->quickWindow()->activeFocusItem(), textField1);
+
+    QTest::keyClick(quickWidget, Qt::Key_Tab);
+    QTRY_COMPARE(quickWidget->quickWindow()->activeFocusItem(), textField2);
+    QTest::keyClick(quickWidget, Qt::Key_Tab);
+    QTRY_COMPARE(quickWidget->quickWindow()->activeFocusItem(), textField1);
+    QTest::keyClick(quickWidget, Qt::Key_Tab);
+    QTRY_COMPARE(quickWidget->quickWindow()->activeFocusItem(), textField2);
+    QTest::keyClick(quickWidget, Qt::Key_Tab);
+    QTRY_COMPARE(quickWidget->quickWindow()->activeFocusItem(), textField1);
 }
 
 QTEST_MAIN(tst_qquickwidget)

@@ -118,6 +118,8 @@ struct Q_SVG_EXPORT QSvgExtraStates
     qreal strokeDashOffset;
     int nestedUseLevel = 0;
     int nestedUseCount = 0;
+    bool trustedSource = false;
+    quint8 remainingNestedNodes = QtSvg::renderingMaxNestedNodes;
     bool vectorEffect; // true if pen is cosmetic
     qint8 imageRendering; // QSvgQualityStyle::ImageRendering
     bool inUse = false; // true if currently in QSvgUseNode
@@ -137,8 +139,6 @@ public:
         GRADIENT,
         PATTERN,
         TRANSFORM,
-        ANIMATE_TRANSFORM,
-        ANIMATE_COLOR,
         OPACITY,
         COMP_OP,
         OFFSET,
@@ -274,7 +274,7 @@ private:
     // fill-opacity    v 	v 	'inherit' | <OpacityValue.datatype>
     QBrush m_fill;
     QBrush m_oldFill;
-    QSvgPaintStyleProperty *m_style;
+    QSvgRefCounter<QSvgPaintStyleProperty> m_style;
 
     Qt::FillRule m_fillRule;
     Qt::FillRule m_oldFillRule;
@@ -514,7 +514,7 @@ private:
     qreal m_strokeDashOffset;
     qreal m_oldStrokeDashOffset;
 
-    QSvgPaintStyleProperty *m_style;
+    QSvgRefCounter<QSvgPaintStyleProperty> m_style;
     QString m_paintStyleId;
     uint m_paintStyleResolved : 1;
     uint m_vectorEffect : 1;
@@ -594,7 +594,7 @@ private:
     QGradient      *m_gradient;
     QTransform m_transform;
 
-    QSvgDocument *m_doc;
+    QSvgDocument *m_doc{nullptr};
     QString           m_link;
     bool m_gradientStopsSet;
 };
@@ -649,7 +649,7 @@ private:
     //comp-op attribute
     QPainter::CompositionMode m_mode;
 
-    QPainter::CompositionMode m_oldMode;
+    QPainter::CompositionMode m_oldMode{QPainter::CompositionMode_SourceOver};
 };
 
 class Q_SVG_EXPORT QSvgOffsetStyle : public QSvgStyleProperty

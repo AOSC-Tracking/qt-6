@@ -15,6 +15,7 @@
 #include <vector>
 
 #include "base/barrier_closure.h"
+#include "base/check_deref.h"
 #include "base/functional/bind.h"
 #include "base/notreached.h"
 #include "base/scoped_observation.h"
@@ -59,12 +60,15 @@
 #include "content/browser/attribution_reporting/send_result.h"
 #include "content/browser/attribution_reporting/storable_source.h"
 #include "content/browser/attribution_reporting/store_source_result.mojom.h"
+#include "content/browser/devtools/dedicated_worker_devtools_agent_host.h"
 #include "content/browser/devtools/devtools_agent_host_impl.h"
 #include "content/browser/devtools/protocol/browser_handler.h"
 #include "content/browser/devtools/protocol/handler_helpers.h"
 #include "content/browser/devtools/protocol/network.h"
 #include "content/browser/devtools/protocol/network_handler.h"
 #include "content/browser/devtools/protocol/storage.h"
+#include "content/browser/devtools/service_worker_devtools_agent_host.h"
+#include "content/browser/devtools/shared_worker_devtools_agent_host.h"
 #include "content/browser/interest_group/interest_group_manager_impl.h"
 #include "content/browser/renderer_host/render_frame_host_impl.h"
 #include "content/public/browser/browser_context.h"
@@ -416,8 +420,11 @@ class StorageHandler::QuotaManagerObserver
   mojo::Receiver<storage::mojom::QuotaManagerObserver> receiver_{this};
 };
 
-StorageHandler::StorageHandler(DevToolsAgentHostClient* client)
-    : DevToolsDomainHandler(Storage::Metainfo::domainName), client_(client) {}
+StorageHandler::StorageHandler(DevToolsAgentHostImpl* host,
+                               DevToolsAgentHostClient* client)
+    : DevToolsDomainHandler(Storage::Metainfo::domainName),
+      host_(host),
+      client_(client) {}
 
 StorageHandler::~StorageHandler() {
   DCHECK(!cache_storage_observer_);
@@ -482,14 +489,8 @@ void StorageHandler::GotAllCookies(
   bool is_webui = frame_host_ && frame_host_->web_ui();
   std::vector<net::CanonicalCookie> filtered_cookies;
   for (const auto& cookie : cookies) {
-    if (client_->MayAttachToURL(
-            GURL(base::StrCat({url::kHttpsScheme, url::kStandardSchemeSeparator,
-                               cookie.DomainWithoutDot()})),
-            is_webui) &&
-        client_->MayAttachToURL(
-            GURL(base::StrCat({url::kHttpScheme, url::kStandardSchemeSeparator,
-                               cookie.DomainWithoutDot()})),
-            is_webui)) {
+    if (NetworkHandler::CanAccessCookie(CHECK_DEREF(client_.get()), is_webui,
+                                        cookie)) {
       filtered_cookies.emplace_back(std::move(cookie));
     }
   }
@@ -509,7 +510,8 @@ void StorageHandler::SetCookies(
   }
 
   NetworkHandler::SetCookies(
-      storage_partition, std::move(cookies),
+      storage_partition, std::move(cookies), CHECK_DEREF(client_.get()),
+      frame_host_ && frame_host_->web_ui(),
       base::BindOnce(
           [](std::unique_ptr<SetCookiesCallback> callback, bool success) {
             if (success) {
@@ -533,11 +535,10 @@ void StorageHandler::ClearCookies(
     return;
   }
 
-  storage_partition->GetCookieManagerForBrowserProcess()->DeleteCookies(
-      network::mojom::CookieDeletionFilter::New(),
-      base::BindOnce([](std::unique_ptr<ClearCookiesCallback> callback,
-                        uint32_t) { callback->sendSuccess(); },
-                     std::move(callback)));
+  NetworkHandler::ClearCookies(
+      storage_partition, CHECK_DEREF(client_.get()),
+      frame_host_ && frame_host_->web_ui(),
+      base::BindOnce(&ClearCookiesCallback::sendSuccess, std::move(callback)));
 }
 
 Response StorageHandler::GetStorageKeyForFrame(
@@ -929,6 +930,12 @@ void StorageHandler::NotifyIndexedDBContentChanged(
 Response StorageHandler::FindStoragePartition(
     const std::optional<std::string>& browser_context_id,
     StoragePartition** storage_partition) {
+  if (browser_context_id.has_value() &&
+      host_->GetType() != DevToolsAgentHost::kTypeBrowser) {
+    return Response::InvalidParams(
+        "browserContextId is only allowed for Browser target");
+  }
+
   BrowserContext* browser_context = nullptr;
   Response response =
       BrowserHandler::FindBrowserContext(browser_context_id, &browser_context);

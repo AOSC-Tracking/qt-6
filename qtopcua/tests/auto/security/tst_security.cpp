@@ -129,7 +129,7 @@ Tst_QOpcUaSecurity::Tst_QOpcUaSecurity()
 
 void Tst_QOpcUaSecurity::initTestCase()
 {
-#if defined(Q_OS_MACOS) && defined(Q_PROCESSOR_ARM)
+#if defined(Q_OS_MACOS)
         const bool runsOnCI = qgetenv("QTEST_ENVIRONMENT").split(' ').contains("ci");
         const auto osVer = QOperatingSystemVersion::current();
         if (runsOnCI && osVer >= QOperatingSystemVersion::MacOSTahoe)
@@ -622,9 +622,6 @@ void Tst_QOpcUaSecurity::connectAndDisconnectSecureWithCertAuthOtherCert()
 
     QFETCH(QString, backend);
     QFETCH(QOpcUaEndpointDescription, endpoint);
-
-    if (!endpoint.securityPolicy().contains("Basic256Sha256"_L1))
-        return;
 
     QScopedPointer<QOpcUaClient> client(m_opcUa.createClient(backend));
     QVERIFY2(client, u"Loading backend failed: %1"_s.arg(backend).toLatin1().data());

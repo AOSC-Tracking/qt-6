@@ -19,11 +19,11 @@ qhp.QtCanvasPainter.virtualFolder       = qtcanvaspainter
 qhp.QtCanvasPainter.indexTitle          = Qt Canvas Painter
 qhp.QtCanvasPainter.indexRoot           =
 
-qhp.QtCanvasPainter.subprojects = manual examples classes
+qhp.QtCanvasPainter.subprojects = examples classes
 
-qhp.QtCanvasPainter.subprojects.manual.title = Qt Canvas Painter
-qhp.QtCanvasPainter.subprojects.manual.indexTitle = Qt Canvas Painter module topics
-qhp.QtCanvasPainter.subprojects.manual.type = manual
+#qhp.QtCanvasPainter.subprojects.manual.title = Qt Canvas Painter
+#qhp.QtCanvasPainter.subprojects.manual.indexTitle = Qt Canvas Painter module topics
+#qhp.QtCanvasPainter.subprojects.manual.type = manual
 
 qhp.QtCanvasPainter.subprojects.examples.title = Examples
 qhp.QtCanvasPainter.subprojects.examples.indexTitle = Qt Canvas Painter Examples and Tutorials
@@ -52,9 +52,6 @@ excludefiles += "*_p.h"
 
 navigation.landingpage = "Qt Canvas Painter"
 navigation.cppclassespage = "Qt Canvas Painter C++ Classes"
-# Autogenerate navigation linking based on "Qt Canvas Painter module topics":
-navigation.toctitles = "Qt Canvas Painter module topics"
-navigation.toctitles.inclusive = false
 
 macro.cmakeoptionsince = "\n\nThis option was introduced in Qt \1.\n\n"
 

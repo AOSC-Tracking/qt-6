@@ -71,6 +71,12 @@ public abstract class CppQt6AbstractCodegen extends AbstractCppCodegen implement
         // The option is defined in DefaultCodegen class,
         // but it isn't used by the Qt6 generator. Should be deleted from options list.
         removeOption(CodegenConstants.ALLOW_UNICODE_IDENTIFIERS);
+
+        // This option is inherited from DefaultCodegen but should not be configurable in the Qt6
+        // generator. In C++, parameters with default values must appear at the end of the
+        // parameter list. To enforce this, sorting by required flag is always enabled.
+        removeOption(CodegenConstants.SORT_PARAMS_BY_REQUIRED_FLAG);
+
         /*
          * Additional Properties.  These values can be passed to the templates and
          * are available in models, apis, and supporting files
@@ -154,6 +160,19 @@ public abstract class CppQt6AbstractCodegen extends AbstractCppCodegen implement
         } else {
             additionalProperties.put(CONTENT_COMPRESSION_ENABLED, isContentCompressionEnabled);
         }
+        if (Boolean.TRUE.equals(
+            additionalProperties.get(CodegenConstants.ALLOW_UNICODE_IDENTIFIERS))) {
+            LOGGER.warn("allowUnicodeIdentifiers is not supported in the Qt6 generator due to "
+                        + "MOC limitations and will be reset to false.");
+        }
+        setAllowUnicodeIdentifiers(false);
+        if (Boolean.FALSE.equals(
+            additionalProperties.get(CodegenConstants.SORT_PARAMS_BY_REQUIRED_FLAG))) {
+            LOGGER.warn("setSortParamsByRequiredFlag is not supported in the Qt6 generator because "
+                        + "reordering parameters may place parameters with default values before "
+                        + "required ones, which is invalid in C++.");
+        }
+        setSortParamsByRequiredFlag(true);
     }
 
     @Override

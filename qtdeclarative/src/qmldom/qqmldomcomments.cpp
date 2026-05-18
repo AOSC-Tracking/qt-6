@@ -394,6 +394,27 @@ public:
         return true;
     }
 
+    bool visit(ArrayPattern *array) override
+    {
+        addSourceLocations(array, array->lbracketToken);
+        addSourceLocations(array, array->commaToken);
+        addSourceLocations(array, array->rbracketToken);
+        return true;
+    }
+
+    bool visit(ObjectPattern *object) override
+    {
+        addSourceLocations(object, object->lbraceToken);
+        addSourceLocations(object, object->rbraceToken);
+        return true;
+    }
+
+    bool visit(Elision *elision) override
+    {
+        addSourceLocations(elision, elision->commaToken);
+        return true;
+    }
+
     bool visit(CaseClause *caseClause) override
     {
         // special case: case clauses can have comments attached to their `:` token
@@ -437,6 +458,7 @@ public:
     bool visit(FunctionExpression *fExpr) override
     {
         addSourceLocations(fExpr, fExpr->identifierToken);
+        addSourceLocations(fExpr, fExpr->starToken);
         addSourceLocations(fExpr, fExpr->lparenToken);
         addSourceLocations(fExpr, fExpr->rparenToken);
         addSourceLocations(fExpr, fExpr->lbraceToken);
@@ -487,6 +509,27 @@ public:
 
         // need to accept manually, see UiQualifiedId::accept0 implementation
         AST::Node::accept(id->next, this);
+        return true;
+    }
+
+    bool visit(TryStatement *tryStatement) override
+    {
+        addSourceLocations(tryStatement, tryStatement->tryToken);
+        return true;
+    }
+
+    bool visit(Catch *catchStatement) override
+    {
+        addSourceLocations(catchStatement, catchStatement->catchToken);
+        addSourceLocations(catchStatement, catchStatement->lparenToken);
+        addSourceLocations(catchStatement, catchStatement->identifierToken);
+        addSourceLocations(catchStatement, catchStatement->rparenToken);
+        return true;
+    }
+
+    bool visit(Finally *finallyStatement) override
+    {
+        addSourceLocations(finallyStatement, finallyStatement->finallyToken);
         return true;
     }
 

@@ -94,19 +94,22 @@ QList<QCameraDevice> QGstreamerVideoDevices::findVideoInputs() const
             int size = caps.size();
             for (int i = 0; i < size; ++i) {
                 auto cap = caps.at(i);
-                auto pixelFormat = cap.pixelFormat();
+                QList<QVideoFrameFormat::PixelFormat> pixelFormats = cap.pixelFormats();
+
                 auto frameRate = cap.frameRateRange();
 
-                if (pixelFormat == QVideoFrameFormat::PixelFormat::Format_Invalid) {
-                    qCDebug(ltVideoDevices) << "pixel format not supported:" << cap;
+                if (pixelFormats.isEmpty()) {
+                    qCDebug(ltVideoDevices) << "pixel format(s) not supported:" << cap;
                     continue; // skip pixel formats that we don't support
                 }
 
                 auto addFormatForResolution = [&](QSize resolution) {
-                    auto *f = new QCameraFormatPrivate{
-                        QSharedData(), pixelFormat, resolution, frameRate.min, frameRate.max,
-                    };
-                    formats.append(f->create());
+                    for (QVideoFrameFormat::PixelFormat pixelFormat : std::as_const(pixelFormats)){
+                        auto *f = new QCameraFormatPrivate{
+                            QSharedData(), pixelFormat, resolution, frameRate.min, frameRate.max,
+                        };
+                        formats.append(f->create());
+                    }
                     photoResolutions.insert(resolution);
                 };
 
@@ -148,6 +151,16 @@ void QGstreamerVideoDevices::addDevice(QGstDeviceHandle device)
     if (properties.name().contains("pipewire")) {
         qCDebug(ltVideoDevices) << "Skipping pipewire device:" << device.get();
         return;
+    }
+
+    // QTBUG-140092: NXP's CSI video device "imx-capture" may fail. Can be skipped via env var:
+    static const bool skipImxCapture = qEnvironmentVariableIsSet("QT_GSTREAMER_SKIP_IMXCAPTURE");
+    if (skipImxCapture) {
+        const char *name = properties["device.product.name"].toString();
+        if (name && std::strstr(name, "imx-capture")) {
+            qWarning() << Q_FUNC_INFO << "Skipping video device with product name" << name;
+            return;
+        }
     }
 
     const auto *p = properties["device.path"].toString();

@@ -23,12 +23,18 @@
 #include <QtNetworkAuth/qoauthglobal.h>
 #include <QtNetworkAuth/qabstractoauth2.h>
 
+#include <QtCore/qbytearray.h>
 #include <QtCore/qchronotimer.h>
+#include <QtCore/qdatetime.h>
 #include <QtCore/qurl.h>
+#include <QtCore/qset.h>
 #include <QtCore/qstring.h>
 #include <QtCore/qpointer.h>
 
 #include <QtNetwork/qnetworkreply.h>
+#ifndef QT_NO_SSL
+#include <QtNetwork/qsslconfiguration.h>
+#endif
 
 #include <utility>
 

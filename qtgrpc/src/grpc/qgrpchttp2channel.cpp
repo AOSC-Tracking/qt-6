@@ -677,7 +677,7 @@ void Http2Handler::writeMessage(QByteArrayView data)
 {
     if (m_writesDoneSent || m_state > State::Active || isStreamClosedForSending()) {
         qCDebug(lcStream, "[%p] Cannot write message (state=%s, writesDone=%d, streamClosed=%d)",
-                this, QDebug::toBytes(m_state).data(), m_writesDoneSent,
+                this, QDebug::toBytes(m_state).constData(), m_writesDoneSent,
                 isStreamClosedForSending());
         return;
     }
@@ -776,10 +776,10 @@ void Http2Handler::cancelWithStatus(const QGrpcStatus &status)
 {
     if (m_state >= State::Cancelled) {
         qCWarning(lcStream, "[%p] Cannot cancel stream in state=%s", this,
-                  QDebug::toBytes(m_state).data());
+                  QDebug::toBytes(m_state).constData());
         return;
     }
-    qCDebug(lcStream, "[%p] Cancelling (state=%s)", this, QDebug::toBytes(m_state).data());
+    qCDebug(lcStream, "[%p] Cancelling (state=%s)", this, QDebug::toBytes(m_state).constData());
     m_state = State::Cancelled;
 
     if (m_stream && m_stream->state() != QHttp2Stream::State::Idle) {
@@ -900,12 +900,12 @@ void Http2Handler::handleHeaders(const HPack::HttpHeader &headers, HeaderPhase p
             qCWarning(lcStream,
                       "[%p] Received unhandled HTTP/2 pseudo-header: { key: '%s', value: '%s' } "
                       "in phase: %s",
-                      this, k.data(), v.data(), QDebug::toBytes(phase).data());
+                      this, k.data(), v.data(), QDebug::toBytes(phase).constData());
         } else if (k.startsWith("grpc-")) {
             qCWarning(lcStream,
                       "[%p] Received unexcpected gRPC-reserved header: { key: %s, value: %s } "
                       "in phase: %s",
-                      this, k.data(), v.data(), QDebug::toBytes(phase).data());
+                      this, k.data(), v.data(), QDebug::toBytes(phase).constData());
         } else { // Custom-Metadata
             metadata.insert(k, v);
             continue;
@@ -1016,7 +1016,7 @@ QGrpcHttp2ChannelPrivate::QGrpcHttp2ChannelPrivate(const QUrl &uri, QGrpcHttp2Ch
         connect(socket.get(), &QLocalSocket::errorOccurred, this,
                 &QGrpcHttp2ChannelPrivate::handleLocalSocketError);
         m_reconnectFunction = [this, socket = socket.get()] {
-            const auto name = hostUri.host() + hostUri.path();
+            const QString name = hostUri.host() + hostUri.path();
             qCDebug(lcChannel, "[%p] Connecting to local socket at: %s", this, qPrintable(name));
             socket->connectToServer(name);
         };
@@ -1066,7 +1066,7 @@ void QGrpcHttp2ChannelPrivate::processOperation(QGrpcOperationContext *operation
         if (m_isInsideSocketErrorOccurred) {
             qCWarning(lcChannel,
                       "[%p] Inside socket error handler. Reconnect deferred to event loop.", this);
-            QTimer::singleShot(0, [this]{ m_reconnectFunction(); });
+            QTimer::singleShot(0, this, [this] { m_reconnectFunction(); });
         } else {
             m_reconnectFunction();
         }
@@ -1201,7 +1201,7 @@ QByteArray QGrpcHttp2ChannelPrivate::setupContentTypeNegotiation(QGrpcHttp2Chann
                           "[%p] Unable to determine serializer for entry { key: %s, value: %s }. "
                           "Defaulting to format '%s'",
                           this, it.key().data(), it.value().data(),
-                          QDebug::toBytes(SerializationFormat::Default).data());
+                          QDebug::toBytes(SerializationFormat::Default).constData());
                 channelOptions.setSerializationFormat(SerializationFormat::Default);
             }
             qPtr->setChannelOptions(channelOptions);

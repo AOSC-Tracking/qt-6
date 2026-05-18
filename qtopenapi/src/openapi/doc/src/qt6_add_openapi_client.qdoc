@@ -29,8 +29,16 @@ is loaded with:
 
 \section1 Synopsis
 \code
-    qt_add_openapi_client(target
-        SPEC_FILE filename.yaml
+    qt_add_openapi_client(<target>
+        SPEC_FILE <file>
+        [OUTPUT_DIRECTORY <dir>]
+        [ADDITIONAL_PROPERTIES property1=value1 property2=value2 ...]
+        [GENERATE_OPTIONS generate_option1 generate_option2 ...]
+        [JAVA_OPTIONS jvm_option1 jvm_option2 ...]
+        [GENERATE_DOCUMENTATION]
+        [DOCUMENTATION_OUTPUT_DIRECTORY <dir>]
+        [OUTPUT_PUBLIC_HEADERS_DIR <dir>]
+        [OUTPUT_PRIVATE_HEADERS_DIR <dir>]
     )
 \endcode
 \versionlessCMakeCommandsNote qt6_add_openapi_client()
@@ -42,20 +50,6 @@ scope of source files and adds them to the target source list.
 If the target doesn't exist, the generation will be stopped with an
 error message. For creating the target you can call \c qt_add_library
 or \c qt_add_executable functions.
-
-\note Always create the target before calling the \c qt_add_openapi_client
-function.
-
-\badcode
-    qt_add_openapi_client(<target>
-        SPEC_FILE <file>
-        [OUTPUT_DIRECTORY <dir>]
-        [GENERATE_DOCUMENTATION]
-        [DOCUMENTATION_OUTPUT_DIRECTORY <dir>]
-        [OUTPUT_PUBLIC_HEADERS_DIR <dir>]
-        [OUTPUT_PRIVATE_HEADERS_DIR <dir>]
-    )
-\endcode
 
 \note Only \c client code generation is currently supported.
 

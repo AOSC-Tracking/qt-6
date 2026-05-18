@@ -70,7 +70,7 @@ void QQmlTreeModelToTableModel::setModel(QAbstractItemModel *arg)
 {
     if (m_model != arg) {
         if (m_model) {
-            for (const auto &c : m_connections)
+            for (auto &c : m_connections)
                 QObject::disconnect(c);
             m_connections.fill({});
         }
@@ -134,9 +134,7 @@ QModelIndex QQmlTreeModelToTableModel::parent(const QModelIndex &child) const
 
 QHash<int, QByteArray> QQmlTreeModelToTableModel::roleNames() const
 {
-    if (!m_model)
-        return QHash<int, QByteArray>();
-    return m_model->roleNames();
+    return m_model ? m_model->roleNames() : QAbstractItemModel::roleNames();
 }
 
 int QQmlTreeModelToTableModel::rowCount(const QModelIndex &) const

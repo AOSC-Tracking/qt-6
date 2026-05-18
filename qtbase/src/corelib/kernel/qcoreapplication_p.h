@@ -1,5 +1,6 @@
 // Copyright (C) 2021 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #ifndef QCOREAPPLICATION_P_H
 #define QCOREAPPLICATION_P_H
@@ -159,7 +160,6 @@ public:
     void processCommandLineArguments();
     QString cachedApplicationFilePath;
     QString qmljs_debug_arguments; // a string containing arguments for js/qml debugging.
-    inline QString qmljsDebugArgumentsString() const { return qmljs_debug_arguments; }
 
 #ifdef QT_NO_QOBJECT
     QCoreApplication *q_ptr = nullptr;

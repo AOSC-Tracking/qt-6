@@ -3,6 +3,10 @@
 
 set -ex
 
+# Curl is pre-installed but the original version is buggy.
+# This line here is to update it.
+sudo zypper -nq install curl
+
 sudo zypper -nq install git gcc13 gcc15-c++ ninja
 sudo /usr/sbin/update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-15 1 \
                                      --slave /usr/bin/g++ g++ /usr/bin/g++-15 \
@@ -42,7 +46,8 @@ sudo zypper -nq install libicu-devel
 sudo zypper -nq install alsa-devel dbus-1-devel libxkbfile-devel \
          libXcomposite-devel libXcursor-devel libXrandr-devel libXtst-devel \
          mozilla-nspr-devel mozilla-nss-devel glproto-devel nodejs \
-         libxshmfence-devel libXdamage-devel cargo rust-bindgen
+         libxshmfence-devel libXdamage-devel \
+         'cargo<1.94' rust-bindgen
 
 # qtwebkit
 sudo zypper -nq install libxml2-devel libxslt-devel
@@ -85,6 +90,9 @@ sudo zypper -nq install java-21-openjdk-devel-21.0.9.0-160000.1.1
 
 # For tst_license.pl with all the machines generating SBOM
 sudo zypper -nq install perl-JSON
+
+# Keep zoneinfo up-to-date (COIN-1282)
+sudo zypper -nq install timezone
 
 gccVersion="$(gcc --version |grep -Eo '[0-9]+\.[0-9]+(\.[0-9]+)?' |head -n 1)"
 echo "GCC = $gccVersion" >> versions.txt

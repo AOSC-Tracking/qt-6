@@ -831,6 +831,18 @@
 */
 
 /*!
+    \enum Qt::ContrastPreference
+    \since 6.10
+
+    Represents the user's preferred contrast setting.
+    Styles can honor this setting by increasing the contrast of foreground and background colors,
+    as well as giving widgets and controls thicker borders.
+
+    \value NoPreference No specific preferences.
+    \value HighContrast The user prefers the application to be in high contrast.
+*/
+
+/*!
     \enum Qt::ImageConversionFlag
 
     The options marked "(default)" are set if no other values from
@@ -2291,15 +2303,27 @@
     \value WindowMinimizeButtonHint  Adds a minimize button. On
            some platforms this implies Qt::WindowSystemMenuHint for it to work.
 
+           \note On many Wayland-based systems, button hints are not supported for
+           server-side decorations.
+
     \value WindowMaximizeButtonHint  Adds a maximize button. On
            some platforms this implies Qt::WindowSystemMenuHint for it to work.
+
+           \note On many Wayland-based systems, button hints are not supported for
+           server-side decorations.
 
     \value WindowMinMaxButtonsHint  Adds a minimize and a maximize
            button. On some platforms this implies Qt::WindowSystemMenuHint for it to work.
 
+           \note On many Wayland-based systems, button hints are not supported for
+           server-side decorations.
+
     \value WindowCloseButtonHint  Adds a close button. On
            some platforms this implies Qt::WindowSystemMenuHint for it
            to work.
+
+           \note On many Wayland-based systems, button hints are not supported for
+           server-side decorations.
 
     \value WindowContextHelpButtonHint  Adds a context help button to dialogs.
            On some platforms this implies Qt::WindowSystemMenuHint for it to work.
@@ -2661,8 +2685,15 @@
     \value ImhHiddenText             The input method should not show the characters while typing.
                                      This is automatically set when setting QLineEdit::echoMode to \c Password.
                                      Note that setting \c ImhHiddenText does not change the echo mode.
+
+                                     Note that Android IMEs deliberately only
+                                     allow Latin/ASCII character input for password fields.
     \value ImhSensitiveData          Typed text should not be stored by the active input method
                                      in any persistent storage like predictive user dictionary.
+
+                                     Note that the Qt Framework treats this as a visible password
+                                     and in this case Android IMEs deliberately only
+                                     allow Latin/ASCII character input.
     \value ImhNoAutoUppercase        The input method should not try to automatically switch to upper case
                                      when a sentence ends.
     \value ImhPreferNumbers          Numbers are preferred (but not required).

@@ -38,7 +38,7 @@ void DemoQCPainterRenderer::initializeResources(QCanvasPainter *painter)
     m_circleImage = painter->addImage(QImage(":/qml/images/circle.png"));
 }
 
-void DemoQCPainterRenderer::synchronize(QCanvasPainterItem *item)
+void DemoQCPainterRenderer::synchronizeData(QCanvasPainterItem *item)
 {
     // Setting values here synchronized
     DemoQCPainterItem *realItem = static_cast<DemoQCPainterItem *>(item);
