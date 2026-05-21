@@ -80,7 +80,7 @@ ResultExpr GpuProcessPolicy::EvaluateSyscall(int sysno) const {
     (defined(ARCH_CPU_MIPS_FAMILY) && defined(ARCH_CPU_32_BITS))
     case __NR_ftruncate64:
 #endif
-#if !defined(__aarch64__)
+#if !defined(__aarch64__) && !defined(__loongarch__)
     case __NR_getdents:
 #endif
     case __NR_getdents64:

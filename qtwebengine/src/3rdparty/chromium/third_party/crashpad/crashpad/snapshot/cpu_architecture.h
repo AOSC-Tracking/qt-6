@@ -47,6 +47,9 @@ enum CPUArchitecture {
 
   //! \brief 64-bit RISC-V.
   kCPUArchitectureRISCV64,
+
+  //! \brief 64-bit LOONGARCH.
+  kCPUArchitectureLOONG64,
 };
 
 }  // namespace crashpad

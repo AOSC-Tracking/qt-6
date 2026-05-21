@@ -125,9 +125,9 @@
 #endif
 
 #ifndef SK_CPU_LSX_LEVEL
-    #if defined(__loongarch_asx)
+    #if defined(__loongarch_asx) && 0
         #define SK_CPU_LSX_LEVEL    SK_CPU_LSX_LEVEL_LASX
-    #elif defined(__loongarch_sx)
+    #elif defined(__loongarch_sx) && 0
         #define SK_CPU_LSX_LEVEL    SK_CPU_LSX_LEVEL_LSX
     #endif
 #endif
