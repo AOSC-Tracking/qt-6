@@ -136,9 +136,10 @@
         #define SK_OPTS_NS lasx
         // The intrinsic from lasxintrin.h is wrapped by the __loongarch_asx macro, so we need to define it.
         #define __loongarch_asx
+        #define __loongarch_sx
 
         #if defined(__clang__)
-          #pragma clang attribute push(__attribute__((target("lasx"))), apply_to=function)
+          #pragma clang attribute push(__attribute__((target("lsx,lasx"))), apply_to=function)
         #endif
 
     #else

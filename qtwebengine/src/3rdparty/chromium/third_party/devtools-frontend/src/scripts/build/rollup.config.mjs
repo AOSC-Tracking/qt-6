@@ -19,7 +19,7 @@ export default commandLineArgs => ({
     sourcemap: Boolean(commandLineArgs.configSourcemaps),
   }],
   plugins: [
-    terser(),
+    // terser(),
     {
       name: 'devtools-plugin',
       resolveId(source, importer) {

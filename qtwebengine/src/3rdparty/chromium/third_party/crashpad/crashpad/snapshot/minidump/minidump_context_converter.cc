@@ -293,6 +293,30 @@ bool MinidumpContextConverter::Initialize(
     memcpy(&context_.riscv64->fpregs, &src->fpregs, sizeof(src->fpregs));
 
     context_.riscv64->fcsr = src->fcsr;
+  } else if (context_.architecture ==
+             CPUArchitecture::kCPUArchitectureLOONG64) {
+    context_memory_.resize(sizeof(CPUContextLOONG64));
+    context_.loong64 =
+        reinterpret_cast<CPUContextLOONG64*>(context_memory_.data());
+    const MinidumpContextLOONG64* src =
+        reinterpret_cast<const MinidumpContextLOONG64*>(minidump_context.data());
+    if (minidump_context.size() < sizeof(MinidumpContextLOONG64)) {
+      return false;
+    }
+
+    if (!(src->context_flags & kMinidumpContextLOONG64)) {
+      return false;
+    }
+
+    for (size_t i = 0; i < std::size(src->regs); i++) {
+      context_.loong64->regs[i] = src->regs[i];
+    }
+
+    context_.loong64->csr_era = src->csr_era;
+    context_.loong64->fcsr = src->fcsr;
+    context_.loong64->fcc = src->fcc;
+
+    memcpy(&context_.loong64->fpregs, &src->fpregs, sizeof(src->fpregs));
   } else {
     // Architecture is listed as "unknown".
     DLOG(ERROR) << "Unknown architecture";

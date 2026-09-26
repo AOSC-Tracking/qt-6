@@ -259,7 +259,7 @@ ResultExpr EvaluateSyscallImpl(int fs_denied_errno,
 
   // TODO(crbug.com/40528912): should i386 really be in this list?
 #if defined(__i386__) || defined(__x86_64__) || defined(__mips__) || \
-    defined(__aarch64__)
+    defined(__aarch64__) || defined(__loongarch__)
   if (sysno == __NR_mmap)
     return RestrictMmapFlags();
 #endif
@@ -304,6 +304,7 @@ ResultExpr EvaluateSyscallImpl(int fs_denied_errno,
     return RestrictMemfdCreate();
   }
 
+#if !defined(__loongarch__)
   // The fstatat syscalls are file system syscalls, which will be denied below
   // with fs_denied_errno. However some allowed fstat syscalls are rewritten by
   // libc implementations to fstatat syscalls, and we need to rewrite them back.
@@ -321,6 +322,7 @@ ResultExpr EvaluateSyscallImpl(int fs_denied_errno,
     return If(mask == STATX_BASIC_STATS, Error(ENOSYS))
         .Else(Error(fs_denied_errno));
   }
+#endif
 
   if (SyscallSets::IsFileSystem(sysno) ||
       SyscallSets::IsCurrentDirectory(sysno)) {

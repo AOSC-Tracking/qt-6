@@ -150,7 +150,7 @@ struct kernel_stat {
   int st_blocks;
   int st_pad4[14];
 };
-#elif defined(__aarch64__)
+#elif defined(__aarch64__) || defined(__loongarch__)
 struct kernel_stat {
   unsigned long st_dev;
   unsigned long st_ino;
@@ -172,6 +172,42 @@ struct kernel_stat {
   unsigned long st_ctime_nsec_;
   unsigned int __unused4;
   unsigned int __unused5;
+};
+#endif
+
+#if defined(__loongarch__)
+// from linux include/uapi/linux/stat.h
+struct kernel_statx_timestamp {
+  long tv_sec;
+  unsigned int tv_nsec;
+  int __reserved;
+};
+
+struct kernel_statx {
+  unsigned int stx_mask;
+  unsigned int stx_blksize;
+  unsigned long stx_attributes;
+  unsigned int stx_nlink;
+  unsigned int stx_uid;
+  unsigned int stx_gid;
+  unsigned short stx_mode;
+  unsigned short __spare0[1];
+  unsigned long stx_ino;
+  unsigned long stx_size;
+  unsigned long stx_blocks;
+  unsigned long stx_attributes_mask;
+  struct kernel_statx_timestamp stx_atime;
+  struct kernel_statx_timestamp stx_btime;
+  struct kernel_statx_timestamp stx_ctime;
+  struct kernel_statx_timestamp stx_mtime;
+  unsigned int stx_rdev_major;
+  unsigned int stx_rdev_minor;
+  unsigned int stx_dev_major;
+  unsigned int stx_dev_minor;
+  unsigned long stx_mnt_id;
+  unsigned int stx_dio_mem_align;
+  unsigned int stx_dio_offset_align;
+  unsigned long __spare3[12];
 };
 #endif
 
@@ -207,8 +243,14 @@ using default_stat_struct = struct kernel_stat;
 #define __NR_fstatat_default __NR_newfstatat
 #define __NR_fstat_default __NR_fstat
 
+#elif defined(__NR_statx)
+
+namespace sandbox {
+using default_stat_struct = struct kernel_statx;
+}  // namespace sandbox
+
 #else
-#error "one of fstatat64 and newfstatat must be defined"
+#error "one of fstatat64, newfstatat and statx must be defined"
 #endif
 
 #endif  // SANDBOX_LINUX_SYSTEM_HEADERS_LINUX_STAT_H_

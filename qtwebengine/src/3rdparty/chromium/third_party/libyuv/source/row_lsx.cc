@@ -2798,24 +2798,29 @@ void HalfFloatRow_LSX(const uint16_t* src,
   }
 }
 
-#ifndef ArgbConstants
-struct ArgbConstants {
+struct ArgbConstantsLSX {
   uint8_t kRGBToY[4];
   uint16_t kAddY;
   uint16_t pad;
 };
-#define ArgbConstants ArgbConstants
+
+// The shared ArgbConstants from row.h (defined in row_common.cc), used by
+// ARGBToYMatrixRow_LSX below.  The coefficients and the fixed-point AddY
+// bias are identical to the local ArgbConstantsLSX tables; only the memory
+// layout differs (kAddY[0] lives at byte offset 96 instead of 4).
+extern const struct ArgbConstants kArgbI601Constants;
+extern const struct ArgbConstants kArgbJPEGConstants;
+extern const struct ArgbConstants kAbgrI601Constants;
+extern const struct ArgbConstants kAbgrJPEGConstants;
 
 // RGB to JPeg coefficients
 // B * 0.1140 coefficient = 29
 // G * 0.5870 coefficient = 150
 // R * 0.2990 coefficient = 77
 // Add 0.5 = 0x80
-static const struct ArgbConstants kRgb24JPEGConstants = {{29, 150, 77, 0},
+static const struct ArgbConstantsLSX kRgb24JPEGConstants = {{29, 150, 77, 0},
                                                         128,
                                                         0};
-
-static const struct ArgbConstants kRawJPEGConstants = {{77, 150, 29, 0}, 128, 0};
 
 // RGB to BT.601 coefficients
 // B * 0.1016 coefficient = 25
@@ -2823,14 +2828,13 @@ static const struct ArgbConstants kRawJPEGConstants = {{77, 150, 29, 0}, 128, 0}
 // R * 0.2578 coefficient = 66
 // Add 16.5 = 0x1080
 
-static const struct ArgbConstants kRgb24I601Constants = {{25, 129, 66, 0},
+static const struct ArgbConstantsLSX kRgb24I601Constants = {{25, 129, 66, 0},
                                                         0x1080,
                                                         0};
 
-static const struct ArgbConstants kRawI601Constants = {{66, 129, 25, 0},
+static const struct ArgbConstantsLSX kRawI601Constants = {{66, 129, 25, 0},
                                                       0x1080,
                                                       0};
-#endif  // ArgbConstants
 
 // ARGB expects first 3 values to contain RGB and 4th value is ignored.
 void ARGBToYMatrixRow_LSX(const uint8_t* src_argb,
@@ -2841,7 +2845,7 @@ void ARGBToYMatrixRow_LSX(const uint8_t* src_argb,
       "vldrepl.b      $vr0,  %3,    0             \n\t"  // load rgbconstants
       "vldrepl.b      $vr1,  %3,    1             \n\t"  // load rgbconstants
       "vldrepl.b      $vr2,  %3,    2             \n\t"  // load rgbconstants
-      "vldrepl.h      $vr3,  %3,    4             \n\t"  // load rgbconstants
+      "vldrepl.h      $vr3,  %3,    96            \n\t"  // load rgbconstants
       "1:                                         \n\t"
       "vld            $vr4,  %0,    0             \n\t"
       "vld            $vr5,  %0,    16            \n\t"
@@ -2875,19 +2879,19 @@ void ARGBToYMatrixRow_LSX(const uint8_t* src_argb,
 }
 
 void ARGBToYRow_LSX(const uint8_t* src_argb, uint8_t* dst_y, int width) {
-  ARGBToYMatrixRow_LSX(src_argb, dst_y, width, &kRgb24I601Constants);
+  ARGBToYMatrixRow_LSX(src_argb, dst_y, width, &kArgbI601Constants);
 }
 
 void ARGBToYJRow_LSX(const uint8_t* src_argb, uint8_t* dst_yj, int width) {
-  ARGBToYMatrixRow_LSX(src_argb, dst_yj, width, &kRgb24JPEGConstants);
+  ARGBToYMatrixRow_LSX(src_argb, dst_yj, width, &kArgbJPEGConstants);
 }
 
 void ABGRToYRow_LSX(const uint8_t* src_abgr, uint8_t* dst_y, int width) {
-  ARGBToYMatrixRow_LSX(src_abgr, dst_y, width, &kRawI601Constants);
+  ARGBToYMatrixRow_LSX(src_abgr, dst_y, width, &kAbgrI601Constants);
 }
 
 void ABGRToYJRow_LSX(const uint8_t* src_abgr, uint8_t* dst_yj, int width) {
-  ARGBToYMatrixRow_LSX(src_abgr, dst_yj, width, &kRawJPEGConstants);
+  ARGBToYMatrixRow_LSX(src_abgr, dst_yj, width, &kAbgrJPEGConstants);
 }
 
 // RGBA expects first value to be A and ignored, then 3 values to contain RGB.
@@ -2895,7 +2899,7 @@ void ABGRToYJRow_LSX(const uint8_t* src_abgr, uint8_t* dst_yj, int width) {
 static void RGBAToYMatrixRow_LSX(const uint8_t* src_rgba,
                                  uint8_t* dst_y,
                                  int width,
-                                 const struct ArgbConstants* c) {
+                                 const struct ArgbConstantsLSX* c) {
   asm volatile(
       "vldrepl.b      $vr0,  %3,    0             \n\t"  // load rgbconstants
       "vldrepl.b      $vr1,  %3,    1             \n\t"  // load rgbconstants
@@ -2948,7 +2952,7 @@ void BGRAToYRow_LSX(const uint8_t* src_bgra, uint8_t* dst_y, int width) {
 static void RGBToYMatrixRow_LSX(const uint8_t* src_rgba,
                                 uint8_t* dst_y,
                                 int width,
-                                const struct ArgbConstants* c) {
+                                const struct ArgbConstantsLSX* c) {
   int8_t shuff[64] = {0,  2,  3,  5,  6,  8,  9,  11, 12, 14, 15, 17, 18,
                       20, 21, 23, 24, 26, 27, 29, 30, 0,  1,  3,  4,  6,
                       7,  9,  10, 12, 13, 15, 1,  0,  4,  0,  7,  0,  10,
