@@ -676,6 +676,10 @@ void PrepareUnpackBuffer(GLuint buffer[2],
                          GLsizei height) {
   uint32_t pixel_num = width * height;
 
+  // We're about to read pixels, so we need to reset PACK params
+  glPixelStorei(GL_PACK_ROW_LENGTH, 0);
+  glPixelStorei(GL_PACK_ALIGNMENT, 1);
+
   // Result of glReadPixels with format == GL_RGB and type == GL_UNSIGNED_BYTE
   // from read framebuffer in RGBA fromat is not correct on desktop core
   // profile on both Linux Mesa and Linux NVIDIA. This may be a driver bug.
@@ -808,6 +812,11 @@ void DoReadbackAndTexImage(TexImageCommandType command_type,
     glGenBuffersARB(buffer_num, buffer);
     PrepareUnpackBuffer(buffer, format, type, width, height);
 
+    // Our buffer is tightly packed, so reset unpack params.
+    glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
+    glPixelStorei(GL_UNPACK_IMAGE_HEIGHT, 0);
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+
     if (command_type == kTexImage) {
       glTexImage2D(dest_target, dest_level, dest_internal_format, width, height,
                    0, format, type, 0);
@@ -824,6 +833,7 @@ void DoReadbackAndTexImage(TexImageCommandType command_type,
   decoder->RestoreActiveTexture();
   decoder->RestoreFramebufferBindings();
   decoder->RestoreBufferBindings();
+  decoder->RestoreGlobalState();
 }
 
 class CopyTextureResourceManagerImpl
@@ -1072,7 +1082,11 @@ void CopyTextureResourceManagerImpl::DoCopySubTexture(
         adjusted_internal_format);
     GLenum type =
         TextureManager::ExtractTypeFromStorageFormat(adjusted_internal_format);
-
+    // Allocate from client memory, not from any currently bound unpack
+    // buffer. The binding is restored by the calls below.
+    if (decoder->GetFeatureInfo()->IsES3Capable()) {
+      glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+    }
     glTexImage2D(dest_target, 0, adjusted_internal_format, width, height, 0,
                  format, type, nullptr);
     dest_texture = intermediate_texture;
@@ -1157,6 +1171,11 @@ void CopyTextureResourceManagerImpl::DoCopyTexture(
         adjusted_internal_format);
     GLenum type =
         TextureManager::ExtractTypeFromStorageFormat(adjusted_internal_format);
+    // Allocate from client memory, not from any currently bound unpack
+    // buffer. The binding is restored by the calls below.
+    if (decoder->GetFeatureInfo()->IsES3Capable()) {
+      glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+    }
     glTexImage2D(dest_target, 0, adjusted_internal_format, width, height, 0,
                  format, type, nullptr);
     dest_texture = intermediate_texture;
@@ -1379,6 +1398,9 @@ void CopyTextureResourceManagerImpl::DoCopyTextureInternal(
     glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
     glDepthMask(GL_FALSE);
     glDisable(GL_BLEND);
+    if (decoder->GetFeatureInfo()->IsWebGL2OrES3OrHigherContext()) {
+      glDisable(GL_RASTERIZER_DISCARD);
+    }
 
     bool need_scissor =
         xoffset || yoffset || width != dest_width || height != dest_height;

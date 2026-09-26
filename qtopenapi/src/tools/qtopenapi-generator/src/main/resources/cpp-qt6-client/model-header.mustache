@@ -1,12 +1,12 @@
 {{>licenseInfo}}
 {{#models}}{{#model}}/*
- * {{classname}}.h
+ * {{classFilename}}.h
  *
  * {{description}}
  */
 
-#ifndef {{classname}}_H
-#define {{classname}}_H
+#ifndef {{#lambda.uppercase}}{{{classFilename}}}{{/lambda.uppercase}}_H
+#define {{#lambda.uppercase}}{{{classFilename}}}{{/lambda.uppercase}}_H
 
 #include "{{packageNameLowerCase}}exports.h"
 {{#isEnum}}
@@ -89,6 +89,6 @@ private:
 
 Q_DECLARE_METATYPE({{#cppNamespaceDeclarations}}{{this}}::{{/cppNamespaceDeclarations}}{{classname}})
 
-#endif // {{classname}}_H
+#endif // {{#lambda.uppercase}}{{{classFilename}}}{{/lambda.uppercase}}_H
 {{/model}}
 {{/models}}

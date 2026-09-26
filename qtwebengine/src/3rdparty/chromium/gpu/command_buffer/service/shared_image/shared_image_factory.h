@@ -10,7 +10,10 @@
 #include <vector>
 
 #include "base/memory/raw_ptr.h"
+#include "base/memory/ref_counted.h"
 #include "base/memory/scoped_refptr.h"
+#include "base/memory/weak_ptr.h"
+#include "base/synchronization/lock.h"
 
 #if defined(__GNUC__) && __GNUC__ < 11
 #include "base/containers/flat_set.h"
@@ -39,9 +42,46 @@ namespace gpu {
 class MemoryTracker;
 class SharedContextState;
 class SharedImageBackingFactory;
+class SharedImageCopyManager;
 class D3DImageBackingFactory;
 struct GpuFeatureInfo;
 struct GpuPreferences;
+
+class SharedImageFactory;
+
+// A thread-safe reference holder for SharedImageFactory. This allows
+// CompoundImageBacking to safely access the factory from any thread without
+// risking a use-after-free.
+class GPU_GLES2_EXPORT SharedImageFactoryRef
+    : public base::RefCountedThreadSafe<SharedImageFactoryRef> {
+ public:
+  explicit SharedImageFactoryRef(SharedImageFactory* factory);
+
+  // Called by SharedImageFactory in its destructor to safely invalidate the
+  // pointer.
+  void Invalidate() {
+    base::AutoLock lock(lock_);
+    factory_ = nullptr;
+  }
+
+  // Executes the provided callback with the factory if it's still valid.
+  // The callback is executed while holding the lock, ensuring the factory
+  // is not destroyed during the operation.
+  template <typename F>
+  void Execute(F callback) {
+    base::AutoLock lock(lock_);
+    if (factory_) {
+      callback(factory_);
+    }
+  }
+
+ private:
+  friend class base::RefCountedThreadSafe<SharedImageFactoryRef>;
+  ~SharedImageFactoryRef();
+
+  base::Lock lock_;
+  raw_ptr<SharedImageFactory> factory_ GUARDED_BY(lock_);
+};
 
 class GPU_GLES2_EXPORT SharedImageFactory {
  public:
@@ -159,8 +199,14 @@ class GPU_GLES2_EXPORT SharedImageFactory {
   bool HasSharedImage(const Mailbox& mailbox) const;
 
   SharedContextState* shared_context_state() { return context_state_.get(); }
+  const scoped_refptr<SharedImageCopyManager>& copy_manager();
+
+  base::WeakPtr<SharedImageFactory> GetWeakPtr();
+  scoped_refptr<SharedImageFactoryRef> GetFactoryRef();
 
  private:
+  friend class CompoundImageBacking;
+
   bool IsSharedBetweenThreads(gpu::SharedImageUsageSet usage);
 
   SharedImageRepresentationFactoryRef* GetFactoryRef(
@@ -172,6 +218,11 @@ class GPU_GLES2_EXPORT SharedImageFactory {
       const gfx::Size& size,
       base::span<const uint8_t> pixel_data,
       gfx::GpuMemoryBufferType gmb_type);
+
+  // Returns the factory with the given type. This is used for lazy allocation
+  // of backings for CompoundImageBacking.
+  SharedImageBackingFactory* GetFactoryByType(SharedImageBackingType type);
+
   void LogGetFactoryFailed(gpu::SharedImageUsageSet usage,
                            viz::SharedImageFormat format,
                            gfx::GpuMemoryBufferType gmb_type,
@@ -186,6 +237,7 @@ class GPU_GLES2_EXPORT SharedImageFactory {
   raw_ptr<SharedImageManager> shared_image_manager_;
   const scoped_refptr<SharedContextState> context_state_;
   std::unique_ptr<MemoryTypeTracker> memory_type_tracker_;
+  scoped_refptr<SharedImageCopyManager> copy_manager_;
 
   // This is used if the factory is created on display compositor to check for
   // sharing between threads.
@@ -226,6 +278,9 @@ class GPU_GLES2_EXPORT SharedImageFactory {
   gpu::GpuDriverBugWorkarounds workarounds_;
 
   raw_ptr<SharedImageBackingFactory> backing_factory_for_testing_ = nullptr;
+
+  scoped_refptr<SharedImageFactoryRef> factory_ref_;
+  base::WeakPtrFactory<SharedImageFactory> weak_ptr_factory_{this};
 };
 
 class GPU_GLES2_EXPORT SharedImageRepresentationFactory {

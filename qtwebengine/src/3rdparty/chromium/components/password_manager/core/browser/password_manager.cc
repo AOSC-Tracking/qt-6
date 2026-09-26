@@ -996,8 +996,7 @@ bool PasswordManager::HaveFormManagersReceivedData(
   }
   for (const auto& form_manager : password_form_cache_.GetFormManagers()) {
     if (form_manager->GetDriver().get() == driver &&
-        form_manager->GetFormFetcher()->GetState() ==
-            FormFetcher::State::WAITING) {
+        !form_manager->IsFetchCompleted()) {
       return false;
     }
   }
@@ -1168,8 +1167,7 @@ PasswordFormManager* PasswordManager::ProvisionallySaveForm(
     }
   }
 
-  if (is_manual_fallback && matched_manager->GetFormFetcher()->GetState() ==
-                                FormFetcher::State::WAITING) {
+  if (is_manual_fallback && !matched_manager->IsFetchCompleted()) {
     // In case of manual fallback, the form manager has to be ready for saving.
     return nullptr;
   }
@@ -1416,8 +1414,7 @@ bool PasswordManager::IsAutomaticSavePromptAvailable(
     return false;
   }
 
-  if (submitted_manager->GetFormFetcher()->GetState() ==
-      FormFetcher::State::WAITING) {
+  if (!submitted_manager->IsFetchCompleted()) {
     // We have a provisional save manager, but it didn't finish matching yet.
     // We just give up.
     RecordProvisionalSaveFailure(
@@ -1710,7 +1707,7 @@ void PasswordManager::ProcessAutofillPredictions(
   const FormPredictions& form_predictions =
       server_predictions_
           .insert_or_assign(
-              CalculateFormSignature(form),
+              {CalculateFormSignature(form), driver_id},
               ConvertToFormPredictions(driver_id, form, predictions))
           .first->second;
 
@@ -1860,13 +1857,13 @@ PasswordFormManager* PasswordManager::GetMatchedManagerForField(
 std::optional<FormPredictions> PasswordManager::FindServerPredictionsForField(
     FieldRendererId field_id,
     int driver_id) {
-  for (const auto& form : server_predictions_) {
-    if (form.second.driver_id != driver_id) {
+  for (const auto& [key, predictions] : server_predictions_) {
+    if (key.second != driver_id) {
       continue;
     }
-    for (const PasswordFieldPrediction& field : form.second.fields) {
+    for (const PasswordFieldPrediction& field : predictions.fields) {
       if (field.renderer_id == field_id) {
-        return form.second;
+        return predictions;
       }
     }
   }
@@ -1892,6 +1889,10 @@ void PasswordManager::ShowManualFallbackForSaving(
   // `form_manager` will become nullptr.
   if (!form_manager) {
     HideManualFallbackForSaving();
+    return;
+  }
+
+  if (!form_manager->IsFetchCompleted()) {
     return;
   }
 

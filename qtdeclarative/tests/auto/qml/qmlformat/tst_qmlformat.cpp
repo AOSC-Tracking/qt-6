@@ -477,6 +477,10 @@ void TestQmlformat::qmlSnippet_data()
             << u"EIUMAPQTE.ResourceMapHistoryControls { // qmllint disable required\n}"_s
             << u"EIUMAPQTE.ResourceMapHistoryControls { // qmllint disable required\n}\n"_s
             << defaultOptions;
+    QTest::addRow("underscoreId")
+            << u"Item {\n    id: _myObject\n}\n"_s
+            << u"Item {\n    id: _myObject\n}\n"_s
+            << defaultOptions;
 }
 
 void TestQmlformat::qmlSnippet()
@@ -523,6 +527,9 @@ void TestQmlformat::semicolonRule_data()
         QTest::newRow("emptyStatements-essential")
                 << "semicolon/emptyStatements.qml"
                 << "semicolon/emptyStatements.essential.formatted.qml" << opts;
+        QTest::newRow("comments-essential")
+            << "semicolon/comments.qml"
+            << "semicolon/comments.essential.formatted.qml" << opts;
     }
 }
 

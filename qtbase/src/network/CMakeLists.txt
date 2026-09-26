@@ -59,7 +59,6 @@ qt_internal_add_module(Network
         ssl/qtlsbackend.cpp ssl/qtlsbackend_p.h
     DEFINES
         QT_NO_CONTEXTLESS_CONNECT
-        QT_NO_FOREACH
         QT_NO_SCOPED_POINTER
         QT_NO_USING_NAMESPACE
         QT_NO_CAST_FROM_ASCII
@@ -131,7 +130,7 @@ qt_internal_extend_target(Network CONDITION QT_FEATURE_http
         access/qdecompresshelper.cpp access/qdecompresshelper_p.h
         access/qformdatabuilder.cpp access/qformdatabuilder.h
         access/qhttp1configuration.cpp access/qhttp1configuration.h
-        access/qhttp2configuration.cpp access/qhttp2configuration.h
+        access/qhttp2configuration.cpp access/qhttp2configuration.h access/qhttp2configuration_p.h
         access/qhttp2connection.cpp access/qhttp2connection_p.h
         access/qhttp2protocolhandler.cpp access/qhttp2protocolhandler_p.h
         access/qhttpmultipart.cpp access/qhttpmultipart.h access/qhttpmultipart_p.h

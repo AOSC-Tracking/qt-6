@@ -212,7 +212,7 @@ public:
 #endif
 
     // Loop protection
-    QDuplicateTracker<QString> visitedLinks;
+    std::optional<QDuplicateTracker<QString>> visitedLinks{std::in_place};
 
 private:
     bool matchesFilters(const QFileInfo &fileInfo) const;
@@ -235,8 +235,9 @@ void QDirListingPrivate::init()
         nameRegExps.emplace_back(QRegularExpression::fromWildcard(filter, cs));
 #endif
 
-    QDirEntryInfo::Native &native = std::get<QDirEntryInfo::Native>(initialEntryInfo.content);
-    engine = QFileSystemEngine::createLegacyEngine(native.entry, native.metaData);
+    auto *native = std::get_if<QDirEntryInfo::Native>(&initialEntryInfo.content);
+    Q_ASSERT(native);
+    engine = QFileSystemEngine::createLegacyEngine(native->entry, native->metaData);
 }
 
 /*!
@@ -251,7 +252,7 @@ void QDirListingPrivate::beginIterating()
     nativeIterators.clear();
 #endif
     fileEngineIterators.clear();
-    visitedLinks.clear();
+    visitedLinks.emplace();
     pushDirectory(initialEntryInfo);
 }
 
@@ -268,7 +269,7 @@ void QDirListingPrivate::pushDirectory(QDirEntryInfo &entryInfo)
 
     if (iteratorFlags.testAnyFlags(QDirListing::IteratorFlag::FollowDirSymlinks)) {
         // Stop link loops
-        if (visitedLinks.hasSeen(entryInfo.canonicalFilePath()))
+        if (visitedLinks->hasSeen(entryInfo.canonicalFilePath()))
             return;
     }
 
@@ -543,11 +544,8 @@ bool QDirListingPrivate::matchesFilters(const QFileInfo &fileInfo) const
 */
 bool QDirListingPrivate::matchesFilters(QDirEntryInfo &entryInfo) const
 {
-    return std::visit(QDirEntryInfoPrivate::overloaded {
-        [this](QDirEntryInfo::Native &native) { return matchesFilters(native); },
-        [this](const QFileInfo &fileInfo) { return matchesFilters(fileInfo); },
-        [this](QDirEntryInfo::Iterator &iterator) { return matchesFilters(iterator); }
-    }, entryInfo.content);
+    return std::visit([this](auto &e) { return matchesFilters(e); },
+                      entryInfo.content);
 }
 
 bool QDirListingPrivate::hasIterators() const

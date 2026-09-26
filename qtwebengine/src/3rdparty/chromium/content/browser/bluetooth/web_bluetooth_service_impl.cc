@@ -1303,6 +1303,13 @@ void WebBluetoothServiceImpl::RemoteCharacteristicStartNotifications(
     return;
   }
 
+  if (BluetoothBlocklist::Get().IsExcludedFromReads(
+          query_result.characteristic->GetUUID())) {
+    RecordStartNotificationsOutcome(UMAGATTOperationOutcome::kBlocklisted);
+    std::move(callback).Run(blink::mojom::WebBluetoothResult::BLOCKLISTED_READ);
+    return;
+  }
+
   BluetoothRemoteGattCharacteristic::Properties notify_or_indicate =
       query_result.characteristic->GetProperties() &
       (BluetoothRemoteGattCharacteristic::PROPERTY_NOTIFY |
@@ -1371,7 +1378,9 @@ void WebBluetoothServiceImpl::RemoteDescriptorReadValue(
   }
 
   if (BluetoothBlocklist::Get().IsExcludedFromReads(
-          query_result.descriptor->GetUUID())) {
+          query_result.descriptor->GetUUID()) ||
+      BluetoothBlocklist::Get().IsExcludedFromReads(
+          query_result.characteristic->GetUUID())) {
     std::move(callback).Run(blink::mojom::WebBluetoothResult::BLOCKLISTED_READ,
                             /*value=*/{});
     return;
@@ -1411,7 +1420,9 @@ void WebBluetoothServiceImpl::RemoteDescriptorWriteValue(
   }
 
   if (BluetoothBlocklist::Get().IsExcludedFromWrites(
-          query_result.descriptor->GetUUID())) {
+          query_result.descriptor->GetUUID()) ||
+      BluetoothBlocklist::Get().IsExcludedFromWrites(
+          query_result.characteristic->GetUUID())) {
     std::move(callback).Run(
         blink::mojom::WebBluetoothResult::BLOCKLISTED_WRITE);
     return;
@@ -2386,6 +2397,13 @@ bool WebBluetoothServiceImpl::AreScanFiltersAllowed(
 void WebBluetoothServiceImpl::ClearAdvertisementClients() {
   scanning_clients_.clear();
   watch_advertisements_clients_.clear();
+
+  auto pending_clients = std::move(watch_advertisements_pending_clients_);
+  for (auto& pending_client : pending_clients) {
+    pending_client->RunCallback(
+        blink::mojom::WebBluetoothResult::WATCH_ADVERTISEMENTS_ABORTED);
+  }
+
   allowed_scan_filters_.clear();
   accept_all_advertisements_ = false;
 }

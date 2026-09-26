@@ -382,6 +382,7 @@ class CORE_EXPORT HTMLSelectElement final
   void ChildrenChanged(const ChildrenChange& change) override;
   bool ChildrenChangedAllChildrenRemovedNeedsList() const override;
   void ParseAttribute(const AttributeModificationParams&) override;
+  void DisabledAttributeChanged(DisabledChangedReason) override;
   bool IsPresentationAttribute(const QualifiedName&) const override;
 
   LayoutObject* CreateLayoutObject(const ComputedStyle&) override;
@@ -448,6 +449,8 @@ class CORE_EXPORT HTMLSelectElement final
 
   // Helper to update the select descendants' mutation observer.
   void UpdateMutationObserver();
+
+  void DidChangeIsCanvasOrInCanvasSubtree() final;
 
   // list_items_ contains HTMLOptionElement, HTMLOptGroupElement, and
   // HTMLHRElement objects.

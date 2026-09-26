@@ -70,7 +70,9 @@ QSSGRhiRenderableTextureV2Ptr QSSGUserRenderPassManager::getUserPassTexureResult
 void QSSGUserRenderPassManager::updateUserPassOrder(bool forceUpdate)
 {
     if (m_passlistDirty || forceUpdate) {
-        std::sort(m_scheduledUserPasses.begin(), m_scheduledUserPasses.end(), [](const QSSGRenderUserPass *a, const QSSGRenderUserPass *b) {
+        // stable_sort preserves QML declaration order for passes with
+        // equal dependency indices.
+        std::stable_sort(m_scheduledUserPasses.begin(), m_scheduledUserPasses.end(), [](const QSSGRenderUserPass *a, const QSSGRenderUserPass *b) {
             return a->m_dependencyIndex > b->m_dependencyIndex;
         });
     }
@@ -81,7 +83,7 @@ void QSSGUserRenderPassManager::updateUserPassOrder(bool forceUpdate)
 bool QSSGUserRenderPassManager::derefTexture(QRhiTexture *texture)
 {
     auto foundIt = m_trackedTextures.find(texture);
-    const bool wasFound = foundIt != m_trackedTextures.constEnd();
+    const bool wasFound = foundIt != m_trackedTextures.end();
 
     if (wasFound) {
         if (!(foundIt.value() > 1)) {

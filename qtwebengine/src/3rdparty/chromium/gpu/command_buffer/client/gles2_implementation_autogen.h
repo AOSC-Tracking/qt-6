@@ -953,8 +953,6 @@ GLuint GetMaxValueInBufferCHROMIUM(GLuint buffer_id,
                                    GLenum type,
                                    GLuint offset) override;
 
-GLboolean EnableFeatureCHROMIUM(const char* feature) override;
-
 void* MapBufferCHROMIUM(GLuint target, GLenum access) override;
 
 GLboolean UnmapBufferCHROMIUM(GLuint target) override;
@@ -965,17 +963,6 @@ void* MapBufferSubDataCHROMIUM(GLuint target,
                                GLenum access) override;
 
 void UnmapBufferSubDataCHROMIUM(const void* mem) override;
-
-void* MapBufferRange(GLenum target,
-                     GLintptr offset,
-                     GLsizeiptr size,
-                     GLbitfield access) override;
-
-GLboolean UnmapBuffer(GLenum target) override;
-
-void FlushMappedBufferRange(GLenum target,
-                            GLintptr offset,
-                            GLsizeiptr size) override;
 
 void* MapTexSubImage2DCHROMIUM(GLenum target,
                                GLint level,
@@ -1096,6 +1083,11 @@ void FlushDriverCachesCHROMIUM() override;
 GLuint GetLastFlushIdCHROMIUM() override;
 
 void SetActiveURLCHROMIUM(const char* url) override;
+
+void GetBufferSubDataCHROMIUM(GLenum target,
+                              GLintptr offset,
+                              GLsizeiptr size,
+                              void* data) override;
 
 void ContextVisibilityHintCHROMIUM(GLboolean visibility) override;
 

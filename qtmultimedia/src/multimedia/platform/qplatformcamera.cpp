@@ -1,11 +1,14 @@
 // Copyright (C) 2016 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
-#include <QtMultimedia/private/qplatformcamera_p.h>
+#include "qplatformcamera_p.h"
 
 #include <QtMultimedia/private/qcameradevice_p.h>
+#include <QtMultimedia/private/qmultimedia_ranges_p.h>
 
 QT_BEGIN_NAMESPACE
+
+namespace ranges = QtMultimediaPrivate::ranges;
 
 QPlatformCamera::QPlatformCamera(QCamera *parent) : QPlatformVideoSource(parent), m_camera(parent)
 {
@@ -37,13 +40,15 @@ QCameraFormat QPlatformCamera::findBestCameraFormat(const QCameraDevice &camera)
     };
 
     const auto formats = camera.videoFormats();
-    const auto found =
-            std::max_element(formats.begin(), formats.end(),
-                             [makeCriteria](const QCameraFormat &fmtA, const QCameraFormat &fmtB) {
-                                 return makeCriteria(fmtA) < makeCriteria(fmtB);
-                             });
+    if (formats.empty())
+        return QCameraFormat{};
 
-    return found == formats.end() ? QCameraFormat{} : *found;
+    const auto found =
+            ranges::max(formats, [&](const QCameraFormat &fmtA, const QCameraFormat &fmtB) {
+                return makeCriteria(fmtA) < makeCriteria(fmtB);
+            });
+
+    return found;
 }
 
 QVideoFrameFormat QPlatformCamera::frameFormat() const

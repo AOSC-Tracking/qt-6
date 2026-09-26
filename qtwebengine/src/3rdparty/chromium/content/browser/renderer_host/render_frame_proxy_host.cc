@@ -918,7 +918,7 @@ void RenderFrameProxyHost::OpenURL(blink::mojom::OpenURLParamsPtr params) {
       /*is_embedder_initiated_fenced_frame_navigation=*/false,
       /*is_unfenced_top_navigation=*/false,
       /*force_new_browsing_instance=*/false, params->is_container_initiated,
-      params->has_rel_opener, params->storage_access_api_status);
+      params->has_rel_opener);
 }
 
 void RenderFrameProxyHost::UpdateViewportIntersection(
@@ -930,6 +930,8 @@ void RenderFrameProxyHost::UpdateViewportIntersection(
 
 void RenderFrameProxyHost::DidChangeOpener(
     const std::optional<blink::LocalFrameToken>& opener_frame_token) {
+  // Note that this call internally protects against `opener_frame_token`
+  // referring to an inactive frame.
   frame_tree_node_->render_manager()->DidChangeOpener(opener_frame_token,
                                                       site_instance_group());
 }

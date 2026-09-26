@@ -34,6 +34,13 @@ BASE_FEATURE(kSerialPortConnected,
 );
 #endif  // !BUILDFLAG(IS_ANDROID)
 
+// Restricts the sharing of C++ SerialPort and WritableStream instances across
+// different DOMWrapperWorld contexts to prevent cross-world leaks.
+BASE_FEATURE(kWebSerialWorldIsolatedCache,
+             "WebSerialWorldIsolatedCache",
+             base::FEATURE_ENABLED_BY_DEFAULT
+);
+
 // This feature allows to dynamically introduce an additional list of devices
 // blocked by WebUSB via a Finch parameter. This parameter should be specified
 // in the Finch configuration to manage the list of blocked devices.
@@ -46,6 +53,21 @@ BASE_FEATURE(kWebUsbBlocklist,
 // or endpoint. This protects devices which ignore this field.
 BASE_FEATURE(kWebUsbProtectedClassControlTransferBlock,
              "WebUsbProtectedClassControlTransferBlock",
+             base::FEATURE_ENABLED_BY_DEFAULT);
+
+// When enabled, WebUSB control transfers enforce a positive matching allowlist
+// for Standard requests (permitting only GET_STATUS, GET_DESCRIPTOR,
+// GET_CONFIGURATION, GET_INTERFACE, SYNCH_FRAME). All other Standard requests
+// are strictly blocked.
+BASE_FEATURE(kWebUsbEnforceStandardRequestAllowlist,
+             "WebUsbEnforceStandardRequestAllowlist",
+             base::FEATURE_ENABLED_BY_DEFAULT);
+
+// When enabled, WebUSB rejects claiming interfaces that share endpoints with
+// already claimed interfaces, and avoids overwriting endpoint mapping entries.
+// See crbug.com/513167952.
+BASE_FEATURE(kWebUsbHardenEndpointAliasing,
+             "WebUsbHardenEndpointAliasing",
              base::FEATURE_ENABLED_BY_DEFAULT);
 
 // When enabled, accessing the navigator.hid attribute does not prevent the
@@ -64,6 +86,27 @@ BASE_FEATURE(kWinSystemLocationPermission,
 // start of the report and truncate the last byte of the report.
 BASE_FEATURE(kHidGetFeatureReportFix,
              "HidGetFeatureReportFix",
+             base::FEATURE_ENABLED_BY_DEFAULT);
+
+// When enabled, HidConnectionWin will ensure that pending OVERLAPPED requests
+// are not deleted until the kernel has signaled completion, even if the
+// connection is closed.
+BASE_FEATURE(kSafeHidConnectionWinClose,
+             "SafeHidConnectionWinClose",
+             base::FEATURE_ENABLED_BY_DEFAULT);
+
+// When enabled, SerialPortImpl will ensure that shared memory buffers backing
+// pending OVERLAPPED requests are not unmapped until the kernel has signaled
+// completion, even if the port is closed.
+BASE_FEATURE(kSafeSerialPortImplWinClose,
+             "SafeSerialPortImplWinClose",
+             base::FEATURE_ENABLED_BY_DEFAULT);
+
+// When enabled, UsbDeviceHandleWin will ensure that pending OVERLAPPED requests
+// are not deleted until the kernel has signaled completion, even if the
+// handle is closed.
+BASE_FEATURE(kSafeUsbDeviceHandleWinClose,
+             "SafeUsbDeviceHandleWinClose",
              base::FEATURE_ENABLED_BY_DEFAULT);
 
 // Defines a feature parameter for the `kWinSystemLocationPermission` feature.

@@ -9,6 +9,8 @@
 #include <QtNetwork/qrestaccessmanager.h>
 #include <QtTest/qtest.h>
 
+#include <cstdio>
+
 using namespace Qt::StringLiterals;
 
 #define CALL_TEST_OPERATION(OPERATION, PARAM, EXPECTED_STRING) \
@@ -227,15 +229,25 @@ private:
     QRestAccessManager *m_restManager = nullptr;
 };
 
-QString invalidExplodeWarningMsg(const QString& paramName, const QString& style, bool explode) {
-#ifdef Q_OS_WIN
-    return QString("Invalid combination for query parameter '%1': style=%2, explode=%3.\r\n"
-                   "Using valid explode=%4 instead.")
-#else
-    return QString("Invalid combination for query parameter '%1': style=%2, explode=%3.\n"
-                   "Using valid explode=%4 instead.")
-#endif
-        .arg(paramName, style, explode ? "true" : "false", explode ? "false" : "true");
+static void ignoreInvalidExplodeWarningMsg(const char *paramName, const char *style, bool explode)
+{
+    Q_DECL_UNINITIALIZED
+    char buf[512];
+    const auto r = std::snprintf(buf, sizeof buf,
+                                 "Invalid combination for query parameter '%s': style=%s, explode=%s.%s"
+                                 "Using valid explode=%s instead.",
+                                 paramName,
+                                 style,
+                                 explode ? "true" : "false",
+                             #ifdef Q_OS_WIN
+                                 "\r\n",
+                             #else
+                                 "\n",
+                             #endif
+                                 explode ? "false" : "true");
+    QCOMPARE_GT(r, 0);
+    QCOMPARE_LT(r, int{sizeof buf});
+    QTest::ignoreMessage(QtWarningMsg, buf);
 }
 
 // The latest implementation is done based on this information:
@@ -1164,7 +1176,7 @@ void OperationParameters::pathNACombinations()
 **/
 void OperationParameters::queryNACombinations()
 {
-    QString warningMsg;
+    const char *warningMsg;
 
     // style=spaceDelimited, explode=false, type=string
 #ifdef Q_OS_WIN
@@ -1174,7 +1186,7 @@ void OperationParameters::queryNACombinations()
     warningMsg = "'spaceDelimited' style is invalid for primitive parameters.\n"
                  "Falling back to the default style: 'form'.";
 #endif
-    QTest::ignoreMessage(QtWarningMsg, warningMsg.toLatin1());
+    QTest::ignoreMessage(QtWarningMsg, warningMsg);
     CALL_TEST_OPERATION(spaceDelimitedNotExplodeString, QString("string * test!"_L1),
                         "/v2/query/string/spaceDelimited-not-explode/spaceDelimitedNotExplodeString?stringParameter=string%20%2A%20test%21");
 
@@ -1186,13 +1198,12 @@ void OperationParameters::queryNACombinations()
                                                 QJsonValue("Hey*+,;=!$&'( )"));
 
     // style=spaceDelimited, explode=true, type=array
-    warningMsg = invalidExplodeWarningMsg("arrayParameter"_L1 , "spaceDelimited"_L1, true);
-    QTest::ignoreMessage(QtWarningMsg, warningMsg.toLatin1());
+    ignoreInvalidExplodeWarningMsg("arrayParameter", "spaceDelimited", true);
     CALL_TEST_POST_OPERATION(spaceDelimitedExplodeArray, QList<int>({-90, 0, 0, 2, 87867}),
                              "/v2/query/array/spaceDelimited-explode/spaceDelimitedExplodeArray?arrayParameter=-90%200%200%202%2087867");
 
     // style=spaceDelimited, explode=true, type=empty array
-    QTest::ignoreMessage(QtWarningMsg, warningMsg.toLatin1());
+    ignoreInvalidExplodeWarningMsg("arrayParameter", "spaceDelimited", true);
     CALL_TEST_POST_OPERATION(spaceDelimitedExplodeArray, QList<int>(),
                              "/v2/query/array/spaceDelimited-explode/spaceDelimitedExplodeArray?arrayParameter=");
 
@@ -1204,13 +1215,12 @@ void OperationParameters::queryNACombinations()
                                                 QJsonValue("*+,;=!$&'( Invalid )"));
 
     // style=pipeDelimited, explode=true, type=array
-    warningMsg = invalidExplodeWarningMsg("arrayParameter"_L1 , "pipeDelimited"_L1, true);
-    QTest::ignoreMessage(QtWarningMsg, warningMsg.toLatin1());
+    ignoreInvalidExplodeWarningMsg("arrayParameter", "pipeDelimited", true);
     CALL_TEST_POST_OPERATION(pipeDelimitedExplodeArray, QList<int>({-90, 0, 0, 2, 87867}),
                              "/v2/query/array/pipeDelimited-explode/pipeDelimitedExplodeArray?arrayParameter=-90%7C0%7C0%7C2%7C87867");
 
     // style=pipeDelimited, explode=true, type=empty array
-    QTest::ignoreMessage(QtWarningMsg, warningMsg.toLatin1());
+    ignoreInvalidExplodeWarningMsg("arrayParameter", "pipeDelimited", true);
     CALL_TEST_POST_OPERATION(pipeDelimitedExplodeArray, QList<int>(),
                              "/v2/query/array/pipeDelimited-explode/pipeDelimitedExplodeArray?arrayParameter=");
 
@@ -1218,8 +1228,7 @@ void OperationParameters::queryNACombinations()
     TestObject spaceDelimitedObj;
     spaceDelimitedObj.setName("TestName123");
     spaceDelimitedObj.setStatus("Awake");
-    warningMsg = invalidExplodeWarningMsg("objectParameter"_L1 , "spaceDelimited"_L1, true);
-    QTest::ignoreMessage(QtWarningMsg, warningMsg.toLatin1());
+    ignoreInvalidExplodeWarningMsg("objectParameter", "spaceDelimited", true);
     CALL_TEST_POST_OPERATION(spaceDelimitedExplodeObject, spaceDelimitedObj,
                              "/v2/query/object/spaceDelimited-explode/spaceDelimitedExplodeObject?objectParameter=name%20TestName123%20status%20Awake");
 
@@ -1227,8 +1236,7 @@ void OperationParameters::queryNACombinations()
     TestObject pipeDelimitedObj;
     pipeDelimitedObj.setName("pipeDelimited-TestName");
     pipeDelimitedObj.setStatus("pipeDelimited-Sleeping");
-    warningMsg = invalidExplodeWarningMsg("objectParameter"_L1 , "pipeDelimited"_L1, true);
-    QTest::ignoreMessage(QtWarningMsg, warningMsg.toLatin1());
+    ignoreInvalidExplodeWarningMsg("objectParameter", "pipeDelimited", true);
     CALL_TEST_POST_OPERATION(pipeDelimitedExplodeObject, pipeDelimitedObj,
                              "/v2/query/object/pipeDelimited-explode/pipeDelimitedExplodeObject?objectParameter=name%7CpipeDelimited-TestName%7Cstatus%7CpipeDelimited-Sleeping");
 
@@ -1236,8 +1244,7 @@ void OperationParameters::queryNACombinations()
     TestObject deepObjectObj;
     deepObjectObj.setName("deepObject-TestName");
     deepObjectObj.setStatus("deepObject-Sleeping");
-    warningMsg = invalidExplodeWarningMsg("objectParameter"_L1 , "deepObject"_L1, false);
-    QTest::ignoreMessage(QtWarningMsg, warningMsg.toLatin1());
+    ignoreInvalidExplodeWarningMsg("objectParameter", "deepObject", false);
     CALL_TEST_POST_OPERATION(deepObjectNotExplodeObject, deepObjectObj,
                              "/v2/query/object/deepObject-not-explode/deepObjectNotExplodeObject?objectParameter%5Bname%5D=deepObject-TestName&objectParameter%5Bstatus%5D=deepObject-Sleeping");
 
@@ -1245,24 +1252,24 @@ void OperationParameters::queryNACombinations()
     // Falling back to the default style form instead.
     warningMsg = "'deepObject' style is only valid for parameters of type 'object'.\n"
                  "Falling back to the default style: 'form'.";
-    QTest::ignoreMessage(QtWarningMsg, warningMsg.toLatin1());
+    QTest::ignoreMessage(QtWarningMsg, warningMsg);
     CALL_TEST_POST_OPERATION(invalidDeepObjectNotExplodeString, QString("Test!"),
                              "/v2/query/string/invalid-deepObject-not-explode/deepObjectNotExplodeString?stringParameter=Test%21");
 
     // style=deepObject, explode=false, type=array : Invalid combination.
     // Falling back to the default style form instead.
-    QTest::ignoreMessage(QtWarningMsg, warningMsg.toLatin1());
+    QTest::ignoreMessage(QtWarningMsg, warningMsg);
     CALL_TEST_POST_OPERATION(invalidDeepObjectNotExplodeArray, QList<int>({-90, 0, 0, 2, 87867}),
                         "/v2/query/array/invalid-deepObject-not-explode/deepObjectNotExplodeArray?arrayParameter=-90,0,0,2,87867");
 
     // style=deepObject, explode=false, type=anytype string : Invalid combination.
     warningMsg = "Be aware that 'deepObject' style is only valid for parameters of type 'object'. "
                  "The generated result will not conform to the OpenAPI standard.";
-    QTest::ignoreMessage(QtWarningMsg, warningMsg.toLatin1());
+    QTest::ignoreMessage(QtWarningMsg, warningMsg);
     CALL_POST_NO_EXPECTED_RESULT_TEST_OPERATION(deepObjectExplodeAnytype, QJsonValue("*Invalid )"));
 
     // style=deepObject, explode=false, type=anytype array : Invalid combination.
-    QTest::ignoreMessage(QtWarningMsg, warningMsg.toLatin1());
+    QTest::ignoreMessage(QtWarningMsg, warningMsg);
     CALL_POST_NO_EXPECTED_RESULT_TEST_OPERATION(deepObjectExplodeAnytype,
                                                 QJsonValue({-90, 0, 0, 2, 87867}));
 
@@ -1277,7 +1284,7 @@ void OperationParameters::queryNACombinations()
                  "'spaceDelimited', 'pipeDelimited' and 'deepObject'.\nFalling back to the default "
                  "style 'form'.";
 #endif
-    QTest::ignoreMessage(QtWarningMsg, warningMsg.toLatin1());
+    QTest::ignoreMessage(QtWarningMsg, warningMsg);
     CALL_TEST_POST_OPERATION(invalidMatrixExplodeString, QString("Test!"),
                         "/v2/query/string/invalid-matrix-explode/matrixExplodeString?stringParameter=Test%21");
 }

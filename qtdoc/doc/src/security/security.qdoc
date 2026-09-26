@@ -15,6 +15,12 @@
     release. Qt also has an established process for handling security
     vulnerabilities.
 
+    The \e{security of an application or device that uses Qt} is a shared
+    responsibility between the application developers, the Qt Group and
+    Qt Project as providers of the Qt Framework, and operators or device
+    manufacturers. For an overview of the respective obligations and
+    boundaries, see \l{Qt Shared Security Model}.
+
     \section1 Qt Project security policy
 
     The Qt Project specifies its security policy in
@@ -56,6 +62,8 @@
     To report issues regarding Qt Group services such as the website or
     Qt Account, email \l{mailto:security@qt.io}.
 
+    Qt does not currently have a bug bounty program.
+
     \section2 Qt Group commercial security agreement
 
     For commercial licensees, use the \e{Security Issues} category in the
@@ -93,13 +101,15 @@
 
     Starting from Qt 6.8, the Qt installation includes Software Bill of
     Materials (SBOM) documents, containing information about installed Qt
-    modules, packages, and third-party components in SPDX format. SBOM files
-    allow users to track Qt installed packages for vulnerability management and
-    license compliance.
+    modules, packages, and third-party components in SPDX format. Since
+    Qt 6.11, the SBOM documents are also available in CycloneDX format.
+    Use the documents in either of these formats to track Qt installed
+    packages for vulnerability management and license compliance.
 
     \list
         \li \l{Software Bill of Materials}
         \li \l{https://spdx.dev/learn/overview/#producing}{SPDX Format Overview}
+        \li \l{https://cyclonedx.org/specification/overview/}{CycloneDX Specification Overview}
     \endlist
 
     \section1 Untrusted data
@@ -125,17 +135,30 @@
 
     For more information, see \l{Application Permissions}.
 
-    \section1 Extended Security Maintenance for Qt 5.15
+    \section1 Extended Security Maintenance
 
     We acknowledge that your product may have a lifecycle that is longer than
     our usual support window for a given Qt release. We now offer maintenance
     services for customers with an end-of-support (EoS) version of Qt.
 
-    Extended Security Maintenance for \b {Qt 5.15} begins 26th of May 2025. The
-    Extended Security Maintenance subscription service provides you access to
-    Critical Vulnerability and Security (CVS) maintenance patches relating to
-    Qt libraries for select Long Term Support (LTS) releases after the
-    end-of-support (EoS).
+    The Extended Security Maintenance subscription service provides you access
+    to Critical Vulnerability and Security (CVS) maintenance patches relating to
+    Qt libraries for select \l{lts-releases}{Long Term Support (LTS) releases}
+    after the end-of-support (EoS).
+
+    The ESM service is available for the following versions:
+
+    \table
+    \header
+        \li Version
+        \li ESM since
+    \row
+        \li Qt 5.15 LTS
+        \li 2025-05-26
+    \row
+        \li Qt 6.5 LTS
+        \li 2026-03-30
+    \endtable
 
     For more information, see \l {https://www.qt.io/qt-support/} {Qt Support}.
 */

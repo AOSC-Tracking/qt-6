@@ -762,6 +762,18 @@ static void setMaterialProperties(QSSGSceneDesc::Material &target, const aiMater
                                            float(ior));
         }
 
+        {
+            // opacity AI_MATKEY_OPACITY
+            ai_real opacity = 1.0f;
+            result = source.Get(AI_MATKEY_OPACITY, opacity);
+            if (result == aiReturn_SUCCESS)
+                QSSGSceneDesc::setProperty(target, "opacity", &QQuick3DPrincipledMaterial::setOpacity, float(opacity));
+
+            // opacityMap aiTextureType_OPACITY 0
+            if (auto opacityTexture = createTextureNode(source, aiTextureType_OPACITY, 0))
+                QSSGSceneDesc::setProperty(target, "opacityMap", &QQuick3DPrincipledMaterial::setOpacityMap, opacityTexture);
+        }
+
     } else if (type == QSSGSceneDesc::Material::RuntimeType::DefaultMaterial) { // Ver1
         int shadingModel = 0;
         auto material = &source;
@@ -955,8 +967,14 @@ static void setMaterialProperties(QSSGSceneDesc::Material &target, const aiMater
                                            clearcoatRoughnessTexture);
 
             // normal texture
-            if (auto clearcoatNormalTexture = createTextureNode(source, AI_MATKEY_CLEARCOAT_NORMAL_TEXTURE))
+            if (auto clearcoatNormalTexture = createTextureNode(source, AI_MATKEY_CLEARCOAT_NORMAL_TEXTURE)) {
                 QSSGSceneDesc::setProperty(target, "clearcoatNormalMap", &QQuick3DSpecularGlossyMaterial::setClearcoatNormalMap, clearcoatNormalTexture);
+
+                ai_real clearcoatNormalStrength = 0.0f;
+                result = source.Get(AI_MATKEY_GLTF_TEXTURE_SCALE(aiTextureType_CLEARCOAT, 2), clearcoatNormalTexture);
+                if (result == aiReturn_SUCCESS)
+                    QSSGSceneDesc::setProperty(target, "clearcoatNormalStrength", &QQuick3DPrincipledMaterial::setClearcoatNormalStrength, float(clearcoatNormalStrength));
+            }
         }
 
         {
@@ -1917,7 +1935,7 @@ static QString importImp(const QUrl &url, const QJsonObject &options, QSSGSceneD
                     // Target propert[y|ies]
 
                     const auto currentPropertyValue = [targetNode](const char *propertyName) -> QVariant {
-                        for (auto *p : targetNode->properties) {
+                        for (const auto *p : std::as_const(targetNode->properties)) {
                             if (!qstrcmp(propertyName, p->name))
                                 return p->value;
                         }

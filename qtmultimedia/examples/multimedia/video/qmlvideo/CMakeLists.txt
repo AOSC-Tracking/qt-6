@@ -46,9 +46,7 @@ target_link_libraries(qmlvideoexample PRIVATE
 # Temporary workaround for QML module linker issues on static builds
 # (Includes official iOS binaries)
 # See QTBUG-141857
-if (QT_FEATURE_static)
-    target_link_libraries(qmlvideoexample PRIVATE qmlvideoplugin)
-endif()
+target_link_libraries(qmlvideoexample PRIVATE qmlvideoplugin frequencymonitorplugin)
 
 install(TARGETS qmlvideoexample
     BUNDLE DESTINATION .
@@ -61,7 +59,6 @@ qt_generate_deploy_qml_app_script(
     OUTPUT_SCRIPT deploy_script
     MACOS_BUNDLE_POST_BUILD
     NO_UNSUPPORTED_PLATFORM_ERROR
-    DEPLOY_USER_QML_MODULES_ON_UNSUPPORTED_PLATFORM
 )
 
 install(SCRIPT ${deploy_script})

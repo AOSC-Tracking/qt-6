@@ -1,11 +1,13 @@
 // Copyright (C) 2023 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
-#include "qwindowcapture.h"
-#include "qplatformmediaintegration_p.h"
-#include "qmediacapturesession.h"
-#include "private/qobject_p.h"
-#include "private/qplatformsurfacecapture_p.h"
+#include <QtMultimedia/qwindowcapture.h>
+
+#include <QtCore/private/qobject_p.h>
+
+#include <QtMultimedia/qmediacapturesession.h>
+#include <QtMultimedia/private/qplatformmediaintegration_p.h>
+#include <QtMultimedia/private/qplatformsurfacecapture_p.h>
 
 QT_BEGIN_NAMESPACE
 
@@ -126,6 +128,12 @@ QList<QCapturableWindow> QWindowCapture::capturableWindows()
     return QPlatformMediaIntegration::instance()->capturableWindowsList();
 }
 
+/*!
+    Returns the capture session this QWindowCapture is connected to.
+
+    Use \l QMediaCaptureSession::setWindowCapture() to connect the window capture
+    to a session.
+*/
 QMediaCaptureSession *QWindowCapture::captureSession() const
 {
     Q_D(const QWindowCapture);
@@ -220,10 +228,29 @@ void QWindowCapture::setActive(bool active)
     This is equivalent to setting the \l active property to false.
 */
 
+/*!
+    \qmlsignal QtMultimedia::WindowCapture::errorChanged()
+
+    This signal is emitted when the \l{error} or \l{errorString} properties are changed.
+
+    This signal is not emitted whenever multiple identical errors are raised. To track such
+    errors, use the signal \l errorOccurred.
+*/
+
+/*!
+    \fn void QWindowCapture::errorChanged()
+
+    This signal is emitted when the \l{error} or \l{errorString} properties are changed.
+
+    This signal is not emitted whenever multiple identical errors are raised. To track such
+    errors, use the signal \l errorOccurred.
+*/
 
 /*!
     \qmlproperty enumeration QtMultimedia::WindowCapture::error
     Returns a code of the last error.
+
+    \qmlenumeratorsfrom QWindowCapture::Error
 */
 
 /*!
@@ -238,6 +265,17 @@ QWindowCapture::Error QWindowCapture::error() const
                                     : CapturingNotSupported;
 }
 
+/*!
+    \qmlsignal QtMultimedia::WindowCapture::errorOccurred(int error, string errorString)
+
+    Signals when an \a error occurs, along with the \a errorString.
+
+    For the error parameter, see the enumeration table in
+    \l {QtMultimedia::WindowCapture::error}{error} for what values may
+    be passed.
+
+    \sa {QtMultimedia::WindowCapture::error}{error}
+*/
 /*!
     \fn void QWindowCapture::errorOccurred(QWindowCapture::Error error, const QString &errorString)
 

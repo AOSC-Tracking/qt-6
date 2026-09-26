@@ -411,7 +411,6 @@ QQmlBinding *QQmlBinding::createTranslationBinding(
     b->setScopeObject(obj);
 
 #if QT_CONFIG(translation) && QT_CONFIG(qml_debug)
-    QString originString;
     if (QQmlDebugTranslationService *service =
                 QQmlDebugConnector::service<QQmlDebugTranslationService>()) {
         service->foundTranslationBinding({ unit, b->scopeObject(), ctxt,
@@ -681,6 +680,7 @@ bool QQmlBinding::hasDependencies() const
 
 void QQmlBinding::doUpdate(const DeleteWatcher &watcher, QQmlPropertyData::WriteFlags flags, QV4::Scope &scope)
 {
+    Q_ALLOCA_INIT();
     auto ep = QQmlEnginePrivate::get(scope.engine);
     ep->referenceScarceResources();
 

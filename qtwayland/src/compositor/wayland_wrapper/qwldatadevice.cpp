@@ -1,5 +1,6 @@
 // Copyright (C) 2017 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:critical reason:network-protocol
 
 #include "qwldatadevice_p.h"
 
@@ -144,6 +145,14 @@ void DataDevice::data_device_start_drag(Resource *resource, struct ::wl_resource
 
     Q_UNUSED(serial);
     //### need to verify that we have an implicit grab with this serial
+}
+
+void DataDevice::data_device_destroy_resource(Resource *resource)
+{
+    if (m_dragFocusResource == resource) {
+        m_dragFocusResource = nullptr;
+        m_dragFocus = nullptr;
+    }
 }
 
 void DataDevice::setDragIcon(QWaylandSurface *icon)

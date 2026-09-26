@@ -1,5 +1,6 @@
 // Copyright (C) 2019 Pier Luigi Fiorini <pierluigi.fiorini@gmail.com>
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #ifndef QWAYLANDQUICKXDGOUTPUT_V1
 #define QWAYLANDQUICKXDGOUTPUT_V1

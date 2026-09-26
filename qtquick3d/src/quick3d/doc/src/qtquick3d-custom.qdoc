@@ -86,6 +86,12 @@ shaders get as their input. The following sections provide an overview of these
 features. The full reference is available in the documentation pages for the respective
 types:
 
+\note For complete control over the entire rendering pipeline, including multiple
+render passes and custom render targets, see \l{User-Defined Render Passes in Qt Quick 3D}.
+User-defined render passes complement the features described on this page by allowing you
+to define the entire rendering pipeline architecture, while CustomMaterial and Effect focus
+on customizing individual materials and post-processing steps within the pipeline.
+
 \table
 \header
 \li Feature
@@ -1752,7 +1758,7 @@ void MAIN()
     vec2 texcoord = INPUT_UV;
     if (dist_to_center <= 1.0) {
         float rotation_amount = (1.0 - dist_to_center) * (1.0 - dist_to_center);
-        float r = radians(360.0) * rotation_amount / 4.0;
+        float r = radians(360.0) * rotation_amount / 4.0 * FRAMEBUFFER_Y_UP;
         float cos_r = cos(r);
         float sin_r = sin(r);
         mat2 rotation = mat2(cos_r, sin_r, -sin_r, cos_r);

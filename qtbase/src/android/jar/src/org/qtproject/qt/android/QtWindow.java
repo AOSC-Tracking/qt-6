@@ -249,8 +249,10 @@ class QtWindow extends QtLayout implements QtSurfaceInterface {
         // early QtInputConnection callbacks from blocking the UI thread.
         if (!m_editTextFocusInitialized) {
             m_editTextFocusInitialized = true;
-            m_editText.setFocusable(true);
-            m_editText.setFocusableInTouchMode(true);
+            if (m_editText != null) {
+                m_editText.setFocusable(true);
+                m_editText.setFocusableInTouchMode(true);
+            }
         }
 
         windowFocusChanged(true, getId());
@@ -258,7 +260,8 @@ class QtWindow extends QtLayout implements QtSurfaceInterface {
             m_inputConnectionListener.onEditTextChanged(m_editText);
 
         QtInputDelegate.sendTouchEvent(event, getId());
-        m_gestureDetector.onTouchEvent(event);
+        if (m_gestureDetector != null)
+            m_gestureDetector.onTouchEvent(event);
         return true;
     }
 
@@ -273,6 +276,21 @@ class QtWindow extends QtLayout implements QtSurfaceInterface {
     public boolean onGenericMotionEvent(MotionEvent event)
     {
         return QtInputDelegate.sendGenericMotionEvent(event, getId());
+    }
+
+    @Override
+    protected void onAttachedToWindow()
+    {
+        super.onAttachedToWindow();
+        setOnDragListener(QtDragManager.getInstance());
+    }
+
+    @Override
+    protected void onDetachedFromWindow()
+    {
+        QtDragManager.getInstance().onSourceWindowDetached(this);
+        setOnDragListener(null);
+        super.onDetachedFromWindow();
     }
 
     @UsedFromNativeCode

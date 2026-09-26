@@ -29,6 +29,7 @@
 #include <vector>
 
 #include "base/check_is_test.h"
+#include "base/files/file.h"
 #include "base/files/file_util.h"
 #include "base/format_macros.h"
 #include "base/functional/bind.h"
@@ -99,11 +100,26 @@ base::FilePath DownloadFileDetach(std::unique_ptr<DownloadFile> download_file) {
 
 base::FilePath MakeCopyOfDownloadFile(DownloadFile* download_file) {
   DCHECK(GetDownloadTaskRunner()->RunsTasksInCurrentSequence());
-  base::FilePath temp_file_path;
-  if (!base::CreateTemporaryFile(&temp_file_path))
+  base::FilePath temp_dir;
+  if (!base::GetTempDir(&temp_dir)) {
     return base::FilePath();
+  }
 
-  if (!base::CopyFile(download_file->FullPath(), temp_file_path)) {
+  base::FilePath temp_file_path;
+  base::File temp_file =
+      base::CreateAndOpenTemporaryFileInDir(temp_dir, &temp_file_path);
+  if (!temp_file.IsValid()) {
+    return base::FilePath();
+  }
+
+  base::File source_file(download_file->FullPath(),
+                         base::File::FLAG_OPEN | base::File::FLAG_READ);
+  if (!source_file.IsValid()) {
+    DeleteDownloadedFile(temp_file_path);
+    return base::FilePath();
+  }
+
+  if (!base::CopyFileContents(source_file, temp_file)) {
     DeleteDownloadedFile(temp_file_path);
     return base::FilePath();
   }
@@ -2627,6 +2643,7 @@ void DownloadItemImpl::ResumeInterruptedDownload(
       // There is not enough data for validation, simply overwrites the
       // existing data from the beginning.
       download_params->set_offset(0);
+      download_params->set_hash_state(nullptr);
     }
   }
 

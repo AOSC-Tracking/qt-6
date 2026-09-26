@@ -319,8 +319,11 @@ void V8ConsoleMessage::reportToFrontend(protocol::Runtime::Frontend* frontend,
   // Protect against reentrant debugger calls via interrupts.
   v8::debug::PostponeInterruptsScope no_interrupts(inspector->isolate());
 
+  V8ConsoleMessageStorage* storage =
+      inspector->consoleMessageStorage(contextGroupId);
+  if (!storage) return;
+
   if (m_origin == V8MessageOrigin::kException) {
-    if (!inspector->hasConsoleMessageStorage(contextGroupId)) return;
     v8::HandleScope scope(inspector->isolate());
     auto maybeScriptOrigin =
         v8::debug::GetScriptOrigin(inspector->isolate(), m_scriptId);
@@ -364,7 +367,7 @@ void V8ConsoleMessage::reportToFrontend(protocol::Runtime::Frontend* frontend,
   if (m_origin == V8MessageOrigin::kConsole) {
     std::unique_ptr<protocol::Array<protocol::Runtime::RemoteObject>>
         arguments = wrapArguments(session, generatePreview);
-    if (!inspector->hasConsoleMessageStorage(contextGroupId)) return;
+    if (inspector->consoleMessageStorage(contextGroupId) != storage) return;
     if (!arguments) {
       arguments =
           std::make_unique<protocol::Array<protocol::Runtime::RemoteObject>>();
@@ -460,10 +463,9 @@ std::unique_ptr<V8ConsoleMessage> V8ConsoleMessage::createForConsoleAPI(
   message->m_type = type;
   message->m_contextId = contextId;
   for (v8::Local<v8::Value> arg : arguments) {
-    std::unique_ptr<v8::Global<v8::Value>> argument(
-        new v8::Global<v8::Value>(isolate, arg));
+    auto argument = std::make_shared<v8::Global<v8::Value>>(isolate, arg);
     argument->AnnotateStrongRetainer(kGlobalConsoleMessageHandleLabel);
-    message->m_arguments.push_back(std::move(argument));
+    message->m_arguments.push_back(argument);
     message->m_v8Size += v8::debug::EstimatedValueSize(isolate, arg);
   }
   bool sep = false;
@@ -517,8 +519,7 @@ std::unique_ptr<V8ConsoleMessage> V8ConsoleMessage::createForException(
   if (contextId && !exception.IsEmpty()) {
     consoleMessage->m_contextId = contextId;
     consoleMessage->m_arguments.push_back(
-        std::unique_ptr<v8::Global<v8::Value>>(
-            new v8::Global<v8::Value>(isolate, exception)));
+        std::make_shared<v8::Global<v8::Value>>(isolate, exception));
     consoleMessage->m_v8Size +=
         v8::debug::EstimatedValueSize(isolate, exception);
   }
@@ -539,8 +540,7 @@ void V8ConsoleMessage::contextDestroyed(int contextId) {
   if (contextId != m_contextId) return;
   m_contextId = 0;
   if (m_message.isEmpty()) m_message = "<message collected>";
-  Arguments empty;
-  m_arguments.swap(empty);
+  m_arguments.clear();
   m_v8Size = 0;
 }
 
@@ -587,7 +587,7 @@ void V8ConsoleMessageStorage::addMessage(
           session->consoleAgent()->messageAdded(message.get());
         session->runtimeAgent()->messageAdded(message.get());
       });
-  if (!inspector->hasConsoleMessageStorage(contextGroupId)) return;
+  if (inspector->consoleMessageStorage(contextGroupId) != this) return;
 
   DCHECK(m_messages.size() <= maxConsoleMessageCount);
   if (m_messages.size() == maxConsoleMessageCount) {

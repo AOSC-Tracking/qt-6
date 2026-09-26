@@ -142,6 +142,26 @@ private slots:
                 << "fromAsIdentifier.qml"
                 << "fromAsIdentifier.formatted.qml"
                 << defaultOptions;
+        QTest::newRow("listMisformattedAsProperty")
+                << "listMisformattedAsProperty.qml"
+                << "listMisformattedAsProperty.formatted.qml"
+                << defaultOptions;
+        QTest::newRow("pragmaQmlFileIndents")
+                << "pragmaQmlFileIndents.qml"
+                << "pragmaQmlFileIndents.formatted.qml"
+                << defaultOptions;
+        QTest::newRow("pragmaQmlFileIndents2")
+                << "pragmaQmlFileIndents2.qml"
+                << "pragmaQmlFileIndents2.formatted.qml"
+                << defaultOptions;
+        QTest::newRow("pragmaQmlFileIndents3")
+                << "pragmaQmlFileIndents3.qml"
+                << "pragmaQmlFileIndents3.formatted.qml"
+                << defaultOptions;
+        QTest::newRow("pragmaQmlFileIndents4")
+                << "pragmaQmlFileIndents4.qml"
+                << "pragmaQmlFileIndents4.formatted.qml"
+                << defaultOptions;
     }
 
     void lineByLineReformatter()
@@ -456,6 +476,19 @@ private slots:
         QTest::newRow("commentsOnListReturnType")
                 << u"function a():/*2*/list/*3*/</*4*/Q/*10*/./*11*/W/*12*/./*13*/E/*14*/./*15*/R/*16*/>/*17*/{}"_s
                 << u"function a():/*2*/list/*3*/</*4*/Q/*10*/./*11*/W/*12*/./*13*/E/*14*/./*15*/R/*16*/>/*17*/ {}"_s;
+        QTest::newRow("commentsOnCall1")
+                << u"f/*1*/(/*2*/a/*3*/,/*4*/b/*5*/,/*6*/c/*7*/)"_s
+                << u"f/*1*/(/*2*/a/*3*/,/*4*/b/*5*/,/*6*/c/*7*/)"_s;
+        QTest::newRow("commentsOnCall2")
+                << u"f(a, // 1\n"_s
+                   u"  b, // 2\n"_s
+                   u"  c)"_s
+                << u"f(a, // 1\n"_s
+                   u"  b, // 2\n"_s
+                   u"  c)"_s;
+        QTest::newRow("commentsOnCallWithSpread")
+                << u"f(/*1*/.../*2*/a/*3*/,/*4*/.../*5*/b)"_s
+                << u"f(/*1*/.../*2*/a/*3*/,/*4*/.../*5*/b)"_s;
     }
 
     void typeAnnotations()

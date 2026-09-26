@@ -4,9 +4,9 @@
 #ifndef TIMEFORMATTER_H
 #define TIMEFORMATTER_H
 
-#include <QtCore/qdatetime.h>
-#include <QtGraphs/qvalue3daxisformatter.h>
-#include <QtQml/qqmlregistration.h>
+#include <QDateTime>
+#include <QValue3DAxisFormatter>
+#include <qqmlregistration.h>
 
 class TimeFormatter : public QValue3DAxisFormatter
 {
@@ -34,12 +34,12 @@ public:
     EpochFormat epochFormat() const;
     long long epochOffset() const;
 
-public Q_SLOTS:
+public slots:
     void setSelectionFormat(const QString &format);
     void setEpochFormat(const EpochFormat format);
     void setEpochOffset(const long long origin);
 
-Q_SIGNALS:
+signals:
     void originDateChanged(const QDate &date);
     void selectionFormatChanged(const QString &format);
     void epochFormatChanged(const EpochFormat format);

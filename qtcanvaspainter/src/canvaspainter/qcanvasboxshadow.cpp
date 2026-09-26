@@ -42,7 +42,6 @@ static const float QCPAINTER_BOX_SHADOW_MULTIPLIER = 1.0f;
 */
 
 
-#define B_D() auto *d = static_cast<QCanvasBoxShadowPrivate*>(baseData.get())
 
 /*!
     Constructs a default box shadow.
@@ -66,7 +65,7 @@ QCanvasBoxShadow::QCanvasBoxShadow()
 QCanvasBoxShadow::QCanvasBoxShadow(const QRectF &rect, float radius, float blur, const QColor &color)
     : QCanvasBrush(new QCanvasBoxShadowPrivate)
 {
-    B_D();
+    auto *d = QCanvasBoxShadowPrivate::get(this);
     d->x = float(rect.x());
     d->y = float(rect.y());
     d->width = float(rect.width());
@@ -86,7 +85,7 @@ QCanvasBoxShadow::QCanvasBoxShadow(const QRectF &rect, float radius, float blur,
 QCanvasBoxShadow::QCanvasBoxShadow(float x, float y, float width, float height, float radius, float blur, const QColor &color)
     : QCanvasBrush(new QCanvasBoxShadowPrivate)
 {
-    B_D();
+    auto *d = QCanvasBoxShadowPrivate::get(this);
     d->x = x;
     d->y = y;
     d->width = width;
@@ -220,7 +219,7 @@ QDataStream &operator>>(QDataStream &s, QCanvasBoxShadow &p)
 
 QRectF QCanvasBoxShadow::rect() const
 {
-    B_D();
+    auto *d = QCanvasBoxShadowPrivate::get(this);
     return QRectF(d->x,
                   d->y,
                   d->width,
@@ -241,8 +240,8 @@ QRectF QCanvasBoxShadow::rect() const
 
 void QCanvasBoxShadow::setRect(float x, float y, float width, float height)
 {
-    B_D();
     detach();
+    auto *d = QCanvasBoxShadowPrivate::get(this);
     d->x = x;
     d->y = y;
     d->width = width;
@@ -264,7 +263,7 @@ void QCanvasBoxShadow::setRect(float x, float y, float width, float height)
 
 QRectF QCanvasBoxShadow::boundingRect() const
 {
-    B_D();
+    auto *d = QCanvasBoxShadowPrivate::get(this);
     // Extend the rect with blur, spread and aa
     const float aa = 1.0f;
     const float extend = d->blur + d->spread + aa;
@@ -282,7 +281,7 @@ QRectF QCanvasBoxShadow::boundingRect() const
 
 float QCanvasBoxShadow::radius() const
 {
-    B_D();
+    auto *d = QCanvasBoxShadowPrivate::get(this);
     return d->radius;
 }
 
@@ -293,8 +292,8 @@ float QCanvasBoxShadow::radius() const
 
 void QCanvasBoxShadow::setRadius(float radius)
 {
-    B_D();
     detach();
+    auto *d = QCanvasBoxShadowPrivate::get(this);
     d->radius = radius;
     d->changed = true;
 }
@@ -306,7 +305,7 @@ void QCanvasBoxShadow::setRadius(float radius)
 
 float QCanvasBoxShadow::blur() const
 {
-    B_D();
+    auto *d = QCanvasBoxShadowPrivate::get(this);
     return d->blur;
 }
 
@@ -317,8 +316,8 @@ float QCanvasBoxShadow::blur() const
 
 void QCanvasBoxShadow::setBlur(float blur)
 {
-    B_D();
     detach();
+    auto *d = QCanvasBoxShadowPrivate::get(this);
     d->blur = blur;
     d->changed = true;
 }
@@ -330,7 +329,7 @@ void QCanvasBoxShadow::setBlur(float blur)
 
 float QCanvasBoxShadow::spread() const
 {
-    B_D();
+    auto *d = QCanvasBoxShadowPrivate::get(this);
     return d->spread;
 }
 
@@ -341,8 +340,8 @@ float QCanvasBoxShadow::spread() const
 
 void QCanvasBoxShadow::setSpread(float spread)
 {
-    B_D();
     detach();
+    auto *d = QCanvasBoxShadowPrivate::get(this);
     d->spread = spread;
     d->changed = true;
 }
@@ -354,7 +353,7 @@ void QCanvasBoxShadow::setSpread(float spread)
 
 QColor QCanvasBoxShadow::color() const
 {
-    B_D();
+    auto *d = QCanvasBoxShadowPrivate::get(this);
     return d->color;
 }
 
@@ -365,8 +364,8 @@ QColor QCanvasBoxShadow::color() const
 
 void QCanvasBoxShadow::setColor(const QColor &color)
 {
-    B_D();
     detach();
+    auto *d = QCanvasBoxShadowPrivate::get(this);
     d->color = color;
     d->changed = true;
 }
@@ -380,7 +379,7 @@ void QCanvasBoxShadow::setColor(const QColor &color)
 
 float QCanvasBoxShadow::topLeftRadius() const
 {
-    B_D();
+    auto *d = QCanvasBoxShadowPrivate::get(this);
     return d->topLeftRadius;
 }
 
@@ -393,8 +392,8 @@ float QCanvasBoxShadow::topLeftRadius() const
 
 void QCanvasBoxShadow::setTopLeftRadius(float radius)
 {
-    B_D();
     detach();
+    auto *d = QCanvasBoxShadowPrivate::get(this);
     d->topLeftRadius = radius;
     d->changed = true;
 }
@@ -408,7 +407,7 @@ void QCanvasBoxShadow::setTopLeftRadius(float radius)
 
 float QCanvasBoxShadow::topRightRadius() const
 {
-    B_D();
+    auto *d = QCanvasBoxShadowPrivate::get(this);
     return d->topRightRadius;
 }
 
@@ -421,8 +420,8 @@ float QCanvasBoxShadow::topRightRadius() const
 
 void QCanvasBoxShadow::setTopRightRadius(float radius)
 {
-    B_D();
     detach();
+    auto *d = QCanvasBoxShadowPrivate::get(this);
     d->topRightRadius = radius;
     d->changed = true;
 }
@@ -436,7 +435,7 @@ void QCanvasBoxShadow::setTopRightRadius(float radius)
 
 float QCanvasBoxShadow::bottomLeftRadius() const
 {
-    B_D();
+    auto *d = QCanvasBoxShadowPrivate::get(this);
     return d->bottomLeftRadius;
 }
 
@@ -449,8 +448,8 @@ float QCanvasBoxShadow::bottomLeftRadius() const
 
 void QCanvasBoxShadow::setBottomLeftRadius(float radius)
 {
-    B_D();
     detach();
+    auto *d = QCanvasBoxShadowPrivate::get(this);
     d->bottomLeftRadius = radius;
     d->changed = true;
 }
@@ -464,7 +463,7 @@ void QCanvasBoxShadow::setBottomLeftRadius(float radius)
 
 float QCanvasBoxShadow::bottomRightRadius() const
 {
-    B_D();
+    auto *d = QCanvasBoxShadowPrivate::get(this);
     return d->bottomRightRadius;
 }
 
@@ -477,8 +476,8 @@ float QCanvasBoxShadow::bottomRightRadius() const
 
 void QCanvasBoxShadow::setBottomRightRadius(float radius)
 {
-    B_D();
     detach();
+    auto *d = QCanvasBoxShadowPrivate::get(this);
     d->bottomRightRadius = radius;
     d->changed = true;
 }

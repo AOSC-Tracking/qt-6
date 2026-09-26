@@ -1,5 +1,6 @@
 // Copyright (C) 2022 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+// Qt-Security score:critical reason:data-parser
 
 #include "qbluetoothdeviceinfo.h"
 #include "btledeviceinquiry_p.h"
@@ -84,7 +85,8 @@ AdvertisementData::AdvertisementData(NSDictionary *advertisementData)
     value = [advertisementData objectForKey:CBAdvertisementDataManufacturerDataKey];
     if (value && [value isKindOfClass:[NSData class]]) {
         QByteArray data = QByteArray::fromNSData(static_cast<NSData *>(value));
-        manufacturerData.insert(qFromLittleEndian<quint16>(data.constData()), data.mid(2));
+        if (data.size() >= 2)
+            manufacturerData.insert(qFromLittleEndian<quint16>(data.constData()), data.mid(2));
     }
 }
 

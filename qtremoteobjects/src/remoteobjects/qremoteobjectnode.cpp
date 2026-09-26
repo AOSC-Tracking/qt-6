@@ -99,7 +99,7 @@ struct ManagedTypeEntry
             QMetaType::unregisterMetaType(QMetaType(id));
         else
             fakeClassIdManager()->removeTypeById(id);
-        for (auto enumMetaType : enumMetaTypes)
+        for (auto enumMetaType : std::as_const(enumMetaTypes))
             QMetaType::unregisterMetaType(enumMetaType);
         free(metaObject);
     }
@@ -782,8 +782,8 @@ QRemoteObjectAbstractPersistedStorePrivate::~QRemoteObjectAbstractPersistedStore
 
 QRemoteObjectMetaObjectManager::~QRemoteObjectMetaObjectManager()
 {
-    for (QMetaObject *mo : dynamicTypes) {
-        for (auto metaType : enumTypes[mo])
+    for (QMetaObject *mo : std::as_const(dynamicTypes)) {
+        for (auto metaType : std::as_const(enumTypes[mo]))
             QMetaType::unregisterMetaType(metaType);
         enumTypes.remove(mo);
         free(mo); //QMetaObjectBuilder uses malloc, not new
@@ -968,7 +968,7 @@ QMetaObject *registerGadget(QObject *reference, const GadgetData &gadget, QByteA
     gadgetBuilder.setClassName(typeName);
     gadgetBuilder.setFlags(PropertyAccessInStaticMetaCall);
 
-    auto [enumLookup, enumsToBeAssignedMetaObject] = handleEnums(gadgetBuilder, gadget.enums, typeName);
+    const auto [enumLookup, enumsToBeAssignedMetaObject] = handleEnums(gadgetBuilder, gadget.enums, typeName);
     for (auto metaType : enumLookup)
         entry.enumMetaTypes.append(metaType);
 
@@ -1081,14 +1081,14 @@ registerDefinition(const ClassData &data)
     // that dynamic Sources are being added, we will have registration issues unless we have
     // distinct names for Replicas and Sources.  To not break existing code, we will append
     // "Source" to the type name if it is a Source, but leave Replica class names alone.
-    auto type = data.type + (data.isSource ? "Source" : "");
+    const QByteArray type = data.type + (data.isSource ? "Source" : "");
     QMetaObjectBuilder builder;
     builder.setSuperClass(data.baseMeta);
 
     builder.addClassInfo(QCLASSINFO_REMOTEOBJECT_TYPE, data.type);
     builder.setClassName(type);
 
-    auto [enumLookup, enumsToBeAssignedMetaObject] = handleEnums(builder, data.enums, type);
+    const auto [enumLookup, enumsToBeAssignedMetaObject] = handleEnums(builder, data.enums, type);
 
     for (const auto &signal : data._signals) {
         auto mmb = builder.addSignal(signal.signature);
@@ -1134,7 +1134,7 @@ registerDefinition(const ClassData &data)
 
 QMetaObject *registerAndTrackDefinition(const ClassData &data, QObject *reference)
 {
-    auto [meta, newEnums] = registerDefinition(data);
+    const auto [meta, newEnums] = registerDefinition(data);
     if (reference) {
         ManagedTypeEntry entry;
         auto id = fakeClassIdManager->addTypeName(meta->className());
@@ -1249,8 +1249,6 @@ QMetaObject *QRemoteObjectMetaObjectManager::addDynamicType(QtROIoDeviceBase *co
     classData._slots.reserve(numMethods);
     for (quint32 i = 0; i < numMethods; ++i) {
         ClassSlot classSlot;
-        QByteArray signature, returnType;
-        QByteArrayList paramNames;
         in >> classSlot.signature;
         in >> classSlot.returnType;
         in >> classSlot.parameterNames;
@@ -2440,7 +2438,8 @@ QVariant QRemoteObjectNodePrivate::handlePointerToQObjectProperty(QConnectedRepl
 
 void QRemoteObjectNodePrivate::handlePointerToQObjectProperties(QConnectedReplicaImplementation *rep, QVariantList &properties)
 {
-    for (const int index : rep->childIndices())
+    const auto childIndices = rep->childIndices();
+    for (const int index : childIndices)
         properties[index] = handlePointerToQObjectProperty(rep, index, properties.at(index));
 }
 
@@ -2866,14 +2865,14 @@ ProxyInfo::ProxyInfo(QRemoteObjectNode *node, QRemoteObjectHostBase *parent,
         if (state != QRemoteObjectRegistry::Suspect)
             return;
         // unproxy all objects
-        for (ProxyReplicaInfo* info : proxiedReplicas)
+        for (ProxyReplicaInfo* info : std::as_const(proxiedReplicas))
             disableAndDeleteObject(info);
         proxiedReplicas.clear();
     });
 }
 
 ProxyInfo::~ProxyInfo() {
-    for (ProxyReplicaInfo* info : proxiedReplicas)
+    for (ProxyReplicaInfo* info : std::as_const(proxiedReplicas))
         delete info;
     delete proxyNode;
 }

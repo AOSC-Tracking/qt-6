@@ -260,7 +260,7 @@ struct arabic_shape_plan_t
    * mask_array[NONE] == 0. */
   hb_mask_t mask_array[ARABIC_NUM_FEATURES + 1];
 
-  hb_atomic_t<arabic_fallback_plan_t *> fallback_plan;
+  mutable hb_atomic_t<arabic_fallback_plan_t *> fallback_plan;
 
   unsigned int do_fallback : 1;
   unsigned int has_stch : 1;
@@ -605,7 +605,10 @@ apply_stch (const hb_ot_shape_plan_t *plan HB_UNUSED,
 	unsigned int added_glyphs = 0;
 	if (unlikely (hb_unsigned_mul_overflows (n_copies, n_repeating, &added_glyphs) ||
 		      hb_unsigned_add_overflows (extra_glyphs_needed, added_glyphs, &extra_glyphs_needed)))
+	{
+	  extra_glyphs_needed = UINT_MAX;
 	  break;
+	}
 	DEBUG_MSG (ARABIC, nullptr, "will add extra %u copies of repeating tiles", n_copies);
       }
       else
@@ -677,7 +680,7 @@ postprocess_glyphs_arabic (const hb_ot_shape_plan_t *plan,
 
 /* https://www.unicode.org/reports/tr53/ */
 
-static hb_codepoint_t
+static const hb_codepoint_t
 modifier_combining_marks[] =
 {
   0x0654u, /* ARABIC HAMZA ABOVE */

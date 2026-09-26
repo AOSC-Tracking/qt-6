@@ -964,8 +964,8 @@ MaybeError ValidateComputePassDescriptor(const DeviceBase* device,
 }
 
 MaybeError ValidateQuerySetResolve(const QuerySetBase* querySet,
-                                   uint32_t firstQuery,
-                                   uint32_t queryCount,
+                                   QueryIndex firstQuery,
+                                   QueryIndex queryCount,
                                    const BufferBase* destination,
                                    uint64_t destinationOffset) {
     DAWN_INVALID_IF(firstQuery >= querySet->GetQueryCount(),
@@ -999,34 +999,18 @@ MaybeError ValidateQuerySetResolve(const QuerySetBase* querySet,
 
 MaybeError EncodeTimestampsToNanosecondsConversion(CommandEncoder* encoder,
                                                    QuerySetBase* querySet,
-                                                   uint32_t firstQuery,
-                                                   uint32_t queryCount,
+                                                   QueryIndex firstQuery,
+                                                   QueryIndex queryCount,
                                                    BufferBase* destination,
                                                    uint64_t destinationOffset) {
     DeviceBase* device = encoder->GetDevice();
-
-    // The availability got from query set is a reference to vector<bool>, need to covert
-    // bool to uint32_t due to a user input in pipeline must not contain a bool type in
-    // WGSL.
-    std::vector<uint32_t> availability{querySet->GetQueryAvailability().begin(),
-                                       querySet->GetQueryAvailability().end()};
-
-    // Timestamp availability storage buffer
-    BufferDescriptor availabilityDesc = {};
-    availabilityDesc.usage = wgpu::BufferUsage::Storage | wgpu::BufferUsage::CopyDst;
-    availabilityDesc.size = querySet->GetQueryCount() * sizeof(uint32_t);
-    Ref<BufferBase> availabilityBuffer;
-    DAWN_TRY_ASSIGN(availabilityBuffer, device->CreateBuffer(&availabilityDesc));
-
-    DAWN_TRY(device->GetQueue()->WriteBuffer(availabilityBuffer.Get(), 0, availability.data(),
-                                             availability.size() * sizeof(uint32_t)));
 
     const uint32_t quantization_mask = (device->IsToggleEnabled(Toggle::TimestampQuantization))
                                            ? kTimestampQuantizationMask
                                            : 0xFFFFFFFF;
 
     // Timestamp params uniform buffer
-    TimestampParams params(firstQuery, queryCount, static_cast<uint32_t>(destinationOffset),
+    TimestampParams params(uint32_t{queryCount}, static_cast<uint32_t>(destinationOffset),
                            quantization_mask, device->GetTimestampPeriodInNS());
 
     BufferDescriptor parmsDesc = {};
@@ -1040,11 +1024,11 @@ MaybeError EncodeTimestampsToNanosecondsConversion(CommandEncoder* encoder,
     // In the internal shader to convert timestamps to nanoseconds, we can ensure no uninitialized
     // data will be read and the full buffer range will be filled with valid data.
     if (!destination->IsInitialized() &&
-        destination->IsFullBufferRange(firstQuery, sizeof(uint64_t) * queryCount)) {
+        destination->IsFullBufferRange(uint32_t{firstQuery}, sizeof(uint64_t) * uint32_t{queryCount})) {
         destination->SetInitialized(true);
     }
 
-    return EncodeConvertTimestampsToNanoseconds(encoder, destination, availabilityBuffer.Get(),
+    return EncodeConvertTimestampsToNanoseconds(encoder, uint32_t{queryCount}, destination,
                                                 paramsBuffer.Get());
 }
 
@@ -1230,18 +1214,7 @@ void CommandEncoder::TrackUsedQuerySet(QuerySetBase* querySet) {
     mUsedQuerySets.insert(querySet);
 }
 
-void CommandEncoder::TrackQueryAvailability(QuerySetBase* querySet, uint32_t queryIndex) {
-    DAWN_ASSERT(querySet != nullptr);
-
-    if (GetDevice()->IsValidationEnabled()) {
-        TrackUsedQuerySet(querySet);
-    }
-
-    // Set the query at queryIndex to available for resolving in query set.
-    querySet->SetQueryAvailability(queryIndex, true);
-}
-
-std::vector<IndirectDrawMetadata> CommandEncoder::AcquireIndirectDrawMetadata() {
+ityp::vector<PassIndex, IndirectDrawMetadata> CommandEncoder::AcquireIndirectDrawMetadata() {
     return mEncodingContext.AcquireIndirectDrawMetadata();
 }
 
@@ -1278,19 +1251,14 @@ Ref<ComputePassEncoder> CommandEncoder::BeginComputePass(const ComputePassDescri
 
             if (descriptor->timestampWrites != nullptr) {
                 QuerySetBase* querySet = descriptor->timestampWrites->querySet;
-                uint32_t beginningOfPassWriteIndex =
-                    descriptor->timestampWrites->beginningOfPassWriteIndex;
-                uint32_t endOfPassWriteIndex = descriptor->timestampWrites->endOfPassWriteIndex;
+                QueryIndex beginningOfPassWriteIndex{
+                    descriptor->timestampWrites->beginningOfPassWriteIndex};
+                QueryIndex endOfPassWriteIndex{descriptor->timestampWrites->endOfPassWriteIndex};
 
+                TrackUsedQuerySet(querySet);
                 cmd->timestampWrites.querySet = querySet;
                 cmd->timestampWrites.beginningOfPassWriteIndex = beginningOfPassWriteIndex;
                 cmd->timestampWrites.endOfPassWriteIndex = endOfPassWriteIndex;
-                if (beginningOfPassWriteIndex != wgpu::kQuerySetIndexUndefined) {
-                    TrackQueryAvailability(querySet, beginningOfPassWriteIndex);
-                }
-                if (endOfPassWriteIndex != wgpu::kQuerySetIndexUndefined) {
-                    TrackQueryAvailability(querySet, endOfPassWriteIndex);
-                }
             }
             return {};
         },
@@ -1498,27 +1466,29 @@ Ref<RenderPassEncoder> CommandEncoder::BeginRenderPass(const RenderPassDescripto
             cmd->width = validationState.GetRenderWidth();
             cmd->height = validationState.GetRenderHeight();
 
-            cmd->occlusionQuerySet = descriptor->occlusionQuerySet;
+            if (descriptor->occlusionQuerySet) {
+                TrackUsedQuerySet(descriptor->occlusionQuerySet);
+                cmd->occlusionQuerySet = descriptor->occlusionQuerySet;
+            }
 
             if (descriptor->timestampWrites != nullptr) {
                 QuerySetBase* querySet = descriptor->timestampWrites->querySet;
-                uint32_t beginningOfPassWriteIndex =
-                    descriptor->timestampWrites->beginningOfPassWriteIndex;
-                uint32_t endOfPassWriteIndex = descriptor->timestampWrites->endOfPassWriteIndex;
+                QueryIndex beginningOfPassWriteIndex{
+                    descriptor->timestampWrites->beginningOfPassWriteIndex};
+                QueryIndex endOfPassWriteIndex{descriptor->timestampWrites->endOfPassWriteIndex};
 
+                TrackUsedQuerySet(querySet);
                 cmd->timestampWrites.querySet = querySet;
                 cmd->timestampWrites.beginningOfPassWriteIndex = beginningOfPassWriteIndex;
                 cmd->timestampWrites.endOfPassWriteIndex = endOfPassWriteIndex;
-                if (beginningOfPassWriteIndex != wgpu::kQuerySetIndexUndefined) {
-                    TrackQueryAvailability(querySet, beginningOfPassWriteIndex);
-                    // Track the query availability with true on render pass again for rewrite
-                    // validation and query reset on Vulkan
+
+                // The render pass usage tracker contains data about written queries. This is
+                // necessary on Vulkan to be able to reset queries before the start of render passes
+                // (it can only be done outside of a render pass).
+                if (beginningOfPassWriteIndex != kQuerySetIndexUndefinedTyped) {
                     usageTracker.TrackQueryAvailability(querySet, beginningOfPassWriteIndex);
                 }
-                if (endOfPassWriteIndex != wgpu::kQuerySetIndexUndefined) {
-                    TrackQueryAvailability(querySet, endOfPassWriteIndex);
-                    // Track the query availability with true on render pass again for rewrite
-                    // validation and query reset on Vulkan
+                if (endOfPassWriteIndex != kQuerySetIndexUndefinedTyped) {
                     usageTracker.TrackQueryAvailability(querySet, endOfPassWriteIndex);
                 }
             }
@@ -2103,10 +2073,13 @@ void CommandEncoder::APIPushDebugGroup(StringView groupLabelIn) {
 }
 
 void CommandEncoder::APIResolveQuerySet(QuerySetBase* querySet,
-                                        uint32_t firstQuery,
-                                        uint32_t queryCount,
+                                        uint32_t firstQueryUntyped,
+                                        uint32_t queryCountUntyped,
                                         BufferBase* destination,
                                         uint64_t destinationOffset) {
+    QueryIndex firstQuery{firstQueryUntyped};
+    QueryIndex queryCount{queryCountUntyped};
+
     mEncodingContext.TryEncode(
         this,
         [&](CommandAllocator* allocator) -> MaybeError {
@@ -2118,10 +2091,9 @@ void CommandEncoder::APIResolveQuerySet(QuerySetBase* querySet,
                                                  destinationOffset));
 
                 DAWN_TRY(ValidateCanUseAs(destination, wgpu::BufferUsage::QueryResolve));
-
-                TrackUsedQuerySet(querySet);
             }
 
+            TrackUsedQuerySet(querySet);
             mTopLevelBuffers.insert(destination);
 
             ResolveQuerySetCmd* cmd =
@@ -2176,7 +2148,9 @@ void CommandEncoder::APIWriteBuffer(BufferBase* buffer,
         "encoding %s.WriteBuffer(%s, %u, ..., %u).", this, buffer, bufferOffset, size);
 }
 
-void CommandEncoder::APIWriteTimestamp(QuerySetBase* querySet, uint32_t queryIndex) {
+void CommandEncoder::APIWriteTimestamp(QuerySetBase* querySet, uint32_t queryIndexUntyped) {
+    QueryIndex queryIndex{queryIndexUntyped};
+
     mEncodingContext.TryEncode(
         this,
         [&](CommandAllocator* allocator) -> MaybeError {
@@ -2187,7 +2161,7 @@ void CommandEncoder::APIWriteTimestamp(QuerySetBase* querySet, uint32_t queryInd
                 DAWN_TRY(ValidateTimestampQuery(GetDevice(), querySet, queryIndex));
             }
 
-            TrackQueryAvailability(querySet, queryIndex);
+            TrackUsedQuerySet(querySet);
 
             WriteTimestampCmd* cmd =
                 allocator->Allocate<WriteTimestampCmd>(Command::WriteTimestamp);

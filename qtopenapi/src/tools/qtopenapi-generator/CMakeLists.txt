@@ -83,12 +83,13 @@ if(NOT need_call_maven)
     endforeach()
 endif()
 
+set(cmd_suffix "")
+if(CMAKE_HOST_WIN32)
+    set(cmd_suffix ".cmd")
+endif()
+
 if(need_call_maven)
     message(STATUS "Building the Qt6 Client Code Generator with Maven")
-    set(cmd_suffix "")
-    if(CMAKE_HOST_WIN32)
-        set(cmd_suffix ".cmd")
-    endif()
     set(extra_args "")
     if(NOT QT_FEATURE_developer_build)
         list(APPEND extra_args
@@ -101,6 +102,7 @@ if(need_call_maven)
                 -f "${CMAKE_CURRENT_SOURCE_DIR}/pom.xml" package
                 "-Dqt.build.dir=${CMAKE_CURRENT_BINARY_DIR}/target"
                 "-Drevision=${QT_OPENAPI_GENERATOR_VERSION}"
+                -Dmaven.test.skip=true
         WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
         RESULT_VARIABLE build_plugin_result
         ${extra_args}
@@ -150,3 +152,12 @@ elseif(QT6_INSTALL_LIBEXECS)
 endif()
 
 qt_install(FILES "${QT6_OPENAPI_GENERATOR_CLI}" DESTINATION "${qt_install_libexec_dir}")
+
+add_test(
+    NAME qtopenapi_generator_java_tests
+    COMMAND "${OPENAPI_MAVEN_EXECUTABLE}${cmd_suffix}"
+            -f "${CMAKE_CURRENT_SOURCE_DIR}/pom.xml" test
+            "-Dqt.build.dir=${CMAKE_CURRENT_BINARY_DIR}/target"
+            "-Drevision=${QT_OPENAPI_GENERATOR_VERSION}"
+    WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)

@@ -72,6 +72,9 @@ function(_qt_internal_sbom_serialize_sbom_relationship_entry)
         message(FATAL_ERROR "SBOM_RELATIONSHIP_TYPE is required.")
     endif()
 
+    # Always return a value.
+    set(${arg_OUT_VAR_RELATIONSHIP_STRINGS} "" PARENT_SCOPE)
+
     set(filtered_argn "${ARGN}")
     list(FILTER filtered_argn INCLUDE REGEX "SBOM_RELATIONSHIP_FROM")
     list(LENGTH filtered_argn from_count)
@@ -126,6 +129,20 @@ function(_qt_internal_sbom_serialize_sbom_relationship_entry)
                     "found. Consider limiting the relationship to a non-SPDX SBOM format using "
                     "the SBOM_FORMATS argument.")
             endif()
+
+            # If the FROM target is in an external document that was never declared in the current
+            # SPDX document (e.g. it lives in a CycloneDX-only document), skip this relationship.
+            get_cmake_property(from_external_document_is_known
+                _qt_known_external_documents_${external_reference_from})
+            if(NOT from_external_document_is_known)
+                message(DEBUG
+                    "Skipping SPDX relationship from external target "
+                    "'${arg_SBOM_RELATIONSHIP_FROM}', because its external document reference "
+                    "'${external_reference_from}' was not recorded in the current SPDX document.")
+                set(${arg_OUT_VAR_RELATIONSHIP_STRINGS} "" PARENT_SCOPE)
+                return()
+            endif()
+
             string(APPEND external_reference_from ":")
         else()
             set(external_reference_from "")
@@ -154,6 +171,20 @@ function(_qt_internal_sbom_serialize_sbom_relationship_entry)
                         "found. Consider limiting the relationship to a non-SPDX SBOM format using "
                         "the SBOM_FORMATS argument.")
                 endif()
+
+                # If the target is in an external document that was never declared in the current
+                # SPDX document (e.g. it lives in a CycloneDX-only document), skip this
+                # relationship.
+                get_cmake_property(to_external_document_is_known
+                    _qt_known_external_documents_${external_reference_to})
+                if(NOT to_external_document_is_known)
+                    message(DEBUG
+                        "Skipping SPDX relationship to external target '${relationship_to}', "
+                        "because its external document reference '${external_reference_to}' was "
+                        "not recorded in the current SPDX document.")
+                    continue()
+                endif()
+
                 string(APPEND external_reference_to ":")
             else()
                 set(external_reference_to "")
@@ -190,12 +221,58 @@ function(_qt_internal_sbom_serialize_sbom_relationship_entry)
             set(quote "\"")
         endif()
 
+        # If the FROM target is in an external document that was never declared in the current
+        # CycloneDX document (e.g. it lives in a SPDX-only document), skip this relationship.
+        if(from_is_external)
+            get_target_property(from_bom_serial_number "${arg_SBOM_RELATIONSHIP_FROM}"
+                _qt_sbom_cydx_bom_serial_number_uuid)
+
+            set(from_cydx_document_is_known FALSE)
+            if(from_bom_serial_number)
+                get_cmake_property(from_cydx_document_is_known
+                    _qt_known_external_documents_${from_bom_serial_number}_cydx)
+            endif()
+
+            if(NOT from_cydx_document_is_known)
+                message(DEBUG
+                    "Skipping CycloneDX relationship from external target "
+                    "'${arg_SBOM_RELATIONSHIP_FROM}', because its external document has no recorded "
+                    "CycloneDX bom serial number in the current CycloneDX document.")
+                set(${arg_OUT_VAR_RELATIONSHIP_STRINGS} "" PARENT_SCOPE)
+                return()
+            endif()
+        endif()
+
         set(cydx_relationship_list "")
         foreach(relationship_to IN LISTS arg_SBOM_RELATIONSHIP_TO)
             _qt_internal_sbom_get_spdx_id_for_target_in_relationship(to_spdx_id
                 TARGET "${relationship_to}"
                 OPTION_NAME "SBOM_RELATIONSHIP_TO"
             )
+
+            # If the target is in an external document that was never declared in the current
+            # CycloneDX document (e.g. it lives in a SPDX-only document), skip this relationship.
+            _qt_internal_sbom_is_external_target_dependency("${relationship_to}"
+                OUT_VAR to_is_external
+            )
+            if(to_is_external)
+                get_target_property(to_bom_serial_number "${relationship_to}"
+                    _qt_sbom_cydx_bom_serial_number_uuid)
+
+                set(to_cydx_document_is_known FALSE)
+                if(to_bom_serial_number)
+                    get_cmake_property(to_cydx_document_is_known
+                        _qt_known_external_documents_${to_bom_serial_number}_cydx)
+                endif()
+
+                if(NOT to_cydx_document_is_known)
+                    message(DEBUG
+                        "Skipping CycloneDX relationship to external target '${relationship_to}', "
+                        "because its external document has no recorded CycloneDX bom serial number "
+                        "in the current CycloneDX document.")
+                    continue()
+                endif()
+            endif()
 
             list(APPEND cydx_relationship_list "
 [[${cydx_toml_key}relationships]]
@@ -350,6 +427,7 @@ function(_qt_internal_sbom_serialize_relationship_entries)
     endif()
 
     foreach(entry_idx IN LISTS entry_indices)
+        set(entry_relationship_strings "")
         _qt_internal_sbom_serialize_sbom_relationship_entry(
             ${entry_${entry_idx}_args}
             ${extra_entry_args}
@@ -371,7 +449,9 @@ endfunction()
 # - custom relationship entries
 # - always adds a "contains" relationship to the parent project package
 function(_qt_internal_sbom_handle_target_relationships target)
-    set(opt_args "")
+    set(opt_args
+        NO_DEFAULT_PROJECT_CONTAINS_RELATIONSHIP
+    )
     set(single_args
         SPDX_ID
         PROJECT_SPDX_ID
@@ -446,17 +526,40 @@ function(_qt_internal_sbom_handle_target_relationships target)
         list(APPEND spdx_relationships ${extra_spdx_v2_relationships})
     endif()
 
-    # Add default "contains" spdx relationship to the project package.
-    _qt_internal_sbom_get_current_project_target(project_target)
-    list(PREPEND sbom_relationship_entries
-        SBOM_RELATIONSHIP_ENTRY
-            SBOM_RELATIONSHIP_FROM
-                "${project_target}"
-            SBOM_RELATIONSHIP_TYPE
-                CONTAINS
-            SBOM_RELATIONSHIP_TO
-                "${target}"
+    # Add a default 'project package CONTAINS the target package' spdx relationship, but only for
+    # targets built as part of the project. Skip it for system libraries, system build tools or
+    # when opted out.
+    set(should_add_project_contains_relationship TRUE)
+
+    set(entity_types_without_project_contains
+        SYSTEM_BUILD_TOOL
+        SYSTEM_LIBRARY
     )
+    get_target_property(sbom_entity_type "${target}" _qt_sbom_entity_type)
+    if(NOT sbom_entity_type)
+        message(FATAL_ERROR "Target ${target} does not have a _qt_sbom_entity_type property set.")
+    endif()
+
+    if(sbom_entity_type IN_LIST entity_types_without_project_contains)
+        set(should_add_project_contains_relationship FALSE)
+    endif()
+
+    if(arg_NO_DEFAULT_PROJECT_CONTAINS_RELATIONSHIP)
+        set(should_add_project_contains_relationship FALSE)
+    endif()
+
+    if(should_add_project_contains_relationship)
+        _qt_internal_sbom_get_current_project_target(project_target)
+        list(PREPEND sbom_relationship_entries
+            SBOM_RELATIONSHIP_ENTRY
+                SBOM_RELATIONSHIP_FROM
+                    "${project_target}"
+                SBOM_RELATIONSHIP_TYPE
+                    CONTAINS
+                SBOM_RELATIONSHIP_TO
+                    "${target}"
+        )
+    endif()
 
     set(${arg_OUT_VAR_SBOM_RELATIONSHIP_ENTRIES} "${sbom_relationship_entries}" PARENT_SCOPE)
     set(${arg_OUT_VAR_SPDX_V2_RELATIONSHIPS} "${spdx_relationships}" PARENT_SCOPE)

@@ -189,14 +189,17 @@ angle::Result Image11::recoverFromAssociatedStorage(const gl::Context *context)
 {
     if (mRecoverFromStorage)
     {
-        ANGLE_TRY(createStagingTexture(context));
+        TextureStorage11 *storage = mAssociatedStorage;
+        gl::ImageIndex imageIndex = mAssociatedImageIndex;
+        storage->verifyAssociatedImageValid(imageIndex, this);
+        disassociateStorage();
 
-        mAssociatedStorage->verifyAssociatedImageValid(mAssociatedImageIndex, this);
+        ANGLE_TRY(createStagingTexture(context));
 
         // CopySubResource from the Storage to the Staging texture
         gl::Box region(0, 0, 0, mWidth, mHeight, mDepth);
-        ANGLE_TRY(mAssociatedStorage->copySubresourceLevel(
-            context, mStagingTexture, mStagingSubresource, mAssociatedImageIndex, region));
+        ANGLE_TRY(storage->copySubresourceLevel(context, mStagingTexture, mStagingSubresource,
+                                                imageIndex, region));
         mRecoveredFromStorageCount += 1;
 
         // Reset all the recovery parameters, even if the texture storage association is broken.
@@ -423,9 +426,7 @@ angle::Result Image11::copyFromFramebuffer(const gl::Context *context,
     {
         size_t bufferSize = destFormatInfo.pixelBytes * sourceArea.width * sourceArea.height;
         angle::MemoryBuffer *memoryBuffer = nullptr;
-        result = mRenderer->getScratchMemoryBuffer(context11, bufferSize, &memoryBuffer);
-
-        if (result == angle::Result::Continue)
+        if (context->getZeroFilledBuffer(bufferSize, &memoryBuffer))
         {
             GLuint memoryBufferRowPitch = destFormatInfo.pixelBytes * sourceArea.width;
 
@@ -437,6 +438,10 @@ angle::Result Image11::copyFromFramebuffer(const gl::Context *context,
                                       sourceArea.height, 1, memoryBuffer->data(),
                                       memoryBufferRowPitch, 0, dataOffset, mappedImage.RowPitch,
                                       mappedImage.DepthPitch);
+        }
+        else
+        {
+            result = angle::Result::Stop;
         }
     }
     else

@@ -146,7 +146,8 @@ struct Q_QUICK3DRUNTIMERENDER_EXPORT QSSGRenderLayer : public QSSGRenderNode
 
     enum class DirtyFlag : quint8
     {
-        TreeDirty = 0x1
+        TreeDirty = 0x1,
+        VisibilityDirty = 0x2 // layer's viewport transitioned from hidden to visible
     };
     using FlagT = std::underlying_type_t<DirtyFlag>;
 
@@ -302,7 +303,7 @@ struct Q_QUICK3DRUNTIMERENDER_EXPORT QSSGRenderLayer : public QSSGRenderNode
 
     // Special function(s) for importScene
     void setImportScene(QSSGRenderNode &rootNode);
-    void removeImportScene(QSSGRenderNode &rootNode);
+    void removeImportScene(QSSGRenderNode &importedNode);
 
     [[nodiscard]] bool isMsaaEnabled() const { return antialiasingMode == AAMode::MSAA; }
     [[nodiscard]] bool isSsaaEnabled() const { return antialiasingMode == AAMode::SSAA; }

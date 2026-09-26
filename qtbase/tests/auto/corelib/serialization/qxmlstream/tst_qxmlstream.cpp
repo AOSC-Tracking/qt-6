@@ -646,14 +646,19 @@ private slots:
     void test_fastScanName() const;
 
     void entityExpansionLimit() const;
+    void entityExpansionLimitExternalResolver() const;
+    void externalEntityResolverRecursion() const;
+    void manyAttributes() const;
 
     void tokenErrorHandling_data() const;
     void tokenErrorHandling() const;
     void checkStreamNotationDeclarations() const;
     void checkStreamEntityDeclarations() const;
+    void readElementTextDeepNesting() const;
 
 private:
     static QByteArray readFile(const QString &filename);
+    void entityExpansionLimitImpl(const QString &xml, QXmlStreamEntityResolver *resolver = nullptr) const;
 
     QTemporaryDir m_tempDir;
     TestSuiteHandler m_handler;
@@ -937,7 +942,9 @@ void tst_QXmlStream::testReader_data() const
     const auto fileNames = dir.entryList(QStringList() << "*.xml");
     for (const QString &filename : fileNames) {
         QString reference =  QFileInfo(filename).baseName() + ".ref";
-        QTest::newRow(dir.filePath(filename).toLatin1().data()) << dir.filePath(filename) << dir.filePath(reference);
+        QTest::addRow("data/%s", filename.toLatin1().constData())
+                << dir.filePath(filename)
+                << dir.filePath(reference);
     }
 }
 
@@ -2799,12 +2806,72 @@ void tst_QXmlStream::entityExpansionLimit() const
                                  "<!ENTITY d \"&c;&c;&c;&c;&c;&c;&c;&c;&c;&c;\" >"
                                  "]>"
                                  "<foo>&d;&d;&d;</foo>");
+    entityExpansionLimitImpl(xml);
+}
+
+void tst_QXmlStream::entityExpansionLimitExternalResolver() const
+{
+    const auto xml = u"<?xml version='1.0'?>"
+                      "<foo>&d;&d;&d;</foo>"_s;
+    struct Resolver : QXmlStreamEntityResolver {
+        QString resolveUndeclaredEntity(const QString &name) override {
+            if (name.size() == 1) {
+                switch (name[0].unicode()) {
+                case u'a': return u"0123456789"_s;
+                case u'b': return u"&a;"_s.repeated(10);
+                case u'c': return u"&b;"_s.repeated(10);
+                case u'd': return u"&c;"_s.repeated(10);
+                }
+            }
+            return QString();
+        }
+    };
+
+    Resolver r;
+    entityExpansionLimitImpl(xml, &r);
+}
+
+void tst_QXmlStream::externalEntityResolverRecursion() const
+{
+    const auto xml = u"<?xml version='1.0'?>"
+                      "<foo>&a;</foo>"_s;
+    struct Resolver : QXmlStreamEntityResolver {
+        QString resolveUndeclaredEntity(const QString &name) override {
+            if (name == "a"_L1) {
+                if (++count == 10) // limit recursion in case it's unbounded
+                    return ""_L1;  // QString() would raise an error
+                return u"&a;"_s;
+            }
+            return QString();
+        }
+        int count = 0;
+    };
+
+    Resolver r;
+    QXmlStreamReader reader(xml);
+    reader.setEntityResolver(&r);
+    do {
+        reader.readNext();
+    } while (!reader.atEnd());
+    // QTBUG-147324: Won't Fix.
+    // Recursion is not detected at the QXmlStreamReader level on purpose.
+    QCOMPARE(reader.error(), QXmlStreamReader::NoError);
+    QCOMPARE(r.count, 10);
+}
+
+void tst_QXmlStream::entityExpansionLimitImpl(const QString &xml,
+                                              QXmlStreamEntityResolver *resolver) const
+{
     {
         QXmlStreamReader reader(xml);
+        if (resolver)
+            reader.setEntityResolver(resolver);
         QCOMPARE(reader.entityExpansionLimit(), 4096);
         do {
             reader.readNext();
         } while (!reader.atEnd());
+        if (resolver)
+            QEXPECT_FAIL("", "QTBUG-147323", Continue);
         QCOMPARE(reader.error(), QXmlStreamReader::NotWellFormedError);
     }
 
@@ -2812,21 +2879,91 @@ void tst_QXmlStream::entityExpansionLimit() const
     // with a limit of 9996 chars and pass with 9997
     {
         QXmlStreamReader reader(xml);
+        if (resolver)
+            reader.setEntityResolver(resolver);
         reader.setEntityExpansionLimit(9996);
         do {
             reader.readNext();
         } while (!reader.atEnd());
 
+        if (resolver)
+            QEXPECT_FAIL("", "QTBUG-147323", Continue);
         QCOMPARE(reader.error(), QXmlStreamReader::NotWellFormedError);
     }
     {
         QXmlStreamReader reader(xml);
+        if (resolver)
+            reader.setEntityResolver(resolver);
         reader.setEntityExpansionLimit(9997);
         do {
             reader.readNext();
         } while (!reader.atEnd());
         QCOMPARE(reader.error(), QXmlStreamReader::NoError);
     }
+}
+
+constexpr const char L1NameStartCharsExCOLON[] = {
+    // https://www.w3.org/TR/REC-xml/#NT-NameStartChar - COLON - [#x100-#xEFFFF]:
+    // [A-Z]
+    'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M',
+    'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z',
+    // "_"
+    '_',
+    // [a-z]
+    'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm',
+    'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
+    // [#xC0-#xD6]
+    '\xC0', '\xC1', '\xC2', '\xC3', '\xC4', '\xC5', '\xC6', '\xC7',
+    '\xC8', '\xC9', '\xCA', '\xCB', '\xCC', '\xCD', '\xCE', '\xCF',
+    '\xD0', '\xD1', '\xD2', '\xD3', '\xD4', '\xD5', '\xD6',
+    // [#xD8-#xF6]
+    '\xD8', '\xD9', '\xDA', '\xDB', '\xDC', '\xDD', '\xDE', '\xDF',
+    '\xE0', '\xE1', '\xE2', '\xE3', '\xE4', '\xE5', '\xE6', '\xE7',
+    '\xE8', '\xE9', '\xEA', '\xEB', '\xEC', '\xED', '\xEE', '\xEF',
+    '\xF0', '\xF1', '\xF2', '\xF3', '\xF4', '\xF5', '\xF6',
+    // [#xF8-#x2FF] (truncated to L1 range)
+    '\xF8', '\xF9', '\xFA', '\xFB', '\xFC', '\xFD', '\xFE', '\xFF',
+};
+
+void tst_QXmlStream::manyAttributes() const
+{
+
+    constexpr qsizetype numDigits = sizeof L1NameStartCharsExCOLON;
+    static_assert(numDigits == 115); // FYI
+    constexpr auto numAttributes = numDigits * numDigits * numDigits;
+
+    constexpr auto opening = "<?xml version='1.0'?>\n"
+                             "<e"_L1;
+    constexpr auto closing = "></e>"_L1;
+    char attr[] = { ' ', 'a', 'b', 'c', '=', '"', '"' };
+
+    QString xml;
+    xml.reserve(opening.size() + closing.size() + numAttributes * sizeof attr);
+
+    xml += opening;
+    for (char i : L1NameStartCharsExCOLON) {
+        attr[1] = i;
+        for (char j : L1NameStartCharsExCOLON) {
+            attr[2] = j;
+            for (char k : L1NameStartCharsExCOLON) {
+                attr[3] = k;
+                xml += QLatin1StringView(attr, sizeof attr);
+            }
+        }
+    }
+    xml += closing;
+
+    QXmlStreamReader r(xml);
+    while (!r.atEnd()) {
+        r.readNext();
+        if (!r.isStartElement())
+            continue;
+        QCOMPARE(r.name(), "e"_L1);
+        const auto attrs = r.attributes();
+        QCOMPARE(attrs.size(), numAttributes);
+        return; // success
+    }
+    QFAIL("Did not find expected StartElement");
 }
 
 void tst_QXmlStream::roundTrip() const
@@ -2968,4 +3105,28 @@ void tst_QXmlStream::checkStreamEntityDeclarations() const
         QT_TEST_EQUALITY_OPS(entity, entityDeclarations.at(1), true);
     }
 }
+
+void tst_QXmlStream::readElementTextDeepNesting() const
+{
+    // readElementText(IncludeChildElements) must not recurse per nested element: deep nesting
+    // would otherwise exhaust the stack.
+    constexpr qsizetype depth = 300'000;
+
+    QByteArray xml;
+    xml.reserve(depth * 7 + 8);
+    for (qsizetype i = 0; i < depth; ++i)
+        xml += "<a>";
+    xml += 'x';
+    for (qsizetype i = 0; i < depth; ++i)
+        xml += "</a>";
+
+    QString result;
+    QXmlStreamReader reader(xml);
+    if (reader.readNextStartElement())
+        result = reader.readElementText(QXmlStreamReader::IncludeChildElements);
+    QVERIFY(!reader.hasError());
+
+    QCOMPARE(result, "x"_L1);
+}
+
 #include "tst_qxmlstream.moc"

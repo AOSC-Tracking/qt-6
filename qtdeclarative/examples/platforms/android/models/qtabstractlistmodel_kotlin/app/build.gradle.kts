@@ -1,13 +1,12 @@
 plugins {
     id("com.android.application")
-    id("org.jetbrains.kotlin.android")
     id("org.qtproject.qt.gradleplugin") version "1.+"
 }
 
 //! [build.gradle QtBuild config]
 QtBuild {
     // Relative for Qt (Installer or MaintenanceTool) installations.
-    qtPath = file("../../../../../../../6.11.1")
+    qtPath = file("../../../../../../../6.11.2")
     projectPath = file("../../qtabstractlistmodel")
 }
 //! [build.gradle QtBuild config]

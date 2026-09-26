@@ -610,7 +610,7 @@ class CORE_EXPORT HTMLMediaElement
   media::mojom::blink::MediaPlayerHost& GetMediaPlayerHostRemote();
 
   // media::mojom::MediaPlayer  implementation.
-  void RequestPlay() override;
+  void RequestPlay(bool triggered_by_user) override;
   void RequestPause(bool triggered_by_user) override;
   void RequestSeekForward(base::TimeDelta seek_time) override;
   void RequestSeekBackward(base::TimeDelta seek_time) override;
@@ -781,6 +781,7 @@ class CORE_EXPORT HTMLMediaElement
   double playback_rate_;
   double default_playback_rate_;
   NetworkState network_state_;
+  NetworkState network_state_maximum_;
   ReadyState ready_state_;
   ReadyState ready_state_maximum_;
 

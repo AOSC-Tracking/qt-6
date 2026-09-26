@@ -44,6 +44,8 @@ namespace {
 
 const char kDefaultSrc[] = "default-src";
 const char kScriptSrc[] = "script-src";
+const char kScriptSrcElem[] = "script-src-elem";
+const char kScriptSrcAttr[] = "script-src-attr";
 const char kObjectSrc[] = "object-src";
 const char kFrameSrc[] = "frame-src";
 const char kChildSrc[] = "child-src";
@@ -74,10 +76,6 @@ const char* const kHashSourcePrefixes[] = {
   "'sha384-",
   "'sha512-"
 };
-
-// TODO(karandeepb): This is not the same list as used by the CSP spec. See
-// https://infra.spec.whatwg.org/#ascii-whitespace.
-const char kWhitespaceDelimiters[] = " \t\r\n";
 
 constexpr char kChromeResourcesUrl[] = "chrome://resources";
 
@@ -490,7 +488,8 @@ class ExtensionCSPEnforcer : public CSPEnforcer {
       : CSPEnforcer(std::move(manifest_key),
                     true,
                     base::BindRepeating(&GetSecureDirectiveValues, options)) {
-    secure_directives_.emplace_back(std::vector<std::string>({kScriptSrc}));
+    secure_directives_.emplace_back(std::vector<std::string>(
+        {kScriptSrc, kScriptSrcElem, kScriptSrcAttr, kWorkerSrc, kChildSrc}));
     if (!allow_insecure_object_src)
       secure_directives_.emplace_back(std::vector<std::string>({kObjectSrc}));
   }
@@ -502,7 +501,9 @@ class ExtensionCSPEnforcer : public CSPEnforcer {
   std::string GetDefaultCSPValue(const DirectiveStatus& status) override {
     if (status.Matches(kObjectSrc))
       return kObjectSrcDefaultDirective;
-    DCHECK(status.Matches(kScriptSrc));
+    DCHECK(status.Matches(kScriptSrc) || status.Matches(kScriptSrcElem) ||
+           status.Matches(kScriptSrcAttr) || status.Matches(kWorkerSrc) ||
+           status.Matches(kChildSrc));
     return kScriptSrcDefaultDirective;
   }
 };
@@ -515,7 +516,8 @@ class AppSandboxPageCSPEnforcer : public CSPEnforcer {
                     base::BindRepeating(&GetAppSandboxSecureDirectiveValues)) {
     secure_directives_.emplace_back(
         std::vector<std::string>({kChildSrc, kFrameSrc}));
-    secure_directives_.emplace_back(std::vector<std::string>({kScriptSrc}));
+    secure_directives_.emplace_back(std::vector<std::string>(
+        {kScriptSrc, kScriptSrcElem, kScriptSrcAttr, kWorkerSrc}));
   }
 
   AppSandboxPageCSPEnforcer(const AppSandboxPageCSPEnforcer&) = delete;
@@ -526,7 +528,8 @@ class AppSandboxPageCSPEnforcer : public CSPEnforcer {
   std::string GetDefaultCSPValue(const DirectiveStatus& status) override {
     if (status.Matches(kChildSrc))
       return kAppSandboxSubframeSrcDefaultDirective;
-    DCHECK(status.Matches(kScriptSrc));
+    DCHECK(status.Matches(kScriptSrc) || status.Matches(kScriptSrcElem) ||
+           status.Matches(kScriptSrcAttr) || status.Matches(kWorkerSrc));
     return kAppSandboxScriptSrcDefaultDirective;
   }
 };
@@ -569,7 +572,7 @@ void CSPParser::Parse() {
            policy_, ";", base::TRIM_WHITESPACE, base::SPLIT_WANT_NONEMPTY)) {
     // Get whitespace separated tokens.
     std::vector<std::string_view> tokens = base::SplitStringPiece(
-        directive_str, kWhitespaceDelimiters, base::TRIM_WHITESPACE,
+        directive_str, base::kWhitespaceASCII, base::TRIM_WHITESPACE,
         base::SPLIT_WANT_NONEMPTY);
 
     // |directive_str| is non-empty and has had whitespace trimmed. Hence, it

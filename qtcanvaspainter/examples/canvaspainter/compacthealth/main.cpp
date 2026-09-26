@@ -1,10 +1,12 @@
 // Copyright (C) 2025 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR BSD-3-Clause
 
-#include <QGuiApplication>
-#include <QCommandLineParser>
-#include <QSurfaceFormat>
 #include "mainwindow.h"
+
+#include <QCommandLineParser>
+
+#include <QGuiApplication>
+#include <QSurfaceFormat>
 
 //![main]
 int main(int argc, char *argv[])
@@ -57,10 +59,10 @@ int main(int argc, char *argv[])
     QSurfaceFormat fmt;
     fmt.setDepthBufferSize(24);
     fmt.setStencilBufferSize(8);
-#ifdef Q_OS_MACOS
+#  ifdef Q_OS_MACOS
     fmt.setVersion(4, 1);
     fmt.setProfile(QSurfaceFormat::CoreProfile);
-#endif
+#  endif
     QSurfaceFormat::setDefaultFormat(fmt);
 #endif
 

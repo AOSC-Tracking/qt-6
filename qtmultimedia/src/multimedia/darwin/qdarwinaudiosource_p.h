@@ -62,10 +62,6 @@ private:
     void updateStreamIdle(bool idle) override;
     void stopAudioUnit();
 
-    static OSStatus inputCallback(void *inRefCon, AudioUnitRenderActionFlags *ioActionFlags,
-                                  const AudioTimeStamp *inTimeStamp, UInt32 inBusNumber,
-                                  UInt32 inNumberFrames, AudioBufferList *ioData);
-
     OSStatus processInput(AudioUnitRenderActionFlags *ioActionFlags,
                           const AudioTimeStamp *timeStamp, UInt32 inBusNumber,
                           UInt32 inNumberFrames,
@@ -76,8 +72,7 @@ private:
     OSStatus processAudioCallback(QSpan<const std::byte> inputSpan) noexcept QT_MM_NONBLOCKING;
 
 #ifdef Q_OS_MACOS
-    bool addDisconnectListener(AudioObjectID id);
-    void removeDisconnectListener();
+    bool setDisconnectListener(AudioObjectID id);
 
     QCoreAudioUtils::DeviceDisconnectMonitor m_disconnectMonitor;
     QFuture<void> m_stopOnDisconnected;

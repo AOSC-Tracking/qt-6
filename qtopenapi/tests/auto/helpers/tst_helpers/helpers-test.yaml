@@ -1,0 +1,17 @@
+# Copyright (C) 2026 The Qt Company Ltd.
+# SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+
+openapi: 3.1.0
+info:
+  title: Helpers Test
+  version: 1.0.0
+
+paths: {}
+
+components:
+  schemas:
+    TestEnum:
+      type: string
+      enum:
+        - VALUE_A
+        - VALUE_B

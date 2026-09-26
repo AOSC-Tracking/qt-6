@@ -369,7 +369,6 @@ private:
     {
         const auto &allChildren = allChildrenOfContainer(container);
 
-        QList<DocumentModel::AbstractState *> childStates;
         for (DocumentModel::StateOrTransition *child : std::as_const(allChildren)) {
             if (DocumentModel::State *s = child->asState())
                 return s;
@@ -2315,7 +2314,7 @@ QByteArray QScxmlCompilerPrivate::load(const QString &name, bool *ok)
     QStringList errs;
     const QByteArray result = m_loader->load(name, m_fileName.isEmpty() ?
                               QString() : QFileInfo(m_fileName).path(), &errs);
-    for (const QString &err : errs)
+    for (const QString &err : std::as_const(errs))
         addError(err);
 
     *ok = errs.isEmpty();

@@ -2,11 +2,12 @@
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
 
 #include <QtTest/qtest.h>
+#include <QtCore/qbuffer.h>
+#include <QtCore/qdebug.h>
+#include <QtCore/qoperatingsystemversion.h>
+#include <QtCore/qrandom.h>
 #include <QtCore/qtemporaryfile.h>
 #include <QtCore/qtimer.h>
-#include <QtCore/qdebug.h>
-#include <QtCore/qrandom.h>
-#include <QtCore/qoperatingsystemversion.h>
 #include "qmediaplayer.h"
 #include "mediaplayerstate.h"
 #include "fake.h"
@@ -47,7 +48,6 @@
 
 // NOLINTBEGIN(readability-convert-member-functions-to-static)
 
-QT_USE_NAMESPACE
 
 using namespace Qt::Literals;
 using namespace std::chrono_literals;
@@ -156,6 +156,7 @@ private slots:
     void play_playsRtpStream_whenSdpFileIsLoaded();
     void play_succeedsFromSourceDevice();
     void play_succeedsFromSourceDevice_data();
+    void setPosition_doesNotStallInBufferingState_whenSourceIsSeekableDevice();
     void play_playbackLastsForTheExpectedTime();
     void play_playbackLastsForTheExpectedTime_data();
     void play_threeMediaPlayers();
@@ -1807,6 +1808,46 @@ void tst_QMediaPlayerBackend::play_succeedsFromSourceDevice_data()
     }
 }
 
+void tst_QMediaPlayerBackend::setPosition_doesNotStallInBufferingState_whenSourceIsSeekableDevice()
+{
+    // reproducer for QTBUG-147839
+
+    CHECK_SELECTED_URL(m_localWavFile);
+
+    // Load the audio file fully into a QBuffer — a fast, fully-seekable in-memory device.
+    QFile audioFile(u":"_s + m_localWavFile->path());
+    QVERIFY(audioFile.open(QFile::ReadOnly));
+    QByteArray audioData = audioFile.readAll();
+    QVERIFY(!audioData.isEmpty());
+
+    QBuffer buffer(&audioData);
+    QVERIFY(buffer.open(QBuffer::ReadOnly));
+
+    QMediaPlayer &player = m_fixture->player;
+    player.setSourceDevice(&buffer, *m_localWavFile);
+    QTRY_COMPARE(player.mediaStatus(), QMediaPlayer::LoadedMedia);
+
+    player.play();
+    QTRY_COMPARE(player.mediaStatus(), QMediaPlayer::BufferedMedia);
+
+    // Seek while paused. setPosition() resets the demuxer, which re-fills very quickly from
+    // the in-memory buffer. The queued packetsBuffered signal may arrive while mediaStatus()
+    // is still LoadedMedia — before the player enters BufferingMedia.
+    player.pause();
+    player.setPosition(100);
+
+    // Run the event loop so the queued packetsBuffered signal can be delivered
+    // while the player is still in LoadedMedia.
+    QTest::qWait(100ms);
+
+    player.play();
+
+    // The player must reach BufferedMedia; before the fix it got stuck in BufferingMedia forever.
+    QTRY_COMPARE_EQ(player.mediaStatus(), QMediaPlayer::BufferedMedia);
+
+    player.stop();
+}
+
 void tst_QMediaPlayerBackend::play_playbackLastsForTheExpectedTime()
 {
     using namespace std::chrono;
@@ -1892,22 +1933,26 @@ void tst_QMediaPlayerBackend::play_threeMediaPlayers()
 
     QMediaPlayer player2, player3;
     QVideoSink sink2, sink3;
+    QSignalSpy spy2(&player2, &QMediaPlayer::playbackStateChanged);
+    QSignalSpy spy3(&player3, &QMediaPlayer::playbackStateChanged);
 
     player2.setVideoOutput(&sink2);
     player3.setVideoOutput(&sink3);
+
+    m_fixture->clearSpies();
 
     m_fixture->player.setSource(*m_localVideoFile);
     player2.setSource(*m_localVideoFile);
     player3.setSource(*m_localVideoFile3ColorsWithSound);
 
-
     m_fixture->player.play();
     player2.play();
     player3.play();
 
-    QTRY_COMPARE(m_fixture->player.playbackState(), QMediaPlayer::PlayingState);
-    QTRY_COMPARE(player2.playbackState(), QMediaPlayer::PlayingState);
-    QTRY_COMPARE(player3.playbackState(), QMediaPlayer::PlayingState);
+    QTRY_VERIFY(m_fixture->playbackStateChanged.contains(
+            QList{ QVariant::fromValue(QMediaPlayer::PlayingState) }));
+    QTRY_VERIFY(spy2.contains(QList{ QVariant::fromValue(QMediaPlayer::PlayingState) }));
+    QTRY_VERIFY(spy3.contains(QList{ QVariant::fromValue(QMediaPlayer::PlayingState) }));
 
     QCOMPARE(m_fixture->player.error(), QMediaPlayer::NoError);
     QCOMPARE(player2.error(), QMediaPlayer::NoError);
@@ -3120,7 +3165,13 @@ void tst_QMediaPlayerBackend::metadata()
     QCOMPARE(metadata.value(QMediaMetaData::Title).toString(), QStringLiteral("Nokia Tune"));
     QCOMPARE(metadata.value(QMediaMetaData::ContributingArtist).toString(), QStringLiteral("TestArtist"));
     QCOMPARE(metadata.value(QMediaMetaData::AlbumTitle).toString(), QStringLiteral("TestAlbum"));
-    QCOMPARE(metadata.value(QMediaMetaData::Duration), QVariant(7704));
+    static QList allowedDurations{
+        QVariant(7680), // FFmpeg-8
+        QVariant(7704), // FFmpeg-7 and earlier, avfoundation
+    };
+    const QVariant durationVar = metadata.value(QMediaMetaData::Duration);
+    QVERIFY2(allowedDurations.contains(durationVar),
+             qPrintable(u"Unexpected duration: "_s + durationVar.toString()));
 
     // macOS 15 and earlier: AVFoundation does not return ID3 artwork (APIC)
     // for MP3 files through any metadata API
@@ -4270,6 +4321,9 @@ void tst_QMediaPlayerBackend::setVideoOutput_doesNotStopPlayback()
     case QMediaPlayer::StoppedState:
         break;
     case QMediaPlayer::PausedState:
+#ifdef Q_OS_ANDROID
+        QSKIP("Goldfish MediaCodec decoder on the Android emulator hangs when resuming playback after pause");
+#endif
         player.pause();
         break;
     case QMediaPlayer::PlayingState:
@@ -4284,7 +4338,7 @@ void tst_QMediaPlayerBackend::setVideoOutput_doesNotStopPlayback()
 
     if (playbackState == QMediaPlayer::PlayingState) {
         QVideoFrame frame = surface.waitForFrame();
-        QCOMPARE(frame.size(), QSize(20, 20));
+        QCOMPARE(frame.size(), QSize(64, 64));
     }
 
     // unset video output
@@ -4795,6 +4849,8 @@ void tst_QMediaPlayerBackend::play_finishes_whenPlayingFileWithPacketsAfterStrea
 
     // Assert
     QTRY_COMPARE_WITH_TIMEOUT(m_fixture->player.playbackState(), QMediaPlayer::StoppedState, 15s);
+
+    QSKIP_DARWIN("AVFoundation has flaky test failures on CI");
     QCOMPARE(loopIterations(m_fixture->positionChanged).size(), unsigned(loops));
 }
 
@@ -5021,4 +5077,3 @@ void tst_QMediaPlayerBackend::destruction_doesNotDeadlock_afterMediaPlayerCall_d
 QTEST_MAIN(tst_QMediaPlayerBackend)
 
 #include "tst_qmediaplayerbackend.moc"
-

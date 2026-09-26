@@ -264,15 +264,9 @@ PaintResult PaintLayerPainter::Paint(GraphicsContext& context,
 
   if (((paint_flags & PaintFlag::kPaintingCanvasDrawElement) == 0) &&
       IsA<Element>(object.GetNode()) &&
-      To<Element>(object.GetNode())->IsCanvasOrInCanvasSubtree()) {
-    bool is_outermost_canvas =
-        IsA<HTMLCanvasElement>(object.GetNode()) &&
-        (!object.GetNode()->parentElement() ||
-         !object.GetNode()->parentElement()->IsCanvasOrInCanvasSubtree());
-    if (!is_outermost_canvas) {
-      // This prevents canvas fallback content from being rendered.
-      return kFullyPainted;
-    }
+      To<Element>(object.GetNode())->IsInCanvasSubtree()) {
+    // This prevents canvas fallback content from being rendered.
+    return kFullyPainted;
   }
 
   std::optional<CheckAncestorPositionVisibilityScope>
@@ -392,12 +386,17 @@ PaintResult PaintLayerPainter::Paint(GraphicsContext& context,
         object.FirstFragment().LocalBorderBoxProperties(), paint_layer_,
         DisplayItem::kLayerChunk);
 
+    bool ensure_chunk = false;
     // When a reference filter applies to the layer, ensure a chunk is
     // generated so that the filter paints even if no other content is painted
     // by the layer (see `SVGContainerPainter::Paint`).
     auto* properties = object.FirstFragment().PaintProperties();
-    if (properties && properties->Filter() &&
-        properties->Filter()->HasReferenceFilter()) {
+    ensure_chunk |= properties && properties->Filter() &&
+                    properties->Filter()->HasReferenceFilter();
+    ensure_chunk |= properties && properties->Effect() &&
+                    properties->Effect()->HasReferenceFilter();
+
+    if (ensure_chunk) {
       context.GetPaintController().EnsureChunk();
     }
   }
@@ -460,7 +459,7 @@ PaintResult PaintLayerPainter::Paint(GraphicsContext& context,
     if (const auto* properties = object.FirstFragment().PaintProperties()) {
       if (properties->Mask()) {
         if (object.IsSVGForeignObject()) {
-          SVGMaskPainter::Paint(context, object, object);
+          SVGMaskPainter::Paint(context, object, object, paint_flags);
         } else {
           PaintWithPhase(PaintPhase::kMask, context, paint_flags);
         }

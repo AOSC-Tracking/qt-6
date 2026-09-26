@@ -289,6 +289,21 @@ bool VideoCaptureImpl::ProcessBuffer(
             (media::VideoFrame::NumPlanes(
                  video_frame_init_data.ready_buffer->info->pixel_format) == 3))
             << "Currently, only YUV formats support custom strides.";
+        const auto pixel_format =
+            video_frame_init_data.ready_buffer->info->pixel_format;
+        const auto coded_width =
+            video_frame_init_data.ready_buffer->info->coded_size.width();
+        const auto& strides =
+            video_frame_init_data.ready_buffer->info->strides->stride_by_plane;
+        CHECK_GE(static_cast<size_t>(strides[0]),
+                 media::VideoFrame::RowBytes(media::VideoFrame::Plane::kY,
+                                             pixel_format, coded_width));
+        CHECK_GE(static_cast<size_t>(strides[1]),
+                 media::VideoFrame::RowBytes(media::VideoFrame::Plane::kU,
+                                             pixel_format, coded_width));
+        CHECK_GE(static_cast<size_t>(strides[2]),
+                 media::VideoFrame::RowBytes(media::VideoFrame::Plane::kV,
+                                             pixel_format, coded_width));
         const size_t y_size =
             (media::VideoFrame::Rows(
                  media::VideoFrame::Plane::kY,
@@ -308,6 +323,14 @@ bool VideoCaptureImpl::ProcessBuffer(
         base::span<const uint8_t> data = buffer_context->data();
         auto [y_data, uv_data] = data.split_at(y_size);
         auto [u_data, v_data] = uv_data.split_at(u_size);
+        CHECK_GE(v_data.size(),
+                 (media::VideoFrame::Rows(
+                      media::VideoFrame::Plane::kU,
+                      video_frame_init_data.ready_buffer->info->pixel_format,
+                      video_frame_init_data.ready_buffer->info->coded_size
+                          .height()) *
+                  video_frame_init_data.ready_buffer->info->strides
+                      ->stride_by_plane[2]));
         video_frame_init_data.frame = media::VideoFrame::WrapExternalYuvData(
             video_frame_init_data.ready_buffer->info->pixel_format,
             gfx::Size(video_frame_init_data.ready_buffer->info->coded_size),

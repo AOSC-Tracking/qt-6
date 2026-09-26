@@ -297,6 +297,7 @@ void QQuick3DParticleLineParticle::handleSystemChanged(QQuick3DParticleSystem *s
         value.particleUpdateNode = new LineParticleUpdateNode(system);
         value.particleUpdateNode->m_particle = this;
     }
+    updateNodeLayers();
 }
 
 QSSGRenderGraphObject *QQuick3DParticleLineParticle::LineParticleUpdateNode::updateSpatialNode(QSSGRenderGraphObject *node)
@@ -345,6 +346,7 @@ int QQuick3DParticleLineParticle::nextCurrentIndex(const QQuick3DParticleEmitter
         perEmitter.emitter = emitter;
         perEmitter.particleUpdateNode->m_particle = this;
         perEmitter.emitterIndex = m_nextEmitterIndex++;
+        updateNodeLayers();
     }
     int index = QQuick3DParticleSpriteParticle::nextCurrentIndex(emitter);
     clearSegment(index);
@@ -579,7 +581,7 @@ void QQuick3DParticleLineParticle::updateLineBuffer(LineParticleUpdateNode *upda
     }
 
     float time = system()->currentTime() * 0.001f;
-    for (const FadeOutLineData &fdata : m_fadeOutData) {
+    for (const FadeOutLineData &fdata : std::as_const(m_fadeOutData)) {
         if (fdata.emitterIndex == perEmitter.emitterIndex) {
             float factor = 1.0f - (time - fdata.beginTime) * fdata.timeFactor;
             genLine(fdata.endPoint, fdata.header, fdata.lineData.data(), bounds, segments,

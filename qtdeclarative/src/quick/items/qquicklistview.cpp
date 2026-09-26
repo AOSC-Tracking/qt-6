@@ -155,6 +155,8 @@ public:
     bool inFlickCorrection : 1;
     bool wantedMousePress : 1;
 
+    int snapResizeTargetIndex = -1;
+
     QQuickListViewPrivate()
         : orient(QQuickListView::Vertical)
         , visiblePos(0)
@@ -1647,6 +1649,7 @@ void QQuickListViewPrivate::fixupPosition()
         fixupY();
     else
         fixupX();
+    snapResizeTargetIndex = -1;
 }
 
 void QQuickListViewPrivate::fixup(AxisData &data, qreal minExtent, qreal maxExtent)
@@ -1741,8 +1744,16 @@ void QQuickListViewPrivate::fixup(AxisData &data, qreal minExtent, qreal maxExte
         if (strictHighlightRange)
             updateHighlight();
 
-        FxViewItem *topItem = snapItemAt(tempPosition + snapOffset + highlightRangeStart);
-        FxViewItem *bottomItem = snapItemAt(tempPosition + snapOffset + highlightRangeEnd);
+        FxViewItem *topItem = nullptr;
+        FxViewItem *bottomItem = nullptr;
+        if (snapResizeTargetIndex >= 0) {
+            topItem = visibleItem(snapResizeTargetIndex);
+            bottomItem = topItem;
+        }
+        if (!topItem)
+            topItem = snapItemAt(tempPosition + snapOffset + highlightRangeStart);
+        if (!bottomItem)
+            bottomItem = snapItemAt(tempPosition + snapOffset + highlightRangeEnd);
         if (strictHighlightRange && currentItem) {
             // StrictlyEnforceRange always keeps an item in range
             if (!topItem || (topItem->index != currentIndex && fixupMode == Immediate))
@@ -2095,7 +2106,8 @@ QQuickItemViewAttached *QQuickListViewPrivate::getAttachedObject(const QObject *
     \codeline
     \snippet qml/listview/listview.qml classdocs simple
 
-    \image listview-simple.png
+    \image listview-simple.png {ListView showing three contacts with
+           names and phone numbers}
 
     Here, the ListView creates a \c ContactModel component for its model, and a \l Text item
     for its delegate. The view will create a new \l Text component for each item in the model. Notice
@@ -2105,7 +2117,8 @@ QQuickItemViewAttached *QQuickListViewPrivate::getAttachedObject(const QObject *
     into a separate \c contactDelegate component.
 
     \snippet qml/listview/listview.qml classdocs advanced
-    \image listview-highlight.png
+    \image listview-highlight.png {ListView with styled contact items
+           and blue highlight on current selection}
 
     The currently selected item is highlighted with a blue \l Rectangle using the \l highlight property,
     and \c focus is set to \c true to enable keyboard navigation for the list view.
@@ -2175,17 +2188,21 @@ QQuickItemViewAttached *QQuickListViewPrivate::getAttachedObject(const QObject *
             \b ListViews with Qt.Vertical orientation
     \row
         \li Top to bottom
-            \image listview-layout-toptobottom.png
+            \image listview-layout-toptobottom.png {Vertical list with
+                   items 0-4 arranged from top to bottom}
         \li Bottom to top
-            \image listview-layout-bottomtotop.png
+            \image listview-layout-bottomtotop.png {Vertical list with
+                   items 0-4 arranged from bottom to top}
     \header
         \li {2, 1}
             \b ListViews with Qt.Horizontal orientation
     \row
         \li Left to right
-            \image listview-layout-lefttoright.png
+            \image listview-layout-lefttoright.png {Horizontal list with
+                   items 0-4 arranged from left to right}
         \li Right to left
-            \image listview-layout-righttoleft.png
+            \image listview-layout-righttoleft.png {Horizontal list with
+                   items 0-4 arranged from right to left}
     \endtable
 
     \section1 Flickable Direction
@@ -2678,9 +2695,11 @@ void QQuickListView::setSpacing(qreal spacing)
     \value ListView.Horizontal  Items are laid out horizontally
     \br
     \inlineimage ListViewHorizontal.png
+        {Three contact cards arranged horizontally: Bill Smith, John Brown, Sam Wise}
     \value ListView.Vertical    (default) Items are laid out vertically
     \br
     \inlineimage listview-highlight.png
+        {Three contact cards stacked vertically: Bill Smith, John Brown, Sam Wise}
 
     \sa {Flickable Direction}
 */
@@ -2899,7 +2918,8 @@ void QQuickListView::setOrientation(QQuickListView::Orientation orientation)
 
     \snippet views/listview/sections.qml 0
 
-    \image qml-listview-sections-example.png
+    \image qml-listview-sections-example.png {ListView with items grouped
+           into sections with light blue header bars}
 
     \note Adding sections to a ListView does not automatically re-order the
     list items by the section criteria.
@@ -3675,6 +3695,26 @@ void QQuickListView::geometryChange(const QRectF &newGeometry, const QRectF &old
         qreal dy = newGeometry.height() - oldGeometry.height();
         setContentY(contentY() - dy);
     }
+
+    // When view-relative delegates resize, the content position becomes
+    // stale and fixup() snaps to the wrong item. Record the current snap
+    // target here; fixup() will use it instead of snapItemAt().
+    // StrictlyEnforceRange is excluded — its fixup() path already forces
+    // currentItem as the snap target.
+    const bool vertical = (d->orient == QQuickListView::Vertical);
+    const qreal oldSize = vertical ? oldGeometry.height() : oldGeometry.width();
+    const qreal newSize = vertical ? newGeometry.height() : newGeometry.width();
+
+    if (d->snapMode == QQuickListView::SnapOneItem
+        && !(d->haveHighlightRange && d->highlightRange == QQuickListView::StrictlyEnforceRange)
+        && !d->visibleItems.isEmpty() && !qFuzzyCompare(oldSize, newSize) && oldSize > 0) {
+        qreal viewPos = d->isContentFlowReversed() ? -d->position() - d->size() : d->position();
+        if (FxViewItem *snapped = d->snapItemAt(viewPos)) {
+            if (snapped->index >= 0)
+                d->snapResizeTargetIndex = snapped->index;
+        }
+    }
+
     QQuickItemView::geometryChange(newGeometry, oldGeometry);
 }
 

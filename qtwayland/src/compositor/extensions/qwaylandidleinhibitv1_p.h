@@ -1,5 +1,6 @@
 // Copyright (C) 2019 Pier Luigi Fiorini <pierluigi.fiorini@gmail.com>
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:critical reason:network-protocol
 
 #ifndef QWAYLANDIDLEINHIBITV1_P_H
 #define QWAYLANDIDLEINHIBITV1_P_H

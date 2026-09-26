@@ -247,14 +247,12 @@ qt_config_compile_test(glibc
 int main() {}"
 )
 
-# glibc 2.34, for _FORTIFY_SOURCE == 3
-qt_config_compile_test(glibc_234
-    LABEL "Using Glibc >= 2.34"
+# glibc 2.34 and gcc >= 12 or clang >= 9, for _FORTIFY_SOURCE=3
+qt_config_compile_test(glibc_fortify_source_3
+    LABEL "_FORTIFY_SOURCE=3 support"
+    COMPILE_OPTIONS "-Werror=cpp -D_FORTIFY_SOURCE=3"
     CODE
 "#include <features.h>
-#if !defined(__GLIBC__) || !__GLIBC_PREREQ(2, 34)
-#error
-#endif
 int main() {}"
 )
 
@@ -706,7 +704,7 @@ qt_feature_config("framework" QMAKE_PUBLIC_CONFIG
 )
 qt_feature("largefile"
     LABEL "Large file support"
-    CONDITION NOT ANDROID AND NOT INTEGRITY AND NOT rtems
+    CONDITION NOT INTEGRITY AND NOT rtems
 )
 qt_feature_definition("largefile" "QT_LARGEFILE_SUPPORT" VALUE "64")
 qt_feature_config("largefile" QMAKE_PRIVATE_CONFIG)
@@ -1237,9 +1235,9 @@ qt_feature("intelcet" PRIVATE
 )
 qt_feature_config("intelcet" QMAKE_PUBLIC_CONFIG)
 qt_feature("glibc_fortify_source" PRIVATE
-    LABEL "Using Glibc function fortification"
+    LABEL "Using Glibc function fortification level 3, if it's supported, otherwise level 2"
     AUTODETECT ON
-    CONDITION TEST_glibc
+    CONDITION TEST_glibc_fortify_source_3 OR TEST_glibc
 )
 qt_feature_config("glibc_fortify_source" QMAKE_PUBLIC_CONFIG)
 qt_feature("trivial_auto_var_init_pattern" PRIVATE
@@ -1310,6 +1308,7 @@ qt_feature("coverage"
 # in the public qconfig.h header in a patch release.
 qt_feature("android_16kb_pages" PRIVATE
     LABEL "Using 16KB page sizes in Android"
+    PURPOSE "Build Android binaries aligned to 16 KB pages."
     CONDITION ANDROID AND (((CMAKE_ANDROID_NDK_VERSION VERSION_GREATER_EQUAL "25.0.0"))
                           AND ((CMAKE_ANDROID_ARCH_ABI STREQUAL "arm64-v8a") OR
                               (CMAKE_ANDROID_ARCH_ABI STREQUAL "x86_64")))
@@ -1450,7 +1449,12 @@ qt_configure_end_summary_section() # end of "Qt modules and options" section
 qt_configure_add_summary_section(NAME "Support enabled for")
 qt_configure_add_summary_entry(ARGS "pkg-config")
 
-if(QT_USE_VCPKG AND (DEFINED ENV{VCPKG_ROOT} OR VCPKG_TARGET_TRIPLET))
+if(QT_USE_VCPKG
+        AND (
+            (DEFINED ENV{VCPKG_ROOT} AND EXISTS "$ENV{VCPKG_ROOT}")
+            OR VCPKG_TARGET_TRIPLET
+        )
+    )
     set(_vcpkg_entry_message "yes")
 else()
     set(_vcpkg_entry_message "no")

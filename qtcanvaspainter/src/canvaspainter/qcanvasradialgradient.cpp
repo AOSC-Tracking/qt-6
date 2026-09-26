@@ -40,7 +40,6 @@ QT_BEGIN_NAMESPACE
     \endtable
 */
 
-#define G_D() auto *d = QCanvasGradientPrivate::get(this)
 #define DECONST(d) const_cast<QCanvasRadialGradientPrivate *>(d)
 
 class QCanvasRadialGradientPrivate : public QCanvasGradientPrivate
@@ -68,7 +67,7 @@ public:
 QCanvasRadialGradient::QCanvasRadialGradient()
     : QCanvasGradient(new QCanvasRadialGradientPrivate)
 {
-    G_D();
+    auto *d = QCanvasGradientPrivate::get(this);
     d->data.radial.cx = 0.0f;
     d->data.radial.cy = 0.0f;
     d->data.radial.oRadius = 100.0f;
@@ -86,7 +85,7 @@ QCanvasRadialGradient::QCanvasRadialGradient()
 QCanvasRadialGradient::QCanvasRadialGradient(float centerX, float centerY, float outerRadius, float innerRadius)
     : QCanvasGradient(new QCanvasRadialGradientPrivate)
 {
-    G_D();
+    auto *d = QCanvasGradientPrivate::get(this);
     d->data.radial.cx = centerX;
     d->data.radial.cy = centerY;
     d->data.radial.oRadius = outerRadius;
@@ -104,7 +103,7 @@ QCanvasRadialGradient::QCanvasRadialGradient(float centerX, float centerY, float
 QCanvasRadialGradient::QCanvasRadialGradient(QPointF center, float outerRadius, float innerRadius)
     : QCanvasGradient(new QCanvasRadialGradientPrivate)
 {
-    G_D();
+    auto *d = QCanvasGradientPrivate::get(this);
     d->data.radial.cx = float(center.x());
     d->data.radial.cy = float(center.y());
     d->data.radial.oRadius = outerRadius;
@@ -121,7 +120,7 @@ QCanvasRadialGradient::~QCanvasRadialGradient()
 
 QPointF QCanvasRadialGradient::centerPosition() const
 {
-    G_D();
+    auto *d = QCanvasGradientPrivate::get(this);
     return QPointF(d->data.radial.cx,
                    d->data.radial.cy);
 }
@@ -132,8 +131,8 @@ QPointF QCanvasRadialGradient::centerPosition() const
 
 void QCanvasRadialGradient::setCenterPosition(float x, float y)
 {
-    G_D();
     detach();
+    auto *d = QCanvasGradientPrivate::get(this);
     d->data.radial.cx = x;
     d->data.radial.cy = y;
     d->dirty |= QCanvasGradientPrivate::DirtyFlag::Values;
@@ -153,7 +152,7 @@ void QCanvasRadialGradient::setCenterPosition(float x, float y)
 
 float QCanvasRadialGradient::outerRadius() const
 {
-    G_D();
+    auto *d = QCanvasGradientPrivate::get(this);
     return d->data.radial.oRadius;
 }
 
@@ -164,8 +163,8 @@ float QCanvasRadialGradient::outerRadius() const
 
 void QCanvasRadialGradient::setOuterRadius(float radius)
 {
-    G_D();
     detach();
+    auto *d = QCanvasGradientPrivate::get(this);
     d->data.radial.oRadius = radius;
     d->dirty |= QCanvasGradientPrivate::DirtyFlag::Values;
 }
@@ -177,7 +176,7 @@ void QCanvasRadialGradient::setOuterRadius(float radius)
 
 float QCanvasRadialGradient::innerRadius() const
 {
-    G_D();
+    auto *d = QCanvasGradientPrivate::get(this);
     return d->data.radial.iRadius;
 }
 
@@ -190,8 +189,8 @@ float QCanvasRadialGradient::innerRadius() const
 
 void QCanvasRadialGradient::setInnerRadius(float radius)
 {
-    G_D();
     detach();
+    auto *d = QCanvasGradientPrivate::get(this);
     d->data.radial.iRadius = radius;
     d->dirty |= QCanvasGradientPrivate::DirtyFlag::Values;
 }
@@ -259,7 +258,6 @@ void QCanvasRadialGradientPrivate::createRadialGradient(const QColor &iColor, co
     }
 }
 
-#undef G_D
 #undef DECONST
 
 QT_END_NAMESPACE

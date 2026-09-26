@@ -31,6 +31,8 @@
 #include <vector>
 
 #include "absl/container/flat_hash_set.h"
+#include "dawn/common/ityp_vector.h"
+#include "dawn/native/IntegerTypes.h"
 #include "dawn/native/SubresourceStorage.h"
 #include "dawn/native/dawn_platform.h"
 
@@ -98,11 +100,11 @@ struct ComputePassResourceUsage {
 struct RenderPassResourceUsage : public SyncScopeResourceUsage {
     // Storage to track the occlusion queries used during the pass.
     std::vector<QuerySetBase*> querySets;
-    std::vector<std::vector<bool>> queryAvailabilities;
+    std::vector<ityp::vector<QueryIndex, bool>> queryAvailabilities;
 };
 
-using RenderPassUsages = std::vector<RenderPassResourceUsage>;
-using ComputePassUsages = std::vector<ComputePassResourceUsage>;
+using RenderPassUsages = ityp::vector<PassIndex, RenderPassResourceUsage>;
+using ComputePassUsages = ityp::vector<PassIndex, ComputePassResourceUsage>;
 
 // Contains a hierarchy of "ResourceUsage" that mirrors the hierarchy of the CommandBuffer and
 // is used for validation and to produce barriers and lazy clears in the backends.

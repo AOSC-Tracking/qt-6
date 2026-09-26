@@ -1044,13 +1044,6 @@
       }
     },
     {
-      name: "ComputePressureOwnContributionEstimate",
-      status: {
-        "Android": "",
-        "default": "experimental",
-      }
-    },
-    {
       // Fix for https://crbug.com/40659076. When enabled, queryCommandState for
       // 'subscript' or 'superscript' with a caret selection will consider
       // ancestor <sub> or <sup> elements, matching the behavior for range
@@ -2191,6 +2184,13 @@
       status: "stable",
     },
     {
+      // Consumes user activation when showing a picker via input.click() for
+      // file and color inputs to match input.showPicker() and avoid issues
+      // with multiple pickers trying to open at the same time.
+      name: "FileColorPickerConsumeActivation",
+      status: "stable",
+    },
+    {
       // Also enabled when blink::features::kFileHandlingAPI is overridden
       // on the command line (or via chrome://flags).
       name: "FileHandling",
@@ -2338,6 +2338,17 @@
       // https://github.com/WICG/turtledove/blob/main/PA_real_time_monitoring.md
       name: "FledgeRealTimeReporting",
       public: true,
+      status: "stable",
+    },
+    {
+      // Prevents the change event from being fired within
+      // HTMLFieldSetElement::ChildrenChanged because we aren't supposed to
+      // fire events during mutations like that.
+      // https://issues.chromium.org/issues/523756329
+      // https://issues.chromium.org/issues/523748081
+      // https://issues.chromium.org/issues/523737685
+      // Enabled in 151, safe to remove in 153.
+      name: "DisableFormControlChangeEventDuringMutation",
       status: "stable",
     },
     {
@@ -2527,6 +2538,10 @@
     {
       name: "GetUserMediaEchoCancellationModes",
       status: "experimental",
+    },
+    {
+      name: "GraphemeClusterBoundsCheck",
+      status: "stable",
     },
     {
       name: "GroupEffect",
@@ -3363,6 +3378,15 @@
       status: "stable",
     },
     {
+      // Makes option elements match :enabled or :disabled based on whether
+      // their ancestor select element is disabled.
+      // https://github.com/w3c/csswg-drafts/issues/13383
+      // https://issues.chromium.org/issues/490082172
+      // Enabled in M149, modified in M151, safe to remove in M153.
+      name: "OptionDisablednessCheckAncestors",
+      status: "stable",
+    },
+    {
       name: "OrientationEvent",
       // status: {"Android": "stable"},
     },
@@ -3881,7 +3905,7 @@
       status: "stable",
     },
     {
-      // Shipping in M148, so should be removed around M150.
+      // Shipping in M148, revised in M151, so should be removed around M153.
       name: "RecheckParentDuringNodeVectorInsertion",
       status: "stable",
     },
@@ -5442,12 +5466,6 @@
       origin_trial_os: ["android"],
       origin_trial_allows_third_party: true,
     },
-    // Enables providing a URL to retrieve a WebAuthn challenge.
-    // https://chromestatus.com/feature/5109012922892288
-    {
-      name: "WebAuthenticationChallengeUrl",
-      status: "experimental",
-    },
     // https://w3c.github.io/webauthn/#dom-clientcapability-conditionalcreate
     {
       name: "WebAuthenticationConditionalCreate",
@@ -5657,6 +5675,14 @@
     {
       name: "WebPrinting",
       status: "test",
+    },
+    {
+      // Restricts the sharing of SerialPort instances across different V8
+      // worlds (e.g., main world and isolated worlds) to prevent cross-world
+      // leaks.
+      name: "WebSerialWorldIsolatedCache",
+      status: "stable",
+      base_feature: "none",
     },
     // WebShare is enabled by default on Android (non-WebView), Win, ChromeOS, and Mac.
     // This is done in chrome/renderer/chrome_content_renderer_client.cc to prevent

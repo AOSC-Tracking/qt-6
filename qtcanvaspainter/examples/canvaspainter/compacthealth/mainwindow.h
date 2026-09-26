@@ -4,15 +4,17 @@
 #ifndef MAINWINDOW_H
 #define MAINWINDOW_H
 
-#include "painterwindow.h"
-#include <QtCanvasPainter/QCanvasPainter>
-#include <QtCanvasPainter/QCanvasImage>
-#include <QtCanvasPainter/QCanvasPath>
-#include <QTimer>
-#include <QElapsedTimer>
-
 #include "ecggraph.h"
+#include "painterwindow.h"
 #include "theme.h"
+
+#include <QElapsedTimer>
+#include <QFont>
+#include <QSet>
+#include <QTimer>
+
+#include <QCanvasImage>
+#include <QCanvasPath>
 
 class MainWindow : public PainterWindow
 {
@@ -93,7 +95,8 @@ private:
     float m_sliderMarginBottom = 0;
     int m_selectedButton = 0;
 
-    struct View {
+    struct View
+    {
         QRectF rect;
         QString title;
         bool fillBackground = true;

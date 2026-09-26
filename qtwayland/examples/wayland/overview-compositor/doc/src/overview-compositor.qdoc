@@ -12,7 +12,8 @@
  * Overview Compositor demonstrates selecting and activating an application
  * from a grid of currently connected clients.
  *
- * \image overview-compositor.jpg
+ * \image overview-compositor.jpg {Compositor window with grid of client
+ *        applications for selection}
  *
  * For an introduction to the basic principles of creating a \l{Qt Wayland Compositor} with Qt,
  * see the \l{Minimal QML}{Minimal QML example}.

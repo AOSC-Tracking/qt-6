@@ -13,6 +13,7 @@
 #include "qcanvasgridpattern.h"
 #include "qcanvasimagepattern.h"
 #include "qcanvasimage.h"
+#include "qcanvascustombrush.h"
 
 class tst_QCanvasBrush : public QObject
 {
@@ -26,6 +27,7 @@ private slots:
     void testTypes();
     void testQVariantConversion();
     void testGradientStops();
+    void testCopyIsolation();
 };
 
 void tst_QCanvasBrush::testEqual()
@@ -383,6 +385,258 @@ void tst_QCanvasBrush::testGradientStops()
     QCOMPARE(lg.stops().size(), 3);
     lg.setStops({});
     QCOMPARE(lg.stops().size(), 0);
+}
+
+void tst_QCanvasBrush::testCopyIsolation()
+{
+    // Verify that modifying a copy does not affect the original (copy-on-write isolation).
+    // Each setter on implicitly-shared types must call detach() before accessing the private data.
+
+    // QCanvasBoxShadow
+    {
+        QCanvasBoxShadow a(10, 20, 30, 40, 2, 5, QColorConstants::Red);
+        a.setSpread(7);
+        a.setTopLeftRadius(1);
+        a.setTopRightRadius(2);
+        a.setBottomLeftRadius(3);
+        a.setBottomRightRadius(4);
+
+        QCanvasBoxShadow b = a;
+        QCOMPARE(a, b);
+
+        b.setRect(1, 2, 3, 4);
+        QCOMPARE(a.rect(), QRectF(10, 20, 30, 40));
+        QCOMPARE(b.rect(), QRectF(1, 2, 3, 4));
+
+        b.setRadius(99);
+        QCOMPARE(a.radius(), 2.0f);
+        QCOMPARE(b.radius(), 99.0f);
+
+        b.setBlur(99);
+        QCOMPARE(a.blur(), 5.0f);
+        QCOMPARE(b.blur(), 99.0f);
+
+        b.setSpread(99);
+        QCOMPARE(a.spread(), 7.0f);
+        QCOMPARE(b.spread(), 99.0f);
+
+        b.setColor(QColorConstants::Blue);
+        QCOMPARE(a.color(), QColorConstants::Red);
+        QCOMPARE(b.color(), QColorConstants::Blue);
+
+        b.setTopLeftRadius(99);
+        QCOMPARE(a.topLeftRadius(), 1.0f);
+        QCOMPARE(b.topLeftRadius(), 99.0f);
+
+        b.setTopRightRadius(99);
+        QCOMPARE(a.topRightRadius(), 2.0f);
+        QCOMPARE(b.topRightRadius(), 99.0f);
+
+        b.setBottomLeftRadius(99);
+        QCOMPARE(a.bottomLeftRadius(), 3.0f);
+        QCOMPARE(b.bottomLeftRadius(), 99.0f);
+
+        b.setBottomRightRadius(99);
+        QCOMPARE(a.bottomRightRadius(), 4.0f);
+        QCOMPARE(b.bottomRightRadius(), 99.0f);
+    }
+
+    // QCanvasGridPattern
+    {
+        QCanvasGridPattern a(10, 20, 30, 40, QColorConstants::Red, QColorConstants::Blue);
+        a.setLineWidth(3.0f);
+        a.setFeather(2.0f);
+        a.setRotation(0.5f);
+
+        QCanvasGridPattern b = a;
+        QCOMPARE(a, b);
+
+        b.setStartPosition(1, 2);
+        QCOMPARE(a.startPosition(), QPointF(10, 20));
+        QCOMPARE(b.startPosition(), QPointF(1, 2));
+
+        b.setCellSize(5, 6);
+        QCOMPARE(a.cellSize(), QSizeF(30, 40));
+        QCOMPARE(b.cellSize(), QSizeF(5, 6));
+
+        b.setLineWidth(99);
+        QCOMPARE(a.lineWidth(), 3.0f);
+        QCOMPARE(b.lineWidth(), 99.0f);
+
+        b.setFeather(99);
+        QCOMPARE(a.feather(), 2.0f);
+        QCOMPARE(b.feather(), 99.0f);
+
+        b.setRotation(9.9f);
+        QCOMPARE(a.rotation(), 0.5f);
+        QCOMPARE(b.rotation(), 9.9f);
+
+        b.setLineColor(QColorConstants::Green);
+        QCOMPARE(a.lineColor(), QColorConstants::Red);
+        QCOMPARE(b.lineColor(), QColorConstants::Green);
+
+        b.setBackgroundColor(QColorConstants::Yellow);
+        QCOMPARE(a.backgroundColor(), QColorConstants::Blue);
+        QCOMPARE(b.backgroundColor(), QColorConstants::Yellow);
+    }
+
+    // QCanvasImagePattern
+    {
+        QCanvasImagePattern a;
+        a.setStartPosition(10, 20);
+        a.setImageSize(30, 40);
+        a.setRotation(0.5f);
+        a.setTintColor(QColorConstants::Red);
+
+        QCanvasImagePattern b = a;
+        QCOMPARE(a, b);
+
+        b.setStartPosition(1, 2);
+        QCOMPARE(a.startPosition(), QPointF(10, 20));
+        QCOMPARE(b.startPosition(), QPointF(1, 2));
+
+        b.setImageSize(3, 4);
+        QCOMPARE(a.imageSize(), QSizeF(30, 40));
+        QCOMPARE(b.imageSize(), QSizeF(3, 4));
+
+        b.setRotation(9.9f);
+        QCOMPARE(a.rotation(), 0.5f);
+        QCOMPARE(b.rotation(), 9.9f);
+
+        b.setTintColor(QColorConstants::Blue);
+        QCOMPARE(a.tintColor(), QColorConstants::Red);
+        QCOMPARE(b.tintColor(), QColorConstants::Blue);
+    }
+
+    // QCanvasCustomBrush
+    {
+        QCanvasCustomBrush a;
+        const QCanvasCustomBrush snapshot = a;
+
+        QCanvasCustomBrush b = a;
+        b.setTimeRunning(true);
+        QVERIFY(!a.timeRunning());
+        QVERIFY(b.timeRunning());
+
+        // setData1-4 have no individual getters; verify isolation via equality
+        b = a;
+        b.setData1(QVector4D(1, 2, 3, 4));
+        QCOMPARE(a, snapshot);
+        QVERIFY(a != b);
+
+        b = a;
+        b.setData2(QVector4D(1, 2, 3, 4));
+        QCOMPARE(a, snapshot);
+        QVERIFY(a != b);
+
+        b = a;
+        b.setData3(QVector4D(1, 2, 3, 4));
+        QCOMPARE(a, snapshot);
+        QVERIFY(a != b);
+
+        b = a;
+        b.setData4(QVector4D(1, 2, 3, 4));
+        QCOMPARE(a, snapshot);
+        QVERIFY(a != b);
+    }
+
+    // QCanvasLinearGradient
+    {
+        QCanvasLinearGradient a(10, 20, 30, 40);
+        a.setStartColor(QColorConstants::Red);
+        a.setEndColor(QColorConstants::Blue);
+
+        QCanvasLinearGradient b = a;
+        QCOMPARE(a, b);
+
+        b.setStartPosition(1, 2);
+        QCOMPARE(a.startPosition(), QPointF(10, 20));
+        QCOMPARE(b.startPosition(), QPointF(1, 2));
+
+        b.setEndPosition(3, 4);
+        QCOMPARE(a.endPosition(), QPointF(30, 40));
+        QCOMPARE(b.endPosition(), QPointF(3, 4));
+
+        b.setStartColor(QColorConstants::Green);
+        QCOMPARE(a.startColor(), QColorConstants::Red);
+        QCOMPARE(b.startColor(), QColorConstants::Green);
+
+        b.setStops({});
+        QCOMPARE(a.stops().size(), 2);
+        QCOMPARE(b.stops().size(), 0);
+
+        b = a;
+        b.setColorAt(0.5f, QColorConstants::Black);
+        QCOMPARE(a.stops().size(), 2);
+        QCOMPARE(b.stops().size(), 3);
+    }
+
+    // QCanvasRadialGradient
+    {
+        QCanvasRadialGradient a(50, 60, 80, 40);
+        a.setStartColor(QColorConstants::Red);
+
+        QCanvasRadialGradient b = a;
+        QCOMPARE(a, b);
+
+        b.setCenterPosition(1, 2);
+        QCOMPARE(a.centerPosition(), QPointF(50, 60));
+        QCOMPARE(b.centerPosition(), QPointF(1, 2));
+
+        b.setOuterRadius(99);
+        QCOMPARE(a.outerRadius(), 80.0f);
+        QCOMPARE(b.outerRadius(), 99.0f);
+
+        b.setInnerRadius(99);
+        QCOMPARE(a.innerRadius(), 40.0f);
+        QCOMPARE(b.innerRadius(), 99.0f);
+    }
+
+    // QCanvasConicalGradient
+    {
+        QCanvasConicalGradient a(10, 20, float(M_PI));
+        a.setStartColor(QColorConstants::Red);
+
+        QCanvasConicalGradient b = a;
+        QCOMPARE(a, b);
+
+        b.setCenterPosition(1, 2);
+        QCOMPARE(a.centerPosition(), QPointF(10, 20));
+        QCOMPARE(b.centerPosition(), QPointF(1, 2));
+
+        b.setAngle(0);
+        QCOMPARE(a.angle(), float(M_PI));
+        QCOMPARE(b.angle(), 0.0f);
+
+        b.setEndColor(QColorConstants::Blue);
+        QCOMPARE(a.endColor(), QColorConstants::Red);
+        QCOMPARE(b.endColor(), QColorConstants::Blue);
+    }
+
+    // QCanvasBoxGradient
+    {
+        QCanvasBoxGradient a(10, 20, 30, 40, 5, 2);
+        a.setStartColor(QColorConstants::Red);
+
+        QCanvasBoxGradient b = a;
+        QCOMPARE(a, b);
+
+        b.setRect(1, 2, 3, 4);
+        QCOMPARE(a.rect(), QRectF(10, 20, 30, 40));
+        QCOMPARE(b.rect(), QRectF(1, 2, 3, 4));
+
+        b.setFeather(99);
+        QCOMPARE(a.feather(), 5.0f);
+        QCOMPARE(b.feather(), 99.0f);
+
+        b.setRadius(99);
+        QCOMPARE(a.radius(), 2.0f);
+        QCOMPARE(b.radius(), 99.0f);
+
+        b.setStartColor(QColorConstants::Green);
+        QCOMPARE(a.startColor(), QColorConstants::Red);
+        QCOMPARE(b.startColor(), QColorConstants::Green);
+    }
 }
 
 QTEST_MAIN(tst_QCanvasBrush)

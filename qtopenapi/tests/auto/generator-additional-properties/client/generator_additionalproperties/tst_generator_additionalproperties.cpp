@@ -4,9 +4,9 @@
 #include "qoaicommonglobal.h"
 #include "qoaihttprequest.h"
 
-#include "client1/client/addproptestapi.h"
-#include "client1/client/addpropmyenum.h"
-#include "client1/client/addpropsignals.h"
+#include "client1/client/testapi.h"
+#include "client1/client/myenum.h"
+#include "client1/client/signals.h"
 
 #include "client2/client/addprop2testapi.h"
 #include "client2/client/addprop2myenum.h"
@@ -64,7 +64,7 @@ void tst_GeneratorAdditionalProperties::initTestCase()
         // give the process some time to properly start up the server
         QThread::currentThread()->msleep(1000);
     }
-    client1ApiContent = readFileContent(QFINDTESTDATA("client1/client/addproptestapi.h"_L1));
+    client1ApiContent = readFileContent(QFINDTESTDATA("client1/client/testapi.h"_L1));
     client2ApiContent = readFileContent(QFINDTESTDATA("client2/client/addprop2testapi.h"_L1));
 }
 
@@ -83,20 +83,20 @@ void tst_GeneratorAdditionalProperties::addDownloadProgress()
     QVERIFY(!filePath.isEmpty());
     const QtOpenApiCommon::QOAIHttpFileElement file(filePath);
 
-    AddPropNamespace::AddPropTestApi api;
+    AddPropNamespace::TestApi api;
 
-    connect(&api, &AddPropNamespace::AddPropTestApi::roundtripFinished,
+    connect(&api, &AddPropNamespace::TestApi::roundtripFinished,
             this, [&](const QtOpenApiCommon::QOAIHttpFileElement &) {
                 done = true;
             });
 
-    connect(&api, &AddPropNamespace::AddPropTestApi::roundtripErrorOccurred,
+    connect(&api, &AddPropNamespace::TestApi::roundtripErrorOccurred,
             this, [&](QNetworkReply::NetworkError errType, const QString &errStr) {
                 done = false;
                 qCritical() << errType << errStr;
             });
 
-    connect(&api, &AddPropNamespace::AddPropTestApi::roundtripProgress,
+    connect(&api, &AddPropNamespace::TestApi::roundtripProgress,
             this, [&](qint64 bytesReceived, qint64 bytesTotal) {
                 progressReceived = true;
                 lastTotal = bytesTotal;
@@ -117,26 +117,26 @@ void tst_GeneratorAdditionalProperties::ensureUniqueParamsTest()
 {
     // Although the 'testUniqueParams' operation defines two parameters with the same name in the
     // spec, the generator creates unique parameter names because 'ensureUniqueParams' is true.
-    AddPropNamespace::AddPropTestApi api;
+    AddPropNamespace::TestApi api;
     QTest::ignoreMessage(QtWarningMsg, warningMsg);
     api.testUniqueParams(2, "id2"_L1);
 }
 
 void tst_GeneratorAdditionalProperties::enumUnknownDefaultCase()
 {
-    AddPropNamespace::AddPropTestApi api;
+    AddPropNamespace::TestApi api;
     AddPropNamespace2::AddProp2TestApi api2;
     bool done = false;
 
     // enumUnknownDefaultCase=false
     api.getEnumValue(this, [&](const QRestReply &reply,
-                               const AddPropNamespace::AddPropMyEnum &enumValue) {
+                               const AddPropNamespace::MyEnum &enumValue) {
         if (!(done = reply.isSuccess())) {
             qWarning() << "ERROR: " << reply.errorString() << reply.error();
             return;
         }
         QCOMPARE(enumValue.getValue(),
-                 AddPropNamespace::AddPropMyEnum::eAddPropMyEnum::INVALID_VALUE_OPENAPI_GENERATED);
+                 AddPropNamespace::MyEnum::eMyEnum::INVALID_VALUE_OPENAPI_GENERATED);
     });
 
     QTRY_COMPARE_EQ(done, true);
@@ -180,8 +180,8 @@ void tst_GeneratorAdditionalProperties::allowUnicodeIdentifiers()
     // Enum values containing unicode characters are always sanitized.
     // regardless of the allowUnicodeIdentifiers generator option value.
     // 'statЄus1Я' from the spec is sanitized to S_AT_US1_.
-    QVERIFY(AddPropNamespace::AddPropMyEnum::eAddPropMyEnum::S_AT_US1_ !=
-            AddPropNamespace::AddPropMyEnum::eAddPropMyEnum::INVALID_VALUE_OPENAPI_GENERATED);
+    QVERIFY(AddPropNamespace::MyEnum::eMyEnum::S_AT_US1_ !=
+            AddPropNamespace::MyEnum::eMyEnum::INVALID_VALUE_OPENAPI_GENERATED);
 
     // Server URL is never sanitized regardless of allowUnicodeIdentifiers value.
     const auto configs = api.serverConfigurations("getPrice"_L1);
@@ -202,15 +202,15 @@ void tst_GeneratorAdditionalProperties::reservedWordPrefix()
     // client1: default value of reservedWordPrefix is "r_"
     QVERIFY(client1ApiContent.contains("r_class"_L1));
     QVERIFY(client1ApiContent.contains("r_nullptr"_L1));
-    AddPropNamespace::AddPropTestApi api;
+    AddPropNamespace::TestApi api;
     QTest::ignoreMessage(QtWarningMsg, warningMsg);
     api.r_class(QString("r_nullptr parameter"));
 
-    AddPropNamespace::AddPropSignals s1;
+    AddPropNamespace::Signals s1;
     s1.setRSlots("slots model property"_L1);
     s1.setRInline("nullptr model property"_L1);
     const QString client1SignalsContent =
-            readFileContent(QFINDTESTDATA("client1/client/addpropsignals.h"_L1));
+            readFileContent(QFINDTESTDATA("client1/client/signals.h"_L1));
     QVERIFY(client1SignalsContent.contains("r_inline"_L1));
     QVERIFY(client1SignalsContent.contains("r_slots"_L1));
 
@@ -237,7 +237,7 @@ void tst_GeneratorAdditionalProperties::sortParamsByRequiredFlag()
     const QtOpenApiCommon::OptionalParameter<QString> opt1("optional argument 1"_L1);
 
     // sortParamsByRequiredFlag=true
-    AddPropNamespace::AddPropTestApi api;
+    AddPropNamespace::TestApi api;
     QTest::ignoreMessage(QtWarningMsg, warningMsg);
     api.sortParams(req1, req2, opt1);
 
@@ -251,7 +251,7 @@ void tst_GeneratorAdditionalProperties::sortParamsByRequiredFlag()
 
 void tst_GeneratorAdditionalProperties::sortModelPropertiesByRequiredFlag()
 {
-    const QString clt1SortModelContent = readFileContent("client1/client/addpropsortmodel.h"_L1);
+    const QString clt1SortModelContent = readFileContent("client1/client/sortmodel.h"_L1);
     QVERIFY(clt1SortModelContent.indexOf("m_req1") <  clt1SortModelContent.indexOf("m_req2"));
     QVERIFY(clt1SortModelContent.indexOf("m_req2") < clt1SortModelContent.indexOf("m_opt1"));
 
@@ -265,8 +265,8 @@ void tst_GeneratorAdditionalProperties::prependFormOrBodyParameters()
     QString queryParam("myqueryParam"_L1);
 
     // prependFormOrBodyParameters=false
-    AddPropNamespace::AddPropTestApi api;
-    AddPropNamespace::AddPropPrependBodyParam_request myBodyRequest;
+    AddPropNamespace::TestApi api;
+    AddPropNamespace::PrependBodyParam_request myBodyRequest;
     myBodyRequest.setBodyParam("myBodyRequest"_L1);
     QTest::ignoreMessage(QtWarningMsg, warningMsg);
     api.prependBodyParam(queryParam, myBodyRequest); // query first, body second

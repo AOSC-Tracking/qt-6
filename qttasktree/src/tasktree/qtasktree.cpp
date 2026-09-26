@@ -1249,7 +1249,7 @@ namespace QtTaskTree {
     The limit is equal to the ideal number of threads excluding the
     calling thread.
 
-    This is a shortcut to:
+    This is equivalent to:
     \code
         ParallelLimit(qMax(QThread::idealThreadCount() - 1, 1))
     \endcode
@@ -2612,8 +2612,8 @@ GroupItem::GroupItem(std::initializer_list<GroupItem> children)
     addChildren(children);
 }
 
-GroupItem::GroupItem(const Iterator &loop)
-    : GroupItem(GroupData{{}, {}, {}, loop})
+GroupItem::GroupItem(const Iterator &iterator)
+    : GroupItem(GroupData{{}, {}, {}, iterator})
 {}
 
 GroupItem::GroupItem()
@@ -2687,7 +2687,7 @@ void GroupItem::addChildren(const GroupItems &children)
             }
             if (child.d->m_groupData.m_iterator) {
                 QT_TASKTREE_ASSERT(!d->m_groupData.m_iterator,
-                          qWarning("Group loop redefinition, overriding..."));
+                          qWarning("Group iterator redefinition, overriding..."));
                 d->m_groupData.m_iterator = child.d->m_groupData.m_iterator;
             }
             break;
@@ -2698,7 +2698,7 @@ void GroupItem::addChildren(const GroupItems &children)
             break;
         case Type::Storage:
             // Check for duplicates, as can't have the same storage twice on the same level.
-            for (const StorageBase &storage : child.d->m_storageList) {
+            for (const StorageBase &storage : std::as_const(child.d->m_storageList)) {
                 if (d->m_storageList.contains(storage)) {
                     QT_TASKTREE_ASSERT(false, qWarning("Can't add the same storage into one Group twice, "
                                               "skipping..."));
@@ -2868,6 +2868,8 @@ Group operator!(const ExecutableItem &item)
     };
 }
 
+// AXIVION DISABLE Style Qt-Generic-NoOverloadedOperators: Works in short-circuiting fashion when the recipe is executed
+
 /*!
     \fn Group ExecutableItem::operator&&(const ExecutableItem &first, const ExecutableItem &second)
 
@@ -2967,6 +2969,8 @@ Group operator||(const ExecutableItem &item, DoneResult result)
 {
     return { result == DoneResult::Error ? stopOnError : finishAllAndSuccess, item };
 }
+
+// AXIVION ENABLE Style Qt-Generic-NoOverloadedOperators
 
 /*!
     \fn template <typename ObjectSignalGetter> Group ExecutableItem::withCancel(ObjectSignalGetter &&getter, std::initializer_list<GroupItem> postCancelRecipe = {}) const
@@ -3410,10 +3414,10 @@ void ExecutionContextActivator::activateTaskTree(RuntimeContainer *container)
 
 void ExecutionContextActivator::activateContext(RuntimeIteration *iteration)
 {
-    std::optional<Iterator> loop = iteration->iterator();
-    if (loop) {
-        loop->d->threadData().pushIteration(iteration->m_iterationIndex);
-        m_activeIterators.append(*loop);
+    const std::optional<Iterator> it = iteration->iterator();
+    if (it) {
+        it->d->threadData().pushIteration(iteration->m_iterationIndex);
+        m_activeIterators.append(*it);
     }
     activateContext(iteration->m_container);
 }
@@ -3725,11 +3729,11 @@ bool QTaskTreePrivate::invokeDoneHandler(RuntimeContainer *container, DoneWith d
 bool QTaskTreePrivate::invokeIteratorHandler(RuntimeContainer *container)
 {
     if (container->m_shouldIterate) {
-        const IteratorPrivate *loopData = container->m_containerNode.m_iterator->d.get();
-        if (loopData->m_loopCount) {
-            container->m_shouldIterate = container->m_iterationCount < loopData->m_loopCount;
-        } else if (loopData->m_condition) {
-            container->m_shouldIterate = invokeHandler(container, loopData->m_condition,
+        const IteratorPrivate *p = container->m_containerNode.m_iterator->d.get();
+        if (p->m_loopCount) {
+            container->m_shouldIterate = container->m_iterationCount < p->m_loopCount;
+        } else if (p->m_condition) {
+            container->m_shouldIterate = invokeHandler(container, p->m_condition,
                                                        container->m_iterationCount);
         }
     }
@@ -4158,6 +4162,15 @@ void QTaskInterface::reportDone(DoneResult result)
     Q_EMIT done(result, QPrivateSignal());
 }
 
+/*!
+    \fn void QTaskInterface::done(QtTaskTree::DoneResult result)
+
+    This signal is emitted when reportDone() is called, passing the \a result
+    of the task execution.
+
+    \sa reportDone()
+*/
+
 /*! \reimp */
 bool QTaskInterface::event(QEvent *event)
 {
@@ -4382,6 +4395,7 @@ DoneWith QTaskTree::runBlocking()
 {
     DoneWith doneWith = DoneWith::Cancel;
     QEventLoop loop;
+    // AXIVION Next Line Qt-LambdaInConnect: It's guaranteed &doneWith is still alive when the context object &loop is alive
     connect(this, &QTaskTree::done, &loop, [&loop, &doneWith](DoneWith result) {
         doneWith = result;
         // Otherwise, the tasks from inside the running tree that were deleteLater()
@@ -4409,6 +4423,7 @@ DoneWith QTaskTree::runBlocking(const QFuture<void> &future)
 
     DoneWith doneWith = DoneWith::Cancel;
     QEventLoop loop;
+    // AXIVION Next Line Qt-LambdaInConnect: It's guaranteed &doneWith is still alive when the context object &loop is alive
     connect(this, &QTaskTree::done, &loop, [&loop, &doneWith](DoneWith result) {
         doneWith = result;
         // Otherwise, the tasks from inside the running tree that were deleteLater()

@@ -241,13 +241,10 @@ struct QCContext {
     QCVertices vertices;
     // Currently active path, so paths[pathsCount - 1]
     QCPath *currentPath = nullptr;
-    // Currently prepared painter path.
-    // Means that current commands & commandsData are from this path.
-    const QCanvasPath *preparedPath = nullptr;
-    // Transform which was used for preparedPainterPath
+    // Transform which was used for the prepared path
     QTransform preparedPathTransform;
-    QHash<QCanvasPath *, QCCachedPath> cachedFillPaths;
-    QHash<QCanvasPath *, QCCachedPath> cachedStrokePaths;
+    QHash<uint, QCCachedPath> cachedFillPaths;
+    QHash<uint, QCCachedPath> cachedStrokePaths;
     QList<QCState> states;
     QRectF view;
     QRectF bounds;
@@ -270,6 +267,9 @@ struct QCContext {
     int fontId;
     float fontAlphaMin;
     float fontAlphaMax;
+    // Currently prepared painter path.
+    // Means that current commands & commandsData are from this path.
+    uint preparedPathSerial = 0;
     int preparedPathIterations = -1;
     int preparedPathCommandsCount = 0;
     bool customMatrixValid;

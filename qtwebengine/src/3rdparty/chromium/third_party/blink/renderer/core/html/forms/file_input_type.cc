@@ -183,6 +183,9 @@ void FileInputType::HandleDOMActivateEvent(Event& event) {
         mojom::ConsoleMessageLevel::kWarning, message));
     return;
   }
+  if (RuntimeEnabledFeatures::FileColorPickerConsumeActivationEnabled()) {
+    LocalFrame::ConsumeTransientUserActivation(document.GetFrame());
+  }
 
   OpenPopupView();
   event.SetDefaultHandled();
@@ -413,7 +416,7 @@ Node* FileInputType::FileStatusElement() const {
   return GetElement().EnsureShadowSubtree()->lastChild();
 }
 
-void FileInputType::DisabledAttributeChanged() {
+void FileInputType::DisabledAttributeChanged(DisabledChangedReason reason) {
   if (Element* button = UploadButton()) {
     button->SetBooleanAttribute(html_names::kDisabledAttr,
                                 GetElement().IsDisabledFormControl());

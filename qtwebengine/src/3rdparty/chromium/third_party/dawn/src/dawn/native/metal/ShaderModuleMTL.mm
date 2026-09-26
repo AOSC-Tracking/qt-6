@@ -373,6 +373,9 @@ ResultOrError<CacheResult<MslCompilation>> TranslateToMSL(
         device->IsToggleEnabled(Toggle::EnableIntegerRangeAnalysisInRobustness);
     req.tintOptions.use_argument_buffers = useArgumentBuffers;
     req.tintOptions.group_to_argument_buffer_info = std::move(argumentBufferInfo);
+    req.tintOptions.collapse_subgroup_min_max =
+        device->IsToggleEnabled(Toggle::CollapseSubgroupMinMax);
+    req.tintOptions.fix_u32_div_mod = device->IsToggleEnabled(Toggle::MetalFixU32DivMod);
 
     req.limits = LimitsForCompilationRequest::Create(device->GetLimits().v1);
     req.adapterSupportedLimits = UnsafeUnserializedValue(

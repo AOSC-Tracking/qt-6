@@ -54,7 +54,9 @@
  * designated for a specialized application with the id "1337", and a right area which is for all
  * other applications.
  *
- * \image ivi-compositor-1.png
+ * \image ivi-compositor-1.png {Compositor window split horizontally with
+ *        left area for application ID "1337" and right area for other
+ *        applications}
  *
  * \section2 Creating the Layout
  *
@@ -75,12 +77,14 @@
  * \c{-platform wayland}, it will be delegated to the right-hand side of the layout, granted that
  * its ID is different from "1337".
  *
- * \image ivi-compositor-2.png
+ * \image ivi-compositor-2.png {Compositor window with label and text field
+ *        on the right side}
  *
  * However, if we set the \c{QT_IVI_SURFACE_ID} environment variable to "1337" before starting
  * the example, it will be delegated to the left-hand side of the layout.
  *
- * \image ivi-compositor-3.png
+ * \image ivi-compositor-3.png {Compositor window with label and text field
+ *        on the left side}
  *
  * When a client connects to the \c IVIApplication interface, it will emit the \c{iviSurfaceCreated}
  * signal. This is where the positioning of the application's surface is handled.

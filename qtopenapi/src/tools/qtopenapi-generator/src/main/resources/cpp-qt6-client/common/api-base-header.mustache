@@ -180,6 +180,11 @@ public:
     {{prefix}}BaseApi() : {{prefix}}BaseApi(nullptr) {}
     explicit {{prefix}}BaseApi(QObject *parent);
     ~{{prefix}}BaseApi() override;
+{{!
+    The names of all public Q_SLOTS and protected methods in this class must be
+    listed in CppQt6ClientGenerator.apiReservedOperationNames() so the generator
+    can escape operationIds that would clash with them.
+}}
 public Q_SLOTS:
     QList<QString> operations() const;
     QList<{{prefix}}ServerConfiguration> serverConfigurations(const QString &operation) const;

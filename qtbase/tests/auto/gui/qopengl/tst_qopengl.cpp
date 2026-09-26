@@ -1790,6 +1790,9 @@ void tst_QOpenGL::dontCrashOnInvalidContextThreadTeardown()
 // that the user's FBO is still bound.
 void tst_QOpenGL::makeCurrentAfterResizeWithNonDefaultFBOBound()
 {
+    if (QGuiApplication::platformName().startsWith(QLatin1String("wayland"), Qt::CaseInsensitive))
+        QSKIP("Wayland: fails has no empty window is shown on Wayland.");
+
     class FBOWindow : public QWindow
     {
     public:
@@ -1811,6 +1814,9 @@ void tst_QOpenGL::makeCurrentAfterResizeWithNonDefaultFBOBound()
 
         void exposeEvent(QExposeEvent *) override
         {
+            if (!fbo)
+                return; // macOS 26.0-26.4 might send expose during makeCurrent
+
             ++paintCount;
 
             // If FBO was bound in a previous frame we shouldn't crash

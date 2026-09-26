@@ -63,7 +63,8 @@ TextEdit {
 }
     \endqml
 
-    \image declarative-textedit.gif
+    \image declarative-textedit.gif {"Hello World!" text editing
+           demonstration}
 
     Setting \l {Item::focus}{focus} to \c true enables the TextEdit item to receive keyboard focus.
 
@@ -447,7 +448,8 @@ QString QQuickTextEdit::preeditText() const
     \row
     \li
     \snippet qml/text/textEditFormats.qml 0
-    \li \image declarative-textformat.png
+    \li \image declarative-textformat.png {Multiple text format display
+               examples: AutoText, HTML, plain, and Markdown}
     \endtable
 
     With \c TextEdit.MarkdownText, checkboxes that result from using the
@@ -819,6 +821,7 @@ void QQuickTextEdit::setHAlign(HAlignment align)
         d->updateDefaultTextOption();
         updateSize();
         updateWholeDocument();
+        moveCursorDelegate();
     }
 }
 
@@ -829,6 +832,8 @@ void QQuickTextEdit::resetHAlign()
     if (d->determineHorizontalAlignment() && isComponentComplete()) {
         d->updateDefaultTextOption();
         updateSize();
+        updateWholeDocument();
+        moveCursorDelegate();
     }
 }
 
@@ -1073,6 +1078,7 @@ void QQuickTextEdit::setVAlign(QQuickTextEdit::VAlignment alignment)
     d->vAlign = alignment;
     d->updateDefaultTextOption();
     updateSize();
+    updateWholeDocument();
     moveCursorDelegate();
     emit verticalAlignmentChanged(d->vAlign);
 }
@@ -3152,6 +3158,7 @@ void QQuickTextEdit::q_updateAlignment()
         d->updateDefaultTextOption();
         d->xoff = qMax(qreal(0), QQuickTextUtil::alignedX(d->document->size().width(), width(), effectiveHAlign()));
         moveCursorDelegate();
+        updateWholeDocument();
     }
 }
 

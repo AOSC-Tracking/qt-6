@@ -1,5 +1,6 @@
 // Copyright (C) 2018 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:critical reason:network-protocol
 
 #ifndef QWAYLANDXDGSHELL_P_H
 #define QWAYLANDXDGSHELL_P_H
@@ -180,6 +181,7 @@ private:
     uint sendConfigure(const QRect &geometry);
 
 protected:
+    void xdg_popup_destroy_resource(Resource *resource) override;
     void xdg_popup_destroy(Resource *resource) override;
     void xdg_popup_grab(Resource *resource, struct ::wl_resource *seat, uint32_t serial) override;
 

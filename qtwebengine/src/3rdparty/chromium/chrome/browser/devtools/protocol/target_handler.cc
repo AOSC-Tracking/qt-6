@@ -142,12 +142,18 @@ protocol::Response TargetHandler::CreateTarget(
     gurl = GURL(url::kAboutBlankURL);
   }
 
-  if (!is_trusted_ && gurl.SchemeIs(content::kChromeUIUntrustedScheme)) {
-    return protocol::Response::ServerError(
-        "Refusing to create a target with the specified URL");
+  GURL inner_url = gurl;
+  if (gurl.SchemeIs(content::kViewSourceScheme)) {
+    inner_url = GURL(gurl.GetContent());
   }
 
-  if (!may_read_local_files_ && gurl.SchemeIsFile()) {
+  if (!is_trusted_ && (inner_url.SchemeIs(content::kChromeUIUntrustedScheme) ||
+                       inner_url.SchemeIs(content::kChromeDevToolsScheme))) {
+    return protocol::Response::ServerError(
+        "Navigating to a URL with a privileged scheme is not allowed");
+  }
+
+  if (!may_read_local_files_ && inner_url.SchemeIsFile()) {
     return protocol::Response::ServerError(
         "Creating a target with a local URL is not allowed");
   }

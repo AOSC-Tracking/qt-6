@@ -1621,7 +1621,7 @@ FramebufferStatus Framebuffer::checkStatusWithGLFrontEnd(const Context *context)
     // The WebGL conformance tests implicitly define that all framebuffer
     // attachments must be unique. For example, the same level of a texture can
     // not be attached to two different color attachments.
-    if (state.getExtensions().webglCompatibilityANGLE)
+    if (context->isWebGL() || context->isHardenedContext())
     {
         if (!mState.colorAttachmentsAreUniqueImages())
         {
@@ -1688,15 +1688,13 @@ bool Framebuffer::partialClearNeedsInit(const Context *context,
     {
         ASSERT(HasSupportedStencilBitCount(glState.getDrawFramebuffer()));
 
-        // The least significant |stencilBits| of stencil mask state specify a
-        // mask. Compare the masks for differences only in those bits, ignoring any
-        // difference in the high bits.
         const auto &depthStencil       = glState.getDepthStencilState();
-        const GLuint differentFwdMasks = depthStencil.stencilMask ^ depthStencil.stencilWritemask;
-        const GLuint differentBackMasks =
-            depthStencil.stencilBackMask ^ depthStencil.stencilBackWritemask;
-
-        if (((differentFwdMasks | differentBackMasks) & 0xFF) != 0)
+        // The least significant |stencilBits| of stencil mask state specify a
+        // mask. Check only those bits, ignoring any masked high bits.
+        // Only the stencil write mask can affect which stencil bits are cleared. Clears are always
+        // considered to be front-facing geometry so the stencil back write mask does not need to be
+        // considered.
+        if ((depthStencil.stencilWritemask & 0xFF) != 0xFF)
         {
             return true;
         }
@@ -2258,6 +2256,16 @@ void Framebuffer::onSubjectStateChange(angle::SubjectIndex index, angle::Subject
             return;
         }
 
+        if (message == angle::SubjectMessage::ObjectReallocated)
+        {
+            if (index == DIRTY_BIT_DEPTH_ATTACHMENT || index == DIRTY_BIT_STENCIL_ATTACHMENT)
+            {
+                mDirtyBits.set(index);
+                onStateChange(angle::SubjectMessage::DirtyBitsFlagged);
+            }
+            return;
+        }
+
         // This can be triggered by the GL back-end TextureGL class.
         ASSERT(message == angle::SubjectMessage::DirtyBitsFlagged ||
                message == angle::SubjectMessage::TextureIDDeleted);
@@ -2783,7 +2791,6 @@ bool Framebuffer::partialBufferClearNeedsInit(const Context *context,
     switch (bufferType)
     {
         case GL_COLOR:
-            ASSERT(drawBuffers.any());
             return partialClearNeedsInit(context, drawBuffers, false, false);
         case GL_DEPTH:
             return partialClearNeedsInit(context, {}, true, false);

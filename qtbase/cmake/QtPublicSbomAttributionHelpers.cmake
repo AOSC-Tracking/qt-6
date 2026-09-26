@@ -1,6 +1,8 @@
 # Copyright (C) 2024 The Qt Company Ltd.
 # SPDX-License-Identifier: BSD-3-Clause
 
+__qt_internal_cmake_include_guard(GLOBAL GUARD_KEY "QtPublicSbomAttributionHelpers")
+
 # Handles attribution information for a target.
 #
 # If CREATE_SBOM_FOR_EACH_ATTRIBUTION is set, a separate sbom target is created for each parsed
@@ -509,18 +511,6 @@ function(_qt_internal_sbom_handle_attribution_json_array contents)
     endif()
 endfunction()
 
-# Escapes various characters in json content, so that the generate cmake code to append the content
-# to the spdx document is syntactically valid.
-function(_qt_internal_sbom_escape_json_content content out_var)
-    # Escape backslashes
-    string(REPLACE "\\" "\\\\" escaped_content "${content}")
-
-    # Escape quotes
-    string(REPLACE "\"" "\\\"" escaped_content "${escaped_content}")
-
-    set(${out_var} "${escaped_content}" PARENT_SCOPE)
-endfunction()
-
 # This macro reads a json key from a qt_attribution.json file, and assigns the escaped value to
 # out_var.
 # Also appends the name of the out_var to the parent scope 'variable_names' var.
@@ -550,7 +540,7 @@ macro(_qt_internal_sbom_get_attribution_key json_key out_var out_prefix)
             endif()
         endif()
 
-        _qt_internal_sbom_escape_json_content("${extracted_value}" escaped_content)
+        _qt_internal_json_escape_content("${extracted_value}" escaped_content)
 
         set(${out_prefix}_${out_var} "${escaped_content}" PARENT_SCOPE)
         list(APPEND variable_names "${out_var}")

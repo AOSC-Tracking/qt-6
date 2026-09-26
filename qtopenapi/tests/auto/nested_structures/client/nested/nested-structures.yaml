@@ -1,0 +1,182 @@
+# Copyright (C) 2026 The Qt Company Ltd.
+# SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+
+openapi: 3.1.1
+servers:
+  - url: 'http://127.0.0.1:20293/v2'
+info:
+  title: Simple nested data structures
+  version: 1.0.0
+  description: File tests straightforward nested-level array-of-array-of-array structures and deep nested reference structures.
+paths:
+  /deep-nested-ref-chain:
+    post:
+      operationId: refsChain
+      summary: Deep request and response example
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RequestLevel1"
+      responses:
+        "200":
+          description: Deeply nested response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResponseLevel1"
+  /deep-array:
+    post:
+      operationId: submitDeepArray
+      summary: Accept a 3-level deeply nested array
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                type: array
+                items:
+                  type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                uniqueItems: true
+                items:
+                  type: array
+                  items:
+                    type: array
+                    items:
+                      type: string
+  /deep-map:
+    post:
+      operationId: submitDeepMap
+      summary: Accept nested QMap structure
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties:
+                type: object
+                additionalProperties:
+                  type: object
+                  additionalProperties:
+                    type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  type: object
+                  additionalProperties:
+                    type: string
+components:
+  schemas:
+    RequestLevel1:
+      type: object
+      properties:
+        envelope:
+          $ref: "#/components/schemas/RequestLevel2"
+    RequestLevel2:
+      type: object
+      properties:
+        meta:
+          $ref: "#/components/schemas/RequestLevel3"
+    RequestLevel3:
+      type: object
+      properties:
+        payload:
+          $ref: "#/components/schemas/RequestLevel4"
+    RequestLevel4:
+      type: object
+      properties:
+        data:
+          $ref: "#/components/schemas/RequestData"
+    RequestData:
+      type: object
+      properties:
+        input:
+          type: string
+          example: "start"
+    ResponseLevel1:
+      type: object
+      properties:
+        envelope:
+          $ref: "#/components/schemas/ResponseLevel2"
+    ResponseLevel2:
+      type: object
+      properties:
+        payload:
+          $ref: "#/components/schemas/ResponseLevel3"
+    ResponseLevel3:
+      type: object
+      properties:
+        result:
+          $ref: "#/components/schemas/ResponseLevel4"
+    ResponseLevel4:
+      type: object
+      properties:
+        data:
+          $ref: "#/components/schemas/Label1"
+    Label1:
+      type: object
+      properties:
+        data:
+          $ref: "#/components/schemas/Label2"
+    Label2:
+      type: object
+      properties:
+        data:
+          $ref: "#/components/schemas/Label3"
+    Label3:
+      type: object
+      properties:
+        data:
+          $ref: "#/components/schemas/Label4"
+    Label4:
+      type: object
+      properties:
+        data:
+          $ref: "#/components/schemas/Label5"
+    Label5:
+      type: object
+      properties:
+        value:
+          $ref: "#/components/schemas/Label6"
+    Label6:
+      type: object
+      properties:
+        value:
+          $ref: "#/components/schemas/Label7"
+    Label7:
+      type: object
+      properties:
+        value:
+          $ref: "#/components/schemas/Label8"
+    Label8:
+      type: object
+      properties:
+        value:
+          $ref: "#/components/schemas/Label9"
+    Label9:
+      type: object
+      properties:
+        value:
+          $ref: "#/components/schemas/Label10"
+    Label10:
+      type: object
+      properties:
+        finalValue:
+          type: string
+          example: "deep processing complete"

@@ -850,7 +850,8 @@ class PDFiumEngine : public DocumentLoader::Client,
   void FinishPaint(size_t progressive_index, SkBitmap& image_data);
 
   // Stops any paints that are in progress.
-  void CancelPaints();
+  // Returns the rectangles, in screen coordinates, that had painting canceled.
+  std::vector<gfx::Rect> CancelPaints();
 
   // Invalidates all pages. Use this when some global parameter, such as page
   // orientation, has changed.
@@ -1344,6 +1345,8 @@ class PDFiumEngine : public DocumentLoader::Client,
   // Value: The PDFium page object associated with the shape.
   std::map<InkModeledShapeId, FPDF_PAGEOBJECT> ink_modeled_shape_map_;
 #endif  // BUILDFLAG(ENABLE_PDF_INK2)
+
+  bool in_dtor_ = false;
 
   base::WeakPtrFactory<PDFiumEngine> weak_factory_{this};
 

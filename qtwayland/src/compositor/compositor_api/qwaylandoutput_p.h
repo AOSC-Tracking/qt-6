@@ -2,6 +2,7 @@
 // Copyright (C) 2017 Klarälvdalens Datakonsult AB (KDAB).
 // Copyright (C) 2017 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:critical reason:network-protocol
 
 #ifndef QWAYLANDOUTPUT_P_H
 #define QWAYLANDOUTPUT_P_H

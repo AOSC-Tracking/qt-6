@@ -25,6 +25,7 @@ QT_BEGIN_NAMESPACE
 class QCanvasPathPrivate
 {
 public:
+    QCanvasPathPrivate();
     static QCanvasPathPrivate *get(QCanvasPath *path) { return path->d_ptr; }
     static const QCanvasPathPrivate *get(const QCanvasPath *path) { return path->d_ptr; }
 
@@ -55,6 +56,7 @@ public:
     qsizetype commandsDataCount = 0;
     // Distance tolerance for consecutive points
     float distTol = 0.01f;
+    uint serialNumber = 0;
     // When this increases, path has been (re)created
     // so all commands need to be re-evaluated.
     int pathIterations = 0;

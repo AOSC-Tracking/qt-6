@@ -3,7 +3,6 @@
 
 #include "qsamplecache_p.h"
 
-#include <QtConcurrent/qtconcurrentrun.h>
 #include <QtCore/qapplicationstatic.h>
 #include <QtCore/qcoreapplication.h>
 #include <QtCore/qdebug.h>
@@ -11,6 +10,7 @@
 #include <QtCore/qfile.h>
 #include <QtCore/qfuturewatcher.h>
 #include <QtCore/qloggingcategory.h>
+#include <QtConcurrent/qtconcurrentrun.h>
 
 #if QT_CONFIG(network)
 #  include <QtNetwork/qnetworkaccessmanager.h>
@@ -258,7 +258,7 @@ QFuture<QSampleCache::SampleLoadResult> QSampleCache::loadSampleAsync(const QUrl
 
     if (reply->error() != QNetworkReply::NoError) {
         fulfilPromise(std::nullopt);
-        delete reply;
+        reply->deleteLater();
         return future;
     }
 

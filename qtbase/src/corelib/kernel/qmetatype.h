@@ -681,7 +681,7 @@ public:
         auto converter = [function = std::move(function)](const void *from, void *to) -> bool {
             const From *f = static_cast<const From *>(from);
             To *t = static_cast<To *>(to);
-            auto &&r = function(*f);
+            decltype(auto) r = function(*f);
             if constexpr (std::is_same_v<q20::remove_cvref_t<decltype(r)>, std::optional<To>>) {
                 if (!r)
                     return false;
@@ -1488,10 +1488,15 @@ struct QMetaTypeIdQObject<T, QMetaType::IsEnumeration>
         Q_CONSTINIT static QBasicAtomicInt metatype_id = Q_BASIC_ATOMIC_INITIALIZER(0);
         if (const int id = metatype_id.loadAcquire())
             return id;
+        // qt_getEnumName returns what was passed to Q_ENUM/Q_FLAG
+        // which might be different from the actual name
         const char *eName = qt_getEnumName(T());
         const char *cName = qt_getEnumMetaObject(T())->className();
         QByteArray typeName;
-        typeName.reserve(strlen(cName) + 2 + strlen(eName));
+        constexpr bool isConst = std::is_const_v<T>;
+        typeName.reserve(strlen(cName) + 2 + strlen(eName) + (isConst ? strlen("const ") : 0));
+        if constexpr (isConst)
+            typeName.append("const ");
         typeName.append(cName).append("::").append(eName);
         const int newId = qRegisterNormalizedMetaType<T>(typeName);
         metatype_id.storeRelease(newId);

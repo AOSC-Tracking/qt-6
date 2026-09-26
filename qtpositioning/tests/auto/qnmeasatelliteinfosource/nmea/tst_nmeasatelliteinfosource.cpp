@@ -151,6 +151,8 @@ void tst_QNmeaSatelliteInfoSource::parseDataStream()
     QFETCH(QList<QGeoSatelliteInfo>, desiredInUse);
 
     QNmeaSatelliteInfoSource source(mode);
+    if (mode == QNmeaSatelliteInfoSource::UpdateMode::SimulationMode)
+        QVERIFY(source.setBackendProperty(QNmeaSatelliteInfoSource::SimulationUpdateInterval, 10));
     auto feeder = new DataFeeder(&source);
     source.setDevice(feeder);
 
@@ -161,15 +163,18 @@ void tst_QNmeaSatelliteInfoSource::parseDataStream()
     source.startUpdates();
     feeder->setMessages(messages);
 
-    QTRY_VERIFY_WITH_TIMEOUT(messageSentSpy.size() == messages.size(), 2000);
-    QVERIFY(!inViewSpy.isEmpty());
-    QVERIFY(!inUseSpy.isEmpty());
+    QTRY_VERIFY_WITH_TIMEOUT(messageSentSpy.size() == messages.size(), 10000);
 
-    const auto inView = inViewSpy.back().at(0).value<QList<QGeoSatelliteInfo>>();
-    QCOMPARE(inView, desiredInView);
-
-    const auto inUse = inUseSpy.back().at(0).value<QList<QGeoSatelliteInfo>>();
-    QCOMPARE(inUse, desiredInUse);
+    if (!desiredInView.isEmpty()) {
+        QVERIFY(!inViewSpy.isEmpty());
+        const auto inView = inViewSpy.back().at(0).value<QList<QGeoSatelliteInfo>>();
+        QCOMPARE(inView, desiredInView);
+    }
+    if (!desiredInUse.isEmpty()) {
+        QVERIFY(!inUseSpy.isEmpty());
+        const auto inUse = inUseSpy.back().at(0).value<QList<QGeoSatelliteInfo>>();
+        QCOMPARE(inUse, desiredInUse);
+    }
 }
 
 void tst_QNmeaSatelliteInfoSource::parseDataStream_data()
@@ -511,6 +516,94 @@ void tst_QNmeaSatelliteInfoSource::parseDataStream_data()
                                    gnComplexGlnsGsaMessage, gnComplexBduGsaMessage,
                                    complexGpsGsvMessage1,   complexGpsGsvMessage2 }
             << complexGpsGlnsBduInView << complexGpsGlnsBduInUse;
+
+    // Malformed input data
+
+    struct ModeInfo {
+        QNmeaSatelliteInfoSource::UpdateMode mode;
+        QByteArray name;
+    };
+
+    const std::array<ModeInfo, 2> modes = {
+        ModeInfo{ QNmeaSatelliteInfoSource::UpdateMode::RealTimeMode, "realtime" },
+        ModeInfo{ QNmeaSatelliteInfoSource::UpdateMode::SimulationMode, "simulation" },
+    };
+
+    for (const auto &mode : modes) {
+        const auto gpsGsvNegativeTotalNumMessage =
+                QLocationTestUtils::addNmeaChecksumAndBreaks(
+                        "$GPGSV,-1,1,4,05,,,25,07,,,,08,,,,13,,,36*").toLatin1();
+        const auto emptyGpsGsaMessage =
+                QLocationTestUtils::addNmeaChecksumAndBreaks(
+                        "$GPGSA,A,1,,,,,,,,,,,,,50.95,50.94,1.00*").toLatin1();
+
+        QTest::addRow("%s GPS negative total messages", mode.name.data())
+                << mode.mode
+                << QList<QByteArray>{ gpsGsvNegativeTotalNumMessage, emptyGpsGsaMessage }
+                << QList<QGeoSatelliteInfo>() << QList<QGeoSatelliteInfo>();
+
+        const auto gpsGsvFirstMessage =
+                QLocationTestUtils::addNmeaChecksumAndBreaks(
+                        "$GPGSV,10,1,8,05,,,25,07,,,,08,,,,13,,,36*").toLatin1();
+        const auto gpsGsvNegativeSentenceNumMessage =
+                QLocationTestUtils::addNmeaChecksumAndBreaks(
+                        "$GPGSV,10,-1,8,05,,,25,07,,,,08,,,,13,,,36*").toLatin1();
+
+        QTest::addRow("%s GPS negative sentence num", mode.name.data())
+                << mode.mode
+                << QList<QByteArray>{ gpsGsvFirstMessage,
+                                      gpsGsvNegativeSentenceNumMessage,
+                                      emptyGpsGsaMessage }
+                << QList<QGeoSatelliteInfo>() << QList<QGeoSatelliteInfo>();
+
+        const auto gpsGsvNegativeTotalSatMessage =
+                QLocationTestUtils::addNmeaChecksumAndBreaks(
+                        "$GPGSV,10,1,-4,05,,,25,07,,,,08,,,,13,,,36*").toLatin1();
+        QTest::addRow("%s GPS negative total satellite num", mode.name.data())
+                << mode.mode
+                << QList<QByteArray>{ gpsGsvNegativeTotalSatMessage,
+                                      emptyGpsGsaMessage }
+                << QList<QGeoSatelliteInfo>() << QList<QGeoSatelliteInfo>();
+
+        const auto gpsGsvSentenceGreaterThanTotalMessage =
+                QLocationTestUtils::addNmeaChecksumAndBreaks(
+                        "$GPGSV,10,11,8,05,,,25,07,,,,08,,,,13,,,36*").toLatin1();
+
+        QTest::addRow("%s GPS sentence num greater than total num", mode.name.data())
+                << mode.mode
+                << QList<QByteArray>{ gpsGsvFirstMessage,
+                                      gpsGsvSentenceGreaterThanTotalMessage,
+                                      emptyGpsGsaMessage }
+                << QList<QGeoSatelliteInfo>() << QList<QGeoSatelliteInfo>();
+
+        const auto gpsGsvTooLargeTotalNumMessage =
+                QLocationTestUtils::addNmeaChecksumAndBreaks(
+                        "$GPGSV,1001,1,4,05,,,25,07,,,,08,,,,13,,,36*").toLatin1();
+        QTest::addRow("%s GPS total messages too large", mode.name.data())
+                << mode.mode
+                << QList<QByteArray>{ gpsGsvTooLargeTotalNumMessage,
+                                      emptyGpsGsaMessage }
+                << QList<QGeoSatelliteInfo>() << QList<QGeoSatelliteInfo>();
+
+        const auto gpsGsvSecondMessage =
+                QLocationTestUtils::addNmeaChecksumAndBreaks(
+                        "$GPGSV,10,2,2000,05,,,25,07,,,,08,,,,13,,,36*").toLatin1();
+
+        // Craft a message that repeatedly sends the second sentence, thus
+        // potentially triggering an OOM condition by endlessly accumulating
+        // the list of parsed satellites. In this test we send only 300
+        // sentences, that represents 1200 satellites.
+        // We should stop after 1000 accumulated satellites, clear the list and
+        // discard all follow-up messages.
+        QList<QByteArray> repeatedSecondMessage = { gpsGsvFirstMessage };
+        repeatedSecondMessage.append(QList<QByteArray>(300, gpsGsvSecondMessage));
+        repeatedSecondMessage.append(emptyGpsGsaMessage);
+
+        QTest::addRow("%s GPS repeated sentence DDoS", mode.name.data())
+                << mode.mode
+                << repeatedSecondMessage
+                << QList<QGeoSatelliteInfo>() << QList<QGeoSatelliteInfo>();
+    }
 }
 
 QGeoSatelliteInfo

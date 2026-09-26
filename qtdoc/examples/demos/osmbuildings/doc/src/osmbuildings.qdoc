@@ -9,7 +9,8 @@
     \brief A 3D building viewer of OSM (OpenStreetMap) buildings map data.
     \meta {tag} {demo,quick,3d}
     \meta {docdependencies} {QtQuick3D,QtPositioning}
-    \borderedimage osmbuildings.jpg
+    \image osmbuildings.jpg
+           {3D OpenStreetMap buildings rendered on a map}
 
     \section1 Overview
 
@@ -59,6 +60,8 @@
         \dots 3
         \skipto std::vector<PolygonVertices> roofPolygonsVertices
     \printuntil clear()
+
+    The code for drawing spheres is modeled after the \l{OpenGL Sphere} example code.
 
     The downloaded PNG data is sent to a custom QQuick3DTextureData item to convert the PNG format
     to a texture for map tiles.

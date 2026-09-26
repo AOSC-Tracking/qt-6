@@ -175,6 +175,8 @@ private Q_SLOTS:
     void useProperFunction_data();
     void useProperFunction();
 
+    void registerMergeTreeRecursion();
+
 #if QT_CONFIG(library)
     void hasTestPlugin();
     void testPlugin_data();
@@ -710,6 +712,14 @@ void TestQmllint::dirtyQmlCode_data()
                        } }
                        .withFlags(Result::UseSettings)
             << withFileSelectorResourceFile;
+    // This might be debatable: Maybe someone alwyas has 2 selectors at the same time
+    // But for now, we assume that warning about it leads to a better trade-off.
+    QTest::newRow("fileSelectorAccessingFileFromOtherSelector")
+            << QStringLiteral("FileSelector5/+bar/Type.qml")
+            << Result{ {
+                       { "FooInternal was not found"_L1, 3, 1 },
+               } }
+            << defaultOptions;
     QTest::newRow(("ImportModuleWithFileSelector"))
             << QStringLiteral("FileSelector/main.qml") << Result::cleanWithSettings()
             << defaultOptions;
@@ -2023,6 +2033,16 @@ void TestQmllint::cleanQmlSnippet_data()
                     }
                 )"_s
             << defaultOptions;
+    CallQmllintOptions withUnusedImports;
+    withUnusedImports.enableCategories.append("unused-import"_L1);
+    QTest::newRow("used-import") << uR"(import QtQuick
+import QtQuick.Controls
+Item { id: root; Component.onCompleted: { root.ToolTip.text = "Hola" }})"_s
+                                 << withUnusedImports;
+    QTest::newRow("used-import2") << uR"(import QtQuick
+import QtQuick.Controls as QQC
+Item { id: root; Component.onCompleted: { root.QQC.ToolTip.text = "Hola" }})"_s
+                                  << withUnusedImports;
     QTest::newRow("usefulExpressionStatement") << u"x: y + 3;"_s << defaultOptions;
     QTest::newRow("usefulExpressionStatement") << u"x: 3;"_s << defaultOptions;
     QTest::newRow("void") << u"function f(): void {}"_s << defaultOptions;
@@ -2224,7 +2244,10 @@ void TestQmllint::dirtyJsSnippet_data()
                 case 3:                 // ok: comment
                     4 + 4
                     // fallthrough
-                case 4:                 // ok: nothing to fall through to ...
+                case 4:                 // ok: comment (case insensitive)
+                    5 + 5
+                    // FaLlThRoUgH
+                case 5:                 // ok: nothing to fall through to ...
                     1 + 2
                 })"_s
             << Result{ { { "Unterminated non-empty case block"_L1, 6, 17 },
@@ -2701,6 +2724,8 @@ void TestQmllint::cleanQmlCode_data()
             << QStringLiteral("FileSelector3/App.qml") << withResourceFiles;
     QTest::newRow("fileSelectorCompatibleFileSelectedType")
             << QStringLiteral("FileSelector3/+Material/App.qml") << withResourceFiles;
+    QTest::newRow("fileSelectorWithoutUnselected")
+            << QStringLiteral("FileSelector4/Main.qml") << defaultOptions;
 
     QTest::newRow("forLoop") << QStringLiteral("forLoop.qml") << defaultOptions;
     QTest::newRow("goodAlias") << QStringLiteral("goodAlias.qml") << defaultOptions;
@@ -2821,12 +2846,26 @@ void TestQmllint::cleanQmlCode_data()
     QTest::newRow("v4SequenceMethods") << QStringLiteral("v4SequenceMethods.qml") << defaultOptions;
     QTest::newRow("valueSource") << QStringLiteral("valueSource.qml") << defaultOptions;
     QTest::newRow("var") << QStringLiteral("var.qml") << defaultOptions;
+    {
+        CallQmllintOptions options = defaultOptions;
+        options.resources << testFile("mymodulewithsingleton-build/.qt/rcc/app_raw_qml_0.qrc")
+                          << testFile("mymodulewithsingleton-build/.qt/rcc/qmake_app.qrc");
+        QTest::newRow("singletonWithEmptyPrefix")
+                << u"mymodulewithsingleton-source/MyModuleWithSingleton/Singleton.qml"_s << options;
+        QTest::newRow("singletonWithEmptyPrefix2")
+                << u"mymodulewithsingleton-build/MyModuleWithSingleton/Singleton.qml"_s << options;
+    }
 }
 
 void TestQmllint::cleanQmlCode()
 {
     QFETCH(QString, filename);
     QFETCH(CallQmllintOptions, options);
+
+    const auto guard = qScopeGuard([&]() {
+        if (!options.resources.isEmpty())
+            m_linter.clearCache();
+    });
 
     const QJsonArray warnings = callQmllint(filename, options);
     checkResult(warnings, Result::clean());
@@ -3561,12 +3600,31 @@ void TestQmllint::missingBuiltinsNoCrash()
 
 void TestQmllint::absolutePath()
 {
+    QTemporaryDir temp;
+    QVERIFY(temp.isValid());
     QString absPathOutput = runQmllint("memberNotFound.qml", false, warningsShouldFailArgs(), true, true, true);
     QString relPathOutput = runQmllint("memberNotFound.qml", false, warningsShouldFailArgs(), true, true, false);
     const QString absolutePath = QFileInfo(testFile("memberNotFound.qml")).absoluteFilePath();
 
     QVERIFY(absPathOutput.contains(absolutePath));
     QVERIFY(!relPathOutput.contains(absolutePath));
+
+    runQmllint("memberNotFound.qml", false,
+               warningsShouldFailArgs() << "--json" << temp.filePath("absolute.json"_L1), true,
+               true, true);
+    runQmllint("memberNotFound.qml", false,
+               warningsShouldFailArgs() << "--json" << temp.filePath("relative.json"_L1), true,
+               true, false);
+
+    QFile absoluteJsonFile(temp.filePath("absolute.json"_L1));
+    QVERIFY(absoluteJsonFile.open(QFile::ReadOnly | QFile::Text));
+    const QByteArray absoluteJson = absoluteJsonFile.readAll();
+    QVERIFY(absoluteJson.contains(absolutePath.toUtf8()));
+
+    QFile relativeJsonFile(temp.filePath("relative.json"_L1));
+    QVERIFY(relativeJsonFile.open(QFile::ReadOnly | QFile::Text));
+    const QByteArray relativeJson = relativeJsonFile.readAll();
+    QVERIFY(!relativeJson.contains(absolutePath.toUtf8()));
 }
 
 void TestQmllint::importMultipartUri()
@@ -4019,7 +4077,7 @@ void TestQmllint::quickPlugin()
                 }
             } });
     runTest("pluginQuick_propertyChangesInvalidTarget.qml", Result {}); // we don't care about the specific warnings
-    runTest("pluginQuick_stateWithLegalChildren.qml", Result {});
+    runTest("pluginQuick_stateWithLegalChildren.qml", Result::clean());
     runTest("pluginQuick_stateWithIllegalChildren.qml",
             Result{ { { "A State cannot have a child item of type Rectangle"_L1, 5, 9 },
                       { "A State cannot have a child item of type Item"_L1, 6, 9 } } });
@@ -4550,6 +4608,17 @@ void TestQmllint::crashes()
             Result{ {
                     Message{ u"FooBar was not found. Did you add all imports and dependencies?"_s },
             } });
+}
+
+void TestQmllint::registerMergeTreeRecursion()
+{
+    const QString filename = testFile("deeplyMergedTypes.qml");
+
+    runQmllint(filename, [&](QProcess &process) {
+        QVERIFY(process.waitForFinished(10000));
+        QCOMPARE(process.exitStatus(), QProcess::NormalExit);
+        QCOMPARE(process.exitCode(), 0);
+    });
 }
 
 QTEST_GUILESS_MAIN(TestQmllint)

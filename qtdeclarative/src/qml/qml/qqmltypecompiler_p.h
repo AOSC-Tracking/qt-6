@@ -70,7 +70,7 @@ public:
     QV4::CompiledData::ResolvedTypeReferenceMap *resolvedTypes = nullptr;
     ListPropertyAssignBehavior listPropertyAssignBehavior() const
     {
-        for (const QmlIR::Pragma *pragma: document->pragmas) {
+        for (const QmlIR::Pragma *pragma : std::as_const(document->pragmas)) {
             if (pragma->type == QmlIR::Pragma::ListPropertyAssignBehavior)
                 return pragma->listPropertyAssignBehavior;
         }
@@ -188,10 +188,10 @@ public:
     bool resolveEnumBindings();
 
 private:
-    bool assignEnumToBinding(QmlIR::Binding *binding, QStringView enumName, int enumValue, bool isQtObject);
-    bool assignEnumToBinding(QmlIR::Binding *binding, const QString &enumName, int enumValue, bool isQtObject)
+    bool assignEnumToBinding(QmlIR::Binding *binding, QStringView enumName, int enumValue);
+    bool assignEnumToBinding(QmlIR::Binding *binding, const QString &enumName, int enumValue)
     {
-        return assignEnumToBinding(binding, QStringView(enumName), enumValue, isQtObject);
+        return assignEnumToBinding(binding, QStringView(enumName), enumValue);
     }
     bool tryQualifiedEnumAssignment(
             const QmlIR::Object *obj, const QQmlPropertyCache::ConstPtr &propertyCache,

@@ -24,7 +24,17 @@ ANGLE_INLINE bool ValidateDrawArrays(const Context *context,
                                      GLint first,
                                      GLsizei count)
 {
-    return ValidateDrawArraysCommon(context, entryPoint, mode, first, count, 1);
+    if (!ValidateDrawArraysCommon(context, entryPoint, mode, first, count, 1))
+    {
+        return false;
+    }
+
+    if (!ValidateDrawArraysTransformFeedbackBufferSize(context, entryPoint, &count, nullptr, 1))
+    {
+        return false;
+    }
+
+    return true;
 }
 
 ANGLE_INLINE bool ValidateUniform1f(const Context *context,
@@ -540,6 +550,12 @@ ANGLE_INLINE bool ValidateBindBuffer(const Context *context,
         !context->isBufferGenerated(buffer))
     {
         ANGLE_VALIDATION_ERROR(GL_INVALID_OPERATION, err::kObjectNotGenerated);
+        return false;
+    }
+
+    if (context->isWebGL() && !ValidateWebGLBufferBinding(context, entryPoint, target, buffer))
+    {
+        // Error already generated
         return false;
     }
 

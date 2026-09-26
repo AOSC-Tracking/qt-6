@@ -24,14 +24,10 @@
 #include "third_party/zlib/google/redact.h"
 #include "third_party/zlib/google/zip_internal.h"
 
-#if defined(USE_SYSTEM_MINIZIP)
-#include <minizip/unzip.h>
-#else
 #include "third_party/zlib/contrib/minizip/unzip.h"
 #if defined(OS_WIN)
 #include "third_party/zlib/contrib/minizip/iowin32.h"
 #endif  // defined(OS_WIN)
-#endif  // defined(USE_SYSTEM_MINIZIP)
 
 #if defined(OS_POSIX)
 #include <sys/stat.h>
@@ -221,6 +217,14 @@ bool ZipReader::OpenEntry() {
 
   DCHECK(path_in_zip[info.size_filename] == '\0');
   entry_.path_in_original_encoding = path_in_zip.data();
+
+#ifndef USE_SYSTEM_MINIZIP
+  if (info.size_utf8_filename > 0) {
+    // Use the Info-ZIP Unicode Path Extra Field if present.
+    DCHECK(info.utf8_filename[info.size_utf8_filename] == '\0');
+    entry_.path_in_original_encoding = info.utf8_filename;
+  }
+#endif
 
   // Convert path from original encoding to Unicode.
   std::u16string path_in_utf16;

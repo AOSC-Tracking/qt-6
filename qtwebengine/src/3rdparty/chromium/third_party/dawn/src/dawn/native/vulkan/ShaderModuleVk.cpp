@@ -277,9 +277,10 @@ ResultOrError<ShaderModule::ModuleAndSpirv> ShaderModule::GetHandleAndSpirv(
         GetDevice()->IsToggleEnabled(Toggle::PolyFillPacked4x8DotProduct);
     req.tintOptions.polyfill_pack_unpack_4x8_norm =
         GetDevice()->IsToggleEnabled(Toggle::PolyfillPackUnpack4x8Norm);
-    req.tintOptions.polyfill_unary_f32_negation =
-        GetDevice()->IsToggleEnabled(Toggle::VulkanPolyfillF32Negation);
-    req.tintOptions.polyfill_f32_abs = GetDevice()->IsToggleEnabled(Toggle::VulkanPolyfillF32Abs);
+    req.tintOptions.polyfill_float_negation =
+        GetDevice()->IsToggleEnabled(Toggle::VulkanPolyfillFloatNegation);
+    req.tintOptions.polyfill_float_abs =
+        GetDevice()->IsToggleEnabled(Toggle::VulkanPolyfillFloatAbs);
     req.tintOptions.disable_polyfill_integer_div_mod =
         GetDevice()->IsToggleEnabled(Toggle::DisablePolyfillsOnIntegerDivisonAndModulo);
     req.tintOptions.scalarize_max_min_clamp =
@@ -293,6 +294,8 @@ ResultOrError<ShaderModule::ModuleAndSpirv> ShaderModule::GetHandleAndSpirv(
                                         : tint::spirv::writer::SpvVersion::kSpv13;
     req.tintOptions.dva_transform_handle =
         GetDevice()->IsToggleEnabled(Toggle::VulkanDirectVariableAccessTransformHandle);
+    req.tintOptions.collapse_subgroup_min_max =
+        GetDevice()->IsToggleEnabled(Toggle::CollapseSubgroupMinMax);
     // Pass matrices to user functions by pointer on Qualcomm devices to workaround a known bug.
     // See crbug.com/tint/2045.
     if (ToBackend(GetDevice()->GetPhysicalDevice())->IsAndroidQualcomm()) {

@@ -2,7 +2,7 @@ Version: 2
 Configurations:
 -
     Id: 'macos-quick-bridges'
-    Template: 'qtci-macos-15-arm-104'
+    Template: 'qtci-macos-15-arm-105'
     Compiler: 'Clang'
     Features: ['Packaging', 'Sccache', 'UseConfigure', 'DisableTests', 'Insignificant']
     Configure arguments: >
@@ -46,7 +46,7 @@ Configurations:
     Environment variables: []
 -
     Id: 'windows-quick-bridges'
-    Template: 'qtci-windows-11_24H2-x86_64-71'
+    Template: 'qtci-windows-11_24H2-x86_64-73'
     Compiler: 'MSVC2022'
     Features: ['Packaging', 'Sccache', "DebugAndRelease", 'UseConfigure', 'DisableTests', 'Insignificant']
     Configure arguments: >

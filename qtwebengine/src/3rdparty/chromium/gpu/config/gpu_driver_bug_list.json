@@ -3647,7 +3647,7 @@
         "type": "win"
       },
       "vendor_id": "0x8086",
-      "multi_gpu_category": "any",
+      "multi_gpu_category": "active",
       "driver_version": {
         "op": "<",
         "value": "32.0.101.6913"
@@ -3674,6 +3674,7 @@
         "type": "win"
       },
       "vendor_id": "0x10de",
+      "multi_gpu_category": "active",
       "driver_version": {
           "op": "<",
           "value": "32.0.15.7602"
@@ -3691,6 +3692,60 @@
       "gl_vendor": "Imagination.*",
       "features": [
         "ensure_previous_framebuffer_not_deleted"
+      ]
+    },
+    {
+      "id": 459,
+      "description": "Qualcomm GPUs crash when invalidating incomplete framebuffers",
+      "cr_bugs": [507508103],
+      "os": {
+        "type": "android"
+      },
+      "gl_vendor": "Qualcomm.*",
+      "driver_version": {
+        "op": "<",
+        "value": "881"
+      },
+      "features": [
+        "dont_invalidate_incomplete_fbos"
+      ]
+    },
+    {
+      "id": 463,
+      "cr_bugs": [],
+      "description": "Intel drivers don't support setting a frame as not referenced in D3D12 H264 encoder",
+      "os": {
+        "type": "win"
+      },
+      "vendor_id": "0x8086",
+      "multi_gpu_category": "active",
+      "features": [
+        "disable_d3d12_h264_encoder_non_reference_frames"
+      ]
+    },
+    {
+      "id": 480,
+      "cr_bugs": [520656244],
+      "description": "Reattach FBO depth/stencil attachments when they are reallocated on Qualcomm GPUs",
+      "gl_vendor": "Qualcomm.*",
+      "driver_version": {
+        "op": "<",
+        "value": "878"
+      },
+      "features": [
+        "reattach_fbo_depth_stencil_on_reallocation"
+      ]
+    },
+    {
+      "id": 486,
+      "cr_bugs": [534903095],
+      "description": "Changing BASE_LEVEL of NPOT immutable texture triggers driver bug on PowerVR GPUs.",
+      "os": {
+        "type": "android"
+      },
+      "gl_vendor": "Imagination.*",
+      "features": [
+        "dont_change_base_level_for_npot_immutable_textures"
       ]
     }
   ]

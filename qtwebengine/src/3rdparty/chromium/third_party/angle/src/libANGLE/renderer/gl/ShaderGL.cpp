@@ -127,13 +127,13 @@ std::shared_ptr<ShaderTranslateTask> ShaderGL::compile(const gl::Context *contex
 
     options->initGLPosition = true;
 
-    bool isWebGL = context->isWebGL();
-    if (isWebGL && mState.getShaderType() != gl::ShaderType::Compute)
+    const bool isHardened = context->isWebGL() || context->isHardenedContext();
+    if (isHardened && mState.getShaderType() != gl::ShaderType::Compute)
     {
         options->initOutputVariables = true;
     }
 
-    if (isWebGL && !context->getState().getEnableFeature(GL_TEXTURE_RECTANGLE_ANGLE))
+    if (isHardened && !context->getState().getEnableFeature(GL_TEXTURE_RECTANGLE_ANGLE))
     {
         options->disableARBTextureRectangle = true;
     }
@@ -207,7 +207,7 @@ std::shared_ptr<ShaderTranslateTask> ShaderGL::compile(const gl::Context *contex
         options->selectViewInNvGLSLVertexShader          = true;
     }
 
-    if (features.clampArrayAccess.enabled || isWebGL)
+    if (features.clampArrayAccess.enabled || isHardened)
     {
         options->clampIndirectArrayBounds = true;
     }
@@ -270,6 +270,11 @@ std::shared_ptr<ShaderTranslateTask> ShaderGL::compile(const gl::Context *contex
     if (contextGL->getNativeExtensions().shaderPixelLocalStorageANGLE)
     {
         options->pls = contextGL->getNativePixelLocalStorageOptions();
+    }
+
+    if (features.expandFragmentOutputsToVec4.enabled)
+    {
+        options->expandFragmentOutputsToVec4 = true;
     }
 
     return std::shared_ptr<ShaderTranslateTask>(

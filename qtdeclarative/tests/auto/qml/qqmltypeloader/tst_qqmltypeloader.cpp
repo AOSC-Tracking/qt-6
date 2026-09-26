@@ -12,6 +12,8 @@
 #include <QtQuick/qquickitem.h>
 #if QT_CONFIG(process)
 #include <QtCore/qprocess.h>
+#include <QtCore/qresource.h>
+#include <QtCore/qscopeguard.h>
 #endif
 #include <QtQml/private/qqmlcomponent_p.h>
 #include <QtQml/private/qqmlengine_p.h>
@@ -58,6 +60,9 @@ private slots:
     void doNotRetainQmlTypeAcrossEngines();
     void loadLocalTypesAfterRemoteFails();
     void populateDirectoryCache();
+    void resourceRegistrationInvalidatesCache();
+    void addImportPathDuringAsyncLoad();
+    void addImportPathFromStatusChanged();
 
 private:
     void checkSingleton(const QString & dataDirectory);
@@ -998,6 +1003,93 @@ void tst_QQMLTypeLoader::populateDirectoryCache()
 
     // One slash used to be required.
     QVERIFY(typeLoader->fileExists(dataDirectory() + '/', "doesExist.qml"));
+}
+
+void tst_QQMLTypeLoader::resourceRegistrationInvalidatesCache()
+{
+    // The type loader's directory cache assumes the file system underneath it does not change.
+    // That holds for the local file system but NOT for the qrc file system: a module registers
+    // its own resources lazily as it loads, so a ":/..." path that is absent when first probed
+    // can appear moments later. If the cache is not invalidated when resources are (un)registered,
+    // a negative result cached during the gap is returned forever, and the just-registered file
+    // is wrongly considered missing. This is a real correctness problem, independent of any
+    // performance optimization.
+
+    const QString rcc = QFINDTESTDATA("lazyresource.rcc");
+    QVERIFY2(!rcc.isEmpty(), "lazyresource.rcc was not built");
+
+    const QString dir = QStringLiteral(":/qt_test_lazy_resource");
+    const QString file = QStringLiteral("Probe.qml");
+    const QString path = dir + u'/' + file;
+
+    // Make sure we start from a clean slate (e.g. if a previous run left it registered).
+    QResource::unregisterResource(rcc);
+    QVERIFY(!QFileInfo::exists(path));
+
+    QQmlEngine engine;
+    QQmlTypeLoader *typeLoader = QQmlTypeLoader::get(&engine);
+
+    // Probe while the resource is absent. This caches a negative entry for the directory.
+    QVERIFY(!typeLoader->fileExists(dir, file));
+    QVERIFY(typeLoader->absoluteFilePath(path).isEmpty());
+
+    // The resource appears (as it would when a module's plugin registers its qrc mid-load).
+    QVERIFY(QResource::registerResource(rcc));
+    auto unregister = qScopeGuard([&] { QResource::unregisterResource(rcc); });
+    QVERIFY(QFileInfo::exists(path)); // sanity: it really is there now
+
+    // A register can only turn "missing" into "present": the type loader must not keep serving
+    // the stale "absent" answer it cached above.
+    QVERIFY(typeLoader->fileExists(dir, file));
+    QCOMPARE(typeLoader->absoluteFilePath(path), path);
+
+    // Symmetrically, once the resource is unregistered again, the cached "present" answer must
+    // not stick: an unregister can turn "present" back into "missing".
+    QVERIFY(QResource::unregisterResource(rcc));
+    unregister.dismiss();
+    QVERIFY(!QFileInfo::exists(path));
+    QVERIFY(!typeLoader->fileExists(dir, file));
+    QVERIFY(typeLoader->absoluteFilePath(path).isEmpty());
+}
+
+// Regression test for QTBUG-146210: calling addImportPath() while an async
+// QQmlComponent is loading must not prevent the component from becoming Ready.
+void tst_QQMLTypeLoader::addImportPathDuringAsyncLoad()
+{
+    QQmlEngine engine;
+    QQmlComponent comp(&engine, testFileUrl("A.qml"), QQmlComponent::Asynchronous);
+    QCOMPARE(comp.status(), QQmlComponent::Loading);
+
+    // Calling addImportPath() while loading must not stall the async load.
+    engine.addImportPath(QDir::tempPath());
+
+    QTRY_COMPARE(comp.status(), QQmlComponent::Ready);
+}
+
+void tst_QQMLTypeLoader::addImportPathFromStatusChanged()
+{
+    QQmlEngine engine;
+    const QStringList originalPaths = engine.importPathList();
+    const QString extraPath = QLatin1String("qrc:/extra_import_path");
+    QVERIFY(!originalPaths.contains(extraPath));
+
+    QQmlComponent comp(&engine, testFileUrl("A.qml"), QQmlComponent::Asynchronous);
+    QCOMPARE(comp.status(), QQmlComponent::Loading);
+
+    // Call addImportPath() from within the statusChanged callback.
+    // This exercises the drain loop: the completion callback itself triggers
+    // a new configuration change which drains again (a no-op at that point).
+    bool callbackInvoked = false;
+    QObject::connect(&comp, &QQmlComponent::statusChanged, &engine, [&](QQmlComponent::Status status) {
+        if (status == QQmlComponent::Ready) {
+            engine.addImportPath(extraPath);
+            callbackInvoked = true;
+        }
+    });
+
+    QTRY_VERIFY(callbackInvoked);
+    QCOMPARE(comp.status(), QQmlComponent::Ready);
+    QVERIFY(engine.importPathList().contains(extraPath));
 }
 
 QTEST_MAIN(tst_QQMLTypeLoader)

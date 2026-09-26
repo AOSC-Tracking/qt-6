@@ -275,6 +275,12 @@ QSSGRhiShaderPipelinePtr QSSGRendererPrivate::generateRhiShaderPipelineImpl(QSSG
     // cheaper-to-lookup cache in getShaderPipelineForDefaultMaterial().
     theKey.toString(shaderString, shaderKeyProperties);
 
+    // Include augment defines, preamble and body in the cache key.
+    for (const auto &def : shaderAugmentation.defines)
+        shaderString.append(def.name).append(';').append(def.value).append(';');
+    shaderString.append(shaderAugmentation.preamble).append(';');
+    shaderString.append(shaderAugmentation.body).append(';');
+
     // Check the in-memory, per-QSSGShaderCache (and so per-QQuickWindow)
     // runtime cache. That may get cleared upon an explicit call to
     // QQuickWindow::releaseResources(), but will otherwise store all
@@ -899,7 +905,7 @@ QSSGRendererPrivate::closestPointOnSubsetRenderable(const QSSGRenderLayer& layer
 
     // Early culling: check if sphere can reach model bounds
     QSSGBounds3 modelBounds;
-    for (const auto &subset : mesh->subsets)
+    for (const auto &subset : std::as_const(mesh->subsets))
         modelBounds.include(subset.bounds);
 
     if (modelBounds.isEmpty())

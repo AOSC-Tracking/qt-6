@@ -91,8 +91,6 @@ installPackages+=(libfreetype6-dev)
 installPackages+=(libjpeg-dev)
 # Enable support for printer driver
 installPackages+=(libcups2-dev)
-# Enable support for printer test
-installPackages+=(cups-pdf)
 # Install libraries needed for QtMultimedia to be able to support all plugins
 installPackages+=(libasound2-dev)
 installPackages+=(libgstreamer1.0-dev)
@@ -115,6 +113,10 @@ installPackages+=(libva-dev)
 # for QtMultimedia streaming tests
 installPackages+=(vlc-bin)
 installPackages+=(vlc-plugin-base)
+# Required FFmpeg packages
+required_ffmpeg_packages=()
+while IFS= read -r line; do required_ffmpeg_packages+=("$line"); done < "${BASH_SOURCE%/*}/../common/linux/ffmpeg_required_ubuntu_packages.txt"
+installPackages+=("${required_ffmpeg_packages[@]}")
 # for tst_qfloat16format, see also QTQAINFRA-6390
 installPackages+=(locales-all)
 

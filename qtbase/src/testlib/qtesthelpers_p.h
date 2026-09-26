@@ -93,7 +93,7 @@ static inline void androidCompatibleShow(QWidget *widget)
 #endif // QT_WIDGETS_LIB
 
 #ifdef QT_GUI_LIB
-bool ensurePositionTopLeft(QWindow *window)
+static inline bool ensurePositionTopLeft(QWindow *window)
 {
     // Wayland: QQuickWindow::setPos() and QQuickWindow::setFramePosition() doesn't work.
     if (!QGuiApplication::platformName().compare(QLatin1String("wayland"), Qt::CaseInsensitive))
@@ -114,6 +114,22 @@ bool ensurePositionTopLeft(QWindow *window)
         positionCorrect = false;
 
     return positionCorrect;
+}
+
+inline static bool moveCursorAway()
+{
+#if !QT_CONFIG(cursor) || defined(Q_OS_ANDROID)
+    // QCursor repositioning is unavailable or unsupported.
+    return true;
+#endif
+    QPoint safePos = QGuiApplication::primaryScreen()->availableGeometry().bottomRight();
+    safePos -= QPoint(50, 50);
+    QCursor::setPos(safePos);
+
+    if (QTest::qWaitFor([&]{ return QCursor::pos() == safePos;}))
+        return true;
+
+    return false;
 }
 #endif
 

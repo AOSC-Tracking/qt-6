@@ -2016,7 +2016,7 @@ bool SkiaOutputSurfaceImplOnGpu::InitializeForGL() {
         AddChildWindowToBrowser(presenter_->GetWindow());
         output_device_ = std::make_unique<SkiaOutputDeviceDComp>(
             shared_image_representation_factory_.get(), context_state_.get(),
-            std::move(presenter), feature_info_,
+            std::move(presenter), feature_info_->workarounds(),
             shared_gpu_deps_->memory_tracker(),
             GetDidSwapBuffersCompleteCallback());
 #endif  // BUILDFLAG(IS_WIN)
@@ -2183,7 +2183,8 @@ bool SkiaOutputSurfaceImplOnGpu::InitializeForDawn() {
     AddChildWindowToBrowser(presenter_->GetWindow());
     output_device_ = std::make_unique<SkiaOutputDeviceDComp>(
         shared_image_representation_factory_.get(), context_state_.get(),
-        std::move(presenter), feature_info_, shared_gpu_deps_->memory_tracker(),
+        std::move(presenter), feature_info_->workarounds(),
+        shared_gpu_deps_->memory_tracker(),
         GetDidSwapBuffersCompleteCallback());
   } else {
     auto output_device = SkiaOutputDeviceDawn::Create(
@@ -2362,13 +2363,20 @@ void SkiaOutputSurfaceImplOnGpu::PostSubmit(
   semaphores.reserve(pending_release_fence_cbs_.size());
 
   while (!pending_release_fence_cbs_.empty()) {
+    gfx::GpuFenceHandle release_fence;
+
     auto& item = pending_release_fence_cbs_.front();
-    auto release_fence = CreateReleaseFenceForVulkan(item.first);
-    if (release_fence.is_null()) {
-      LOG(ERROR) << "Unable to create a release fence for Vulkan.";
-    } else {
-      semaphores.emplace_back(GrBackendSemaphores::GetVkSemaphore(item.first));
+    VkSemaphore semaphore = GrBackendSemaphores::GetVkSemaphore(item.first);
+
+    if (semaphore != VK_NULL_HANDLE) {
+      semaphores.emplace_back(semaphore);
+
+      release_fence = CreateReleaseFenceForVulkan(semaphore);
+      if (release_fence.is_null()) {
+        LOG(ERROR) << "Unable to create a release fence for Vulkan.";
+      }
     }
+
     std::move(item.second).Run(std::move(release_fence));
     pending_release_fence_cbs_.pop_front();
   }
@@ -2650,25 +2658,14 @@ void SkiaOutputSurfaceImplOnGpu::DiscardBackbuffer() {
 
 #if BUILDFLAG(ENABLE_VULKAN)
 gfx::GpuFenceHandle SkiaOutputSurfaceImplOnGpu::CreateReleaseFenceForVulkan(
-    const GrBackendSemaphore& semaphore) {
+    VkSemaphore semaphore) {
   DCHECK(is_using_vulkan());
-
-  if (GrBackendSemaphores::GetVkSemaphore(semaphore) == VK_NULL_HANDLE) {
-    return {};
-  }
 
   auto* implementation = vulkan_context_provider_->GetVulkanImplementation();
   VkDevice device =
       vulkan_context_provider_->GetDeviceQueue()->GetVulkanDevice();
 
-  auto handle = implementation->GetSemaphoreHandle(
-      device, GrBackendSemaphores::GetVkSemaphore(semaphore));
-  if (!handle.is_valid()) {
-    vkDestroySemaphore(device, GrBackendSemaphores::GetVkSemaphore(semaphore),
-                       /*pAllocator=*/nullptr);
-    LOG(ERROR) << "Failed to create a release fence for Vulkan.";
-    return {};
-  }
+  auto handle = implementation->GetSemaphoreHandle(device, semaphore);
   return std::move(handle).ToGpuFenceHandle();
 }
 

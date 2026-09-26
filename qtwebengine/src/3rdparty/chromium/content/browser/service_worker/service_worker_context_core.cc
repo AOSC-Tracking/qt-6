@@ -1245,12 +1245,20 @@ void ServiceWorkerContextCore::OnRunningStateChanged(
     ServiceWorkerVersion* version) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   DCHECK_EQ(this, version->context().get());
+
+  // Protect `sync_observer_list_` and `version` from being destroyed during the
+  // synchronous observer loop.
+  scoped_refptr<ServiceWorkerContextSynchronousObserverList>
+      safe_sync_observer_list = sync_observer_list_;
+  scoped_refptr<ServiceWorkerVersion> protect_version =
+      base::WrapRefCounted(version);
+
   switch (version->running_status()) {
     case blink::EmbeddedWorkerStatus::kStopped:
       observer_list_->Notify(FROM_HERE,
                              &ServiceWorkerContextCoreObserver::OnStopped,
                              version->version_id());
-      for (auto& observer : sync_observer_list_->observers) {
+      for (auto& observer : safe_sync_observer_list->observers) {
         const std::optional<ServiceWorkerRunningInfo> running_info =
             wrapper_->GetRunningServiceWorkerInfo(version->version_id());
         if (running_info.has_value()) {
@@ -1274,7 +1282,7 @@ void ServiceWorkerContextCore::OnRunningStateChanged(
       observer_list_->Notify(FROM_HERE,
                              &ServiceWorkerContextCoreObserver::OnStopping,
                              version->version_id());
-      for (auto& observer : sync_observer_list_->observers) {
+      for (auto& observer : safe_sync_observer_list->observers) {
         const std::optional<ServiceWorkerRunningInfo> running_info =
             wrapper_->GetRunningServiceWorkerInfo(version->version_id());
         if (running_info.has_value()) {

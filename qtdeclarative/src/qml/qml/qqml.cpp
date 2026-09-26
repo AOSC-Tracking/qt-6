@@ -633,7 +633,10 @@ static void uniqueRevisions(QList<QTypeRevision> *revisions, QTypeRevision defau
                             QTypeRevision added)
 {
     bool revisionsHaveMajorVersions = false;
-    for (QTypeRevision revision : QList<QTypeRevision>(*revisions)) { // yes, copy
+
+    // copy because we modify revisions in the loop
+    const QList<QTypeRevision> origRevisions = *revisions;
+    for (QTypeRevision revision : origRevisions) {
         // allow any minor version for each explicitly specified past major one
         if (revision.hasMajorVersion()) {
             revisionsHaveMajorVersions = true;
@@ -2143,6 +2146,7 @@ static bool callQObjectMethodAsVariant(
         QV4::ExecutionEngine *engine, QV4::Lookup *lookup,
         QObject *thisObject, void **args, int argc)
 {
+    Q_ALLOCA_INIT();
     // We need to re-fetch the method on every call because it can be shadowed.
 
     QV4::Scope scope(engine);
@@ -2169,6 +2173,7 @@ static bool callQObjectMethod(
 {
     Q_ASSERT(!lookup->asVariant);
 
+    Q_ALLOCA_INIT();
     Q_ALLOCA_VAR(QMetaType, types, (argc + 1) * sizeof(QMetaType));
     if (const QQmlPropertyData *propertyData = lookup->qobjectMethodLookup.propertyData) {
         const QMetaMethod method = propertyData->metaMethod();
@@ -2205,6 +2210,7 @@ static bool callArrowFunction(
         QV4::ExecutionEngine *engine, QV4::ArrowFunction *function,
         QObject *thisObject, void **args, int argc)
 {
+    Q_ALLOCA_INIT();
     QV4::Function *v4Function = function->function();
     Q_ASSERT(v4Function);
     Q_ASSERT(v4Function->nFormals == argc);

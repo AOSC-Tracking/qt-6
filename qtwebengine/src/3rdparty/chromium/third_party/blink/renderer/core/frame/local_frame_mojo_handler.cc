@@ -449,16 +449,6 @@ mojom::blink::DevicePostureType LocalFrameMojoHandler::GetDevicePosture() {
   return current_device_posture_;
 }
 
-void LocalFrameMojoHandler::OverrideDevicePostureForEmulation(
-    mojom::blink::DevicePostureType device_posture_param) {
-  DevicePostureProvider()->OverrideDevicePostureForEmulation(
-      device_posture_param);
-}
-
-void LocalFrameMojoHandler::DisableDevicePostureOverrideForEmulation() {
-  DevicePostureProvider()->DisableDevicePostureOverrideForEmulation();
-}
-
 Page* LocalFrameMojoHandler::GetPage() const {
   return frame_->GetPage();
 }
@@ -1355,6 +1345,14 @@ void LocalFrameMojoHandler::SetV8CompileHints(
   }
 
   page->GetV8CrowdsourcedCompileHintsConsumer().SetData(memory);
+}
+
+void LocalFrameMojoHandler::NotifyRelatedPagesFinalized(
+    bool has_other_related_pages) {
+  if (Page* page = GetPage()) {
+    page->NotifyRelatedPagesFinalized(has_other_related_pages);
+    frame_->Loader().ProcessPendingCrossDocumentFragment();
+  }
 }
 
 void LocalFrameMojoHandler::SnapshotDocumentForViewTransition(

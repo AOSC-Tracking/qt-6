@@ -385,7 +385,14 @@ void V8RuntimeAgentImpl::evaluate(
   if (silent.value_or(false)) scope.ignoreExceptionsAndMuteConsole();
   if (userGesture.value_or(false)) scope.pretendUserGesture();
 
-  if (includeCommandLineAPI.value_or(false)) scope.installCommandLineAPI();
+  if (includeCommandLineAPI.value_or(false)) {
+    scope.installCommandLineAPI();
+    if (scope.tryCatch().HasCaught()) {
+      callback->sendFailure(
+          Response::ServerError("Failed to install command line API"));
+      return;
+    }
+  }
 
   const bool replMode = maybeReplMode.value_or(false);
 
@@ -1093,8 +1100,21 @@ Response V8RuntimeAgentImpl::enable() {
   m_session->reportAllContexts(this);
   V8ConsoleMessageStorage* storage =
       m_inspector->ensureConsoleMessageStorage(m_session->contextGroupId());
-  for (const auto& message : storage->messages()) {
-    if (!reportMessage(message.get(), false)) break;
+  // The message queue can be cleared by a getter during message formatting.
+  // Make a copy of the message to avoid a UAF.
+  // Also, the storage itself can be destroyed and recreated, so re-fetch the
+  // storage on each iteration.
+  size_t size = storage->messages().size();
+  for (size_t i = 0; i < size; ++i) {
+    if (m_inspector->consoleMessageStorage(m_session->contextGroupId()) !=
+        storage) {
+      break;
+    }
+    if (i >= storage->messages().size()) break;
+    V8ConsoleMessage message = *storage->messages()[i];
+    if (!reportMessage(&message, false)) {
+      break;
+    }
   }
   return Response::Success();
 }

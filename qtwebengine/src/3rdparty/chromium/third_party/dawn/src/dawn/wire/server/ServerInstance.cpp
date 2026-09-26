@@ -41,12 +41,12 @@ WireResult Server::DoInstanceRequestAdapter(Known<WGPUInstance> instance,
                                             ObjectHandle adapterHandle,
                                             const WGPURequestAdapterOptions* options) {
     Reserved<WGPUAdapter> adapter;
-    WIRE_TRY(Objects<WGPUAdapter>().Allocate(&adapter, adapterHandle, AllocationState::Reserved));
+    WIRE_TRY(Allocate(&adapter, adapterHandle, AllocationState::Reserved));
 
     auto userdata = MakeUserdata<RequestAdapterUserdata>();
     userdata->eventManager = eventManager;
     userdata->future = future;
-    userdata->adapterObjectId = adapter.id;
+    userdata->adapter = adapter.AsHandle();
 
     mProcs.instanceRequestAdapter(
         instance->handle, options,
@@ -72,7 +72,7 @@ void Server::OnRequestAdapterCallback(RequestAdapterUserdata* data,
     }
 
     // Assign the handle and allocated status if the adapter is created successfully.
-    if (FillReservation(data->adapterObjectId, adapter) == WireResult::FatalError) {
+    if (FillReservation(data->adapter, adapter) == WireResult::FatalError) {
         cmd.status = WGPURequestAdapterStatus_CallbackCancelled;
         cmd.message = ToOutputStringView("Destroyed before request was fulfilled.");
         SerializeCommand(cmd);

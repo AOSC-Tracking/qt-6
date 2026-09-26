@@ -21,8 +21,8 @@
 #include "compiler/translator/IsASTDepthBelowLimit.h"
 #include "compiler/translator/OutputTree.h"
 #include "compiler/translator/ParseContext.h"
+#include "compiler/translator/SizeClipCullDistance.h"
 #include "compiler/translator/ValidateBarrierFunctionCall.h"
-#include "compiler/translator/ValidateClipCullDistance.h"
 #include "compiler/translator/ValidateLimitations.h"
 #include "compiler/translator/ValidateMaxParameters.h"
 #include "compiler/translator/ValidateOutputs.h"
@@ -64,6 +64,7 @@
 #include "compiler/translator/tree_util/BuiltIn.h"
 #include "compiler/translator/tree_util/FindSymbolNode.h"
 #include "compiler/translator/tree_util/IntermNodePatternMatcher.h"
+#include "compiler/translator/tree_util/IntermNode_util.h"
 #include "compiler/translator/tree_util/ReplaceShadowingVariables.h"
 #include "compiler/translator/tree_util/ReplaceVariable.h"
 #include "compiler/translator/util.h"
@@ -602,7 +603,7 @@ TIntermBlock *TCompiler::compileTreeImpl(const char *const shaderStrings[],
     }
 
     TParseContext parseContext(mSymbolTable, mExtensionBehavior, mShaderType, mShaderSpec,
-                               compileOptions, &mDiagnostics, getResources(), getOutputType());
+                               compileOptions, &mDiagnostics, mResources, getOutputType());
 
     parseContext.setFragmentPrecisionHighOnESSL1(mResources.FragmentPrecisionHigh == 1);
 
@@ -618,7 +619,7 @@ TIntermBlock *TCompiler::compileTreeImpl(const char *const shaderStrings[],
         return nullptr;
     }
 
-    if (!postParseChecks(parseContext))
+    if (!parseContext.postParseChecks())
     {
         return nullptr;
     }
@@ -946,23 +947,32 @@ bool TCompiler::checkAndSimplifyAST(TIntermBlock *root,
     // Folding should only be able to generate warnings.
     ASSERT(mDiagnostics.numErrors() == 0);
 
-    // gl_ClipDistance and gl_CullDistance built-in arrays have unique semantics.
-    // They are pre-declared as unsized and must be sized by the shader either
-    // redeclaring them or indexing them only with integral constant expressions.
-    // The translator treats them as having the maximum allowed size and this pass
-    // detects the actual sizes resizing the variables if needed.
     if (parseContext.isExtensionEnabled(TExtension::ANGLE_clip_cull_distance) ||
         parseContext.isExtensionEnabled(TExtension::EXT_clip_cull_distance) ||
         parseContext.isExtensionEnabled(TExtension::APPLE_clip_distance))
     {
-        bool isClipDistanceUsed = false;
-        if (!ValidateClipCullDistance(this, root, &mDiagnostics,
-                                      mResources.MaxCombinedClipAndCullDistances,
-                                      &mClipDistanceSize, &mCullDistanceSize, &isClipDistanceUsed))
+        mClipDistanceSize = static_cast<uint8_t>(parseContext.getClipDistanceArraySize());
+        mCullDistanceSize = static_cast<uint8_t>(parseContext.getCullDistanceArraySize());
+        mMetadataFlags[MetadataFlags::HasClipDistance] = parseContext.isClipDistanceUsed();
+
+        // gl_ClipDistance and gl_CullDistance built-in arrays have unique semantics.
+        // They are pre-declared as unsized and must be sized by the shader either
+        // redeclaring them or indexing them only with integral constant expressions.
+        // The translator treats them as having the maximum allowed size and this pass
+        // applies the actual sizes if needed.
+        if (mClipDistanceSize > 0 && !parseContext.isClipDistanceRedeclared() &&
+            !SizeClipCullDistance(this, root, ImmutableString("gl_ClipDistance"),
+                                  mClipDistanceSize))
+        {
+
+            return false;
+        }
+        if (mCullDistanceSize > 0 && !parseContext.isCullDistanceRedeclared() &&
+            !SizeClipCullDistance(this, root, ImmutableString("gl_CullDistance"),
+                                  mCullDistanceSize))
         {
             return false;
         }
-        mMetadataFlags[MetadataFlags::HasClipDistance] = isClipDistanceUsed;
     }
 
     // Validate no barrier() after return before prunning it in |PruneNoOps()| below.
@@ -1243,6 +1253,9 @@ bool TCompiler::checkAndSimplifyAST(TIntermBlock *root,
 
     mValidateASTOptions.validateMultiDeclarations = true;
 
+    // Move declarations before functions to simplify transformations.
+    MoveDeclarationsBeforeFunctions(root);
+
     if (!SplitSequenceOperator(this, root, IntermNodePatternMatcher::kArrayLengthMethod,
                                &getSymbolTable()))
     {
@@ -1460,29 +1473,6 @@ bool TCompiler::checkAndSimplifyAST(TIntermBlock *root,
     return true;
 }
 
-bool TCompiler::postParseChecks(const TParseContext &parseContext)
-{
-    std::stringstream errorMessage;
-
-    if (parseContext.getTreeRoot() == nullptr)
-    {
-        errorMessage << "Shader parsing failed (mTreeRoot == nullptr)";
-    }
-
-    for (TType *type : parseContext.getDeferredArrayTypesToSize())
-    {
-        errorMessage << "Unsized global array type: " << type->getBasicString();
-    }
-
-    if (!errorMessage.str().empty())
-    {
-        mDiagnostics.globalError(errorMessage.str().c_str());
-        return false;
-    }
-
-    return true;
-}
-
 bool TCompiler::compile(const char *const shaderStrings[],
                         size_t numStrings,
                         const ShCompileOptions &compileOptionsIn)
@@ -1502,6 +1492,11 @@ bool TCompiler::compile(const char *const shaderStrings[],
     {
         // This should be harmless to do in all cases, but for the moment, do it only conditionally.
         compileOptions.flattenPragmaSTDGLInvariantAll = true;
+    }
+
+    if (mShaderType != GL_FRAGMENT_SHADER)
+    {
+        compileOptions.expandFragmentOutputsToVec4 = false;
     }
 
     TScopedPoolAllocator scopedAlloc;

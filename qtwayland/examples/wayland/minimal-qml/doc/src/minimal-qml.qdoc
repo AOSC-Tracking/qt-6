@@ -12,7 +12,7 @@
  * complete Qt Wayland Compositor with as little code as possible. The compositor is implemented
  * with Qt Quick and QML.
  *
- * \image minimal-qml.png
+ * \image minimal-qml.png {Minimal QML compositor with client window}
  *
  * \section1 The WaylandCompositor Object
  *

@@ -35,6 +35,7 @@
 #include <QtQuick3DRuntimeRender/private/qssgcputonemapper_p.h>
 #include <QtQuick3DRuntimeRender/private/qssgrenderroot_p.h>
 #include <QtQuick3DRuntimeRender/private/qssgrenderuserpass_p.h>
+#include <QtQuick3DRuntimeRender/private/qssgrendercommands_p.h>
 
 #include <QtQuick3DUtils/private/qssgutils_p.h>
 #include <QtQuick3DUtils/private/qssgassert_p.h>
@@ -684,7 +685,10 @@ void QQuick3DSceneRenderer::synchronize(QQuick3DViewport *view3D, const QSize &s
         lmOptions = {};
     }
 
-    { // Resolve lightmaps source url
+
+    if (environment->m_dirtyFlags & QQuick3DSceneEnvironment::InternalDirtyFlag::LightmapperDirty) {
+        environment->m_dirtyFlags &= ~QQuick3DSceneEnvironment::InternalDirtyFlag::LightmapperDirty;
+        // Resolve lightmaps source url
         const QQmlContext *context = qmlContext(view3D);
         const QUrl originalSource = environment->lightmapper() ? environment->lightmapper()->source()
                                                                : QUrl::fromLocalFile(QStringLiteral("lightmaps.bin"));
@@ -695,9 +699,9 @@ void QQuick3DSceneRenderer::synchronize(QQuick3DViewport *view3D, const QSize &s
         m_layer->lightmapSource = lightmapSource;
         // HACK: this is also set in the render layer but we need to set it here since
         // it is needed below when calculating bounding boxes from the stored lightmap mesh
-        m_sgContext->bufferManager()->setLightmapSource(lightmapSource);
+        m_sgContext->bufferManager()->setLightmapSource(m_layer->lightmapSource);
         if (QQuick3DSceneManager *sceneManager = QQuick3DObjectPrivate::get(view3D->scene())->sceneManager)
-            sceneManager->lightmapSource = lightmapSource;
+            sceneManager->lightmapSourceTracker = { m_layer->lightmapSource, true };
     }
 
     // Synchronize scene managers under this window
@@ -761,6 +765,15 @@ void QQuick3DSceneRenderer::synchronize(QQuick3DViewport *view3D, const QSize &s
     m_layer->viewCount = rhiCtx->mainPassViewCount();
     updateLayerNode(*m_layer, *view3D, resourceLoaders.values());
 
+    // If the viewport visibility has changed, we need to mark the layer as dirty to ensure it gets re-rendered.
+    // NOTE: This is needed when there are multiple viewports using a shared scene since the viewport that becomes
+    // visible might wake-up to a scene where all the data is up-to-date, but we still need to render the scene and
+    // not skip it, which would be the case if we see there's no dirty data and therefore skip rendering the frame.
+    if (view3D->m_visibilityChanged) {
+        view3D->m_visibilityChanged = false;
+        m_layer->markDirty(QSSGRenderLayer::DirtyFlag::VisibilityDirty);
+    }
+
     // Request extra frames for antialiasing (ProgressiveAA/TemporalAA)
 
     m_requestedFramesCount = 0;
@@ -786,10 +799,40 @@ void QQuick3DSceneRenderer::synchronize(QQuick3DViewport *view3D, const QSize &s
     for (QSSGRenderEffect *effectNode = m_layer->firstEffect; effectNode; effectNode = effectNode->m_nextEffect)
         effectNode->finalizeShaders(*m_layer, m_sgContext.get());
 
-    // NOTE: This could be done elewhere, but leaving it here for now.
+    // Re-schedule top-level user passes in QML declaration order so a
+    // RenderOutputProvider that scheduled a later pass first cannot
+    // reorder them. A pass referenced by a SubRenderPass command is
+    // tagged SubPass and invoked by its parent, so it is never
+    // scheduled here.
     if (QQuick3DSceneManager *sm = QQuick3DObjectPrivate::get(view3D->scene())->sceneManager; sm) {
         for (QSSGRenderUserPass *userPass : std::as_const(sm->userRenderPasses))
+            userPass->role = QSSGRenderUserPass::Role::TopLevel;
+        for (QSSGRenderUserPass *userPass : std::as_const(sm->userRenderPasses)) {
+            for (const QSSGCommand *cmd : std::as_const(userPass->commands)) {
+                if (cmd->m_type != CommandType::SubRenderPass)
+                    continue;
+                const auto *subCmd = static_cast<const QSSGSubRenderPass *>(cmd);
+                if (subCmd->m_userPassId == QSSGResourceId::Invalid)
+                    continue;
+                if (auto *subPass = QSSGRenderGraphObjectUtils::getResource<QSSGRenderUserPass>(subCmd->m_userPassId))
+                    subPass->role = QSSGRenderUserPass::Role::SubPass;
+            }
+        }
+
+        QSSGUserRenderPassManagerPtr upm;
+        if (m_layer->renderData)
+            upm = m_layer->renderData->requestUserRenderPassManager();
+        if (upm) {
+            for (QSSGRenderUserPass *userPass : std::as_const(sm->userRenderPasses)) {
+                if (userPass->role == QSSGRenderUserPass::Role::TopLevel)
+                    upm->unscheduleUserPass(userPass);
+            }
+        }
+        for (QSSGRenderUserPass *userPass : std::as_const(sm->userRenderPasses)) {
             userPass->finalizeShaders(*m_sgContext);
+            if (upm && userPass->role == QSSGRenderUserPass::Role::TopLevel)
+                upm->scheduleUserPass(userPass);
+        }
     }
 
     if (newRenderStats)
@@ -805,9 +848,9 @@ void QQuick3DSceneRenderer::synchronize(QQuick3DViewport *view3D, const QSize &s
 
         switch (stage) {
         case QSSGRenderExtension::RenderStage::PreColor:
-            return size_t(QSSGRenderLayer::RenderExtensionStage::Overlay);
-        case QSSGRenderExtension::RenderStage::PostColor:
             return size_t(QSSGRenderLayer::RenderExtensionStage::Underlay);
+        case QSSGRenderExtension::RenderStage::PostColor:
+            return size_t(QSSGRenderLayer::RenderExtensionStage::Overlay);
         }
 
         Q_UNREACHABLE_RETURN(size_t(QSSGRenderLayer::RenderExtensionStage::Underlay));
@@ -959,18 +1002,14 @@ void QQuick3DSceneRenderer::synchronize(QQuick3DViewport *view3D, const QSize &s
         m_importSceneRootNode = importSceneRootNode;
     }
 
-    // If the tree is dirty, we need to mark all layers as dirty
-    // so that they get updated.
-    // The _layer_ dirty flag is cleared in the layer prep function and the reindex and
-    // root dirty flag is cleared right before the first layer is prepared (see: prepareLayerForRender().
+    // If the tree is dirty, reindex() rebuilds node indices and marks all
+    // child layers tree-dirty so they rebuild their node views during prep.
+    // The layer dirty flag is cleared in the layer prep function; the root
+    // dirty flag is cleared inside reindex() itself.
     {
         QSSGRenderRoot *rootNode = winAttacment->rootNode();
         if (rootNode->isDirty(QSSGRenderRoot::DirtyFlag::TreeDirty)) {
-            rootNode->reindex(); // Clears TreeDirty flag
-            for (QSSGRenderNode &layer : rootNode->children) {
-                if (QSSG_GUARD_X(layer.type == QSSGRenderGraphObject::Type::Layer, "Layer type mismatch"))
-                    static_cast<QSSGRenderLayer &>(layer).markDirty(QSSGRenderLayer::DirtyFlag::TreeDirty);
-            }
+            rootNode->reindex();
 
             // We exploit the fact that we can use the nodes indexes to establish a dependency order
             // for user passes by using the parent node's index.

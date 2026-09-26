@@ -250,7 +250,7 @@ void QAndroidCamera::frameAvailable(QJniObject image, bool takePhoto)
     // background thread, but read by the QCamera thread during QAndroid::ffmpegHWPixelFormat().
     // This causes a race condition (not severe). We should eventually implement some
     // synchronization strategy.
-    m_androidFramePixelFormat = videoFrame.pixelFormat();
+    m_androidFramePixelFormat = videoFrame.pixelFormat(); // NOTE: Should this be updated on stills?
     if (m_waitingForFirstFrame) {
         m_waitingForFirstFrame = false;
         setState(State::Started);
@@ -482,7 +482,7 @@ void QAndroidCamera::updateCameraCharacteristics()
     // Apply properties
     if (minZoomFactor() < maxZoomFactor()) {
         // New device supports zooming. Clamp it and apply it to new camera device.
-        const float newZoomFactor = qBound(zoomFactor(), minZoomFactor(), maxZoomFactor());
+        const float newZoomFactor = qBound(minZoomFactor(), zoomFactor(), maxZoomFactor());
         zoomTo(newZoomFactor, -1);
     }
 

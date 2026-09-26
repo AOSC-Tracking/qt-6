@@ -91,13 +91,16 @@ ReturnedValue ArrayBufferCtor::method_isView(const FunctionObject *, const Value
     return Encode(false);
 }
 
-
 void Heap::SharedArrayBuffer::init(size_t length)
 {
+    auto adapt = [](auto maybePair) {
+        auto [header, ptr] = maybePair;
+        return std::pair(header, ptr);
+    };
     Object::init();
     std::pair<QTypedArrayData<char> *, char *> pair;
     if (length < UINT_MAX)
-        pair =  QTypedArrayData<char>::allocate(length + 1);
+        pair =  adapt(QTypedArrayData<char>::allocate(length + 1));
     if (!pair.first) {
         new (&arrayDataPointerStorage) QArrayDataPointer<char>();
         internalClass->engine->throwRangeError(QStringLiteral("ArrayBuffer: out of memory"));
@@ -114,7 +117,7 @@ void Heap::SharedArrayBuffer::init(size_t length)
 void Heap::SharedArrayBuffer::init(const QByteArray& array)
 {
     Object::init();
-    new (&arrayDataPointerStorage) QArrayDataPointer<char>(*const_cast<QByteArray &>(array).data_ptr());
+    new (&arrayDataPointerStorage) QArrayDataPointer<char>(array.data_ptr());
     isShared = true;
 }
 

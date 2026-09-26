@@ -16,6 +16,11 @@
     autogenerate Qt HTTP clients in C++ using \l{Qt Network} APIs such as
     \l QRestAccessManager.
 
+    \note The Qt OpenAPI generator uses the
+    \l{https://spec.openapis.org/oas/v3.1.1}{OpenAPI 3.1.1} specification
+    as its reference. This affects features such as operation parameters
+    and nullable model properties.
+
     \note Qt OpenAPI in \QtVer is in \e{Technology Preview}, excluding its
     API from \l[QtDoc]{Compatibility promises}{Qt's compatibility promises}.
 
@@ -24,12 +29,17 @@
     module:
     \list
         \li \l {https://openapi-generator.tech/}{OpenAPI generator}
-            (requires OpenAPI 7.12.0 or above).
+            (version 7.18.0 or later is recommended).
         \li \l {https://maven.apache.org/}{Maven plugin}
-            (requires Maven 3.0 or above).
+            (version 3.0 or later is recommended).
         \li \l {https://openjdk.org/projects/jdk/}{Java JDK}
-            (requires JDK 17 or above).
+            (version 17 or later is recommended).
     \endlist
+    /note The code produced by the Qt OpenAPI generator can vary across
+    versions, as it depends on the version of the upstream OpenAPI
+    generator currently in use. Older generator versions might not support
+    some of the features.
+
     Once you have the required installations, the Qt OpenAPI generator
     is ready for use within your projects.
     To generate client code from an OpenAPI specification

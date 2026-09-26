@@ -41,6 +41,7 @@
 #include <QtWidgets/QStyle>
 #include <QtWidgets/qproxystyle.h>
 #include <QtWidgets/QTextEdit>
+#include <QtWidgets/QRadioButton>
 
 #include <qpa/qwindowsysteminterface.h>
 #include <qpa/qwindowsysteminterface_p.h>
@@ -145,6 +146,7 @@ private slots:
 
     void settableStyleHints_data();
     void settableStyleHints();  // Needs to run last as it changes style hints.
+    void setPaletteForClass();
 };
 
 class EventSpy : public QObject
@@ -172,8 +174,7 @@ void tst_QApplication::sendEventsOnProcessEvents()
     QCoreApplication::processEvents();
 
 #ifdef Q_OS_LINUX
-    if ((QSysInfo::productType() == "rhel" && QSysInfo::productVersion().startsWith(u'9'))
-        || (QSysInfo::productType() == "ubuntu" && QSysInfo::productVersion().startsWith(u'2')))
+    if ((QSysInfo::productType() == "rhel") || (QSysInfo::productType() == "ubuntu"))
     {
         QFile f("/proc/self/maps");
         QVERIFY(f.open(QIODevice::ReadOnly));
@@ -2654,6 +2655,34 @@ void tst_QApplication::globalStaticObjectDestruction()
 #ifndef QT_NO_CURSOR
     QVERIFY(tst_qapp_cursor());
 #endif
+}
+
+class CustomRadioButton : public QRadioButton
+{
+    Q_OBJECT
+};
+
+void tst_QApplication::setPaletteForClass()
+{
+    int argc = 0;
+    QApplication app(argc, nullptr);
+    app.setStyle(new CustomStyle);
+
+    QPalette radioButtonPalette = app.palette();
+    radioButtonPalette.setColor(QPalette::Active, QPalette::Button, Qt::green);
+    QApplication::setPalette(radioButtonPalette, "QRadioButton");
+
+    QPalette abstractButtonPalette = app.palette();
+    abstractButtonPalette.setColor(QPalette::Active, QPalette::Button, Qt::red);
+    QApplication::setPalette(abstractButtonPalette, "QAbstractButton");
+
+    // CustomRadioButton hierarchy:
+    //   CustomRadioButton : QRadioButton : QAbstractButton : QWidget
+    // QRadioButton is the nearest superclass with a registered palette,
+    // so Qt::green must be returned, not Qt::red (QAbstractButton).
+    CustomRadioButton button;
+    QCOMPARE(QApplication::palette(&button).color(QPalette::Active, QPalette::Button),
+             QColor(Qt::green));
 }
 
 //QTEST_APPLESS_MAIN(tst_QApplication)

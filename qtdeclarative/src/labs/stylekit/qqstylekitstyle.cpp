@@ -52,7 +52,7 @@ QT_BEGIN_NAMESPACE
     \labs
 
     \sa Theme, CustomTheme, StyleVariation, ControlStyle, DelegateStyle,
-        CustomControl
+        CustomControl, {StyleKit Property Resolution}
 */
 
 /*!
@@ -348,14 +348,19 @@ void QQStyleKitStyle::recreateTheme()
     QQmlComponent *effectiveThemeComponent = nullptr;
 
     if (QString::compare(m_themeName, kSystem, Qt::CaseInsensitive) == 0) {
-        const auto scheme = QGuiApplication::styleHints()->colorScheme();
-        if (scheme == Qt::ColorScheme::Light) {
-            effectiveThemeName = kLight;
-            effectiveThemeComponent = m_light;
-        }
-        else if (scheme == Qt::ColorScheme::Dark) {
+        switch (QGuiApplication::styleHints()->colorScheme()) {
+        case Qt::ColorScheme::Dark:
             effectiveThemeName = kDark;
             effectiveThemeComponent = m_dark;
+            break;
+        case Qt::ColorScheme::Light:
+        case Qt::ColorScheme::Unknown:
+            effectiveThemeName = kLight;
+            effectiveThemeComponent = m_light;
+            break;
+        // Intentionally skipping a default case here, so that if a new scheme is added
+        // in the future, we get a warning about an unhandled enum value, which will prompt
+        // us to consider if we need to add explicit support for it in StyleKit as well.
         }
     } else if (QString::compare(m_themeName, kLight, Qt::CaseInsensitive) == 0) {
         effectiveThemeName = kLight;
@@ -372,15 +377,15 @@ void QQStyleKitStyle::recreateTheme()
             }
         }
         if (effectiveThemeName.isEmpty())
-            qmlWarning(this) << "No theme found with name:" << m_themeName;
+            qmlWarning(this) << "No theme found with themeName '" << m_themeName << "'";
         else if (!effectiveThemeComponent)
             qmlWarning(this) << "Custom theme '" << effectiveThemeName << "' has no theme component set";
     }
 
-    if (m_effectiveThemeName == effectiveThemeName)
-        return;
-
     if (m_theme) {
+        if (m_effectiveThemeName == effectiveThemeName)
+            return;
+
         m_theme->deleteLater();
         m_theme = nullptr;
     }
@@ -424,14 +429,21 @@ void QQStyleKitStyle::recreateTheme()
     if (m_theme->palettes())
         m_theme->palettes()->setFallbackPalette(palettes());
 
-    if (this == current()) {
-        m_theme->updateThemePalettes();
-        m_theme->updateThemeFonts();
-        QQStyleKitVariation::resetVariationsForStyle(this);
-        QQStyleKitReader::resetAll();
-    }
+    reapplyStyle();
 
     emit themeChanged();
+}
+
+void QQStyleKitStyle::reapplyStyle()
+{
+    if (!loaded())
+        return;
+
+    m_theme->updateThemePalettes();
+    m_theme->updateThemeFonts();
+    QQStyleKitVariation::resetVariationsForStyle(this);
+    if (this == current())
+        QQStyleKitReader::resetAll();
 }
 
 QQStyleKitStyle* QQStyleKitStyle::current()
@@ -496,14 +508,25 @@ void QQStyleKitStyle::componentComplete()
 {
     QQStyleKitControls::componentComplete();
 
-    /* It's important to set m_completed before creating the theme, otherwise
-     * styleAndThemeFinishedLoading() will still be false, which will e.g cause
-     * property reads to return early from QQStyleKitPropertyResolver */
-    m_completed = true;
-
     executeFallbackStyle(true);
-    parseThemes();
-    recreateTheme();
+
+    /* If the style is top-level (i.e not a fallback style), we instantiate its theme and
+     * tell all relevant StyleReaders to update.
+     * Note: as an optimization, we currently don't support fallback styles to have their own
+     * themes, simply because it reduces the number of layers that need to be searched during
+     * property resolution. But we might need to reconsider implementing support for this later. */
+    const bool isTopLevelStyle = !qobject_cast<QQStyleKitStyle *>(parent());
+    if (isTopLevelStyle) {
+        parseThemes();
+        recreateTheme();
+        /* It's important to set m_completed to true before resetting the readers, otherwise
+         * QQStyleKitStyle::loaded() will still be false, which will cause property reads to
+         * trigger the "skip read" optimization from QQStyleKitPropertyResolver */
+        m_completed = true;
+        reapplyStyle();
+    }
+
+    m_completed = true;
 }
 
 QT_END_NAMESPACE

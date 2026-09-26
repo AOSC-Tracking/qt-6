@@ -1128,6 +1128,11 @@ angle::Result FramebufferMtl::prepareRenderPass(const gl::Context *context,
         desc.defaultWidth  = mState.getDefaultWidth();
         desc.defaultHeight = mState.getDefaultHeight();
     }
+    else
+    {
+        desc.defaultWidth  = 0;
+        desc.defaultHeight = 0;
+    }
 
     return angle::Result::Continue;
 }
@@ -1623,8 +1628,8 @@ angle::Result FramebufferMtl::readPixelsImpl(const gl::Context *context,
         ANGLE_TRY(CopyTextureSliceLevelToTempBuffer(context, texture, renderTarget->getLevelIndex(),
                                                     renderTarget->getLayerIndex(), &buffer));
 
-        int bufferRowPitch =
-            texture->width(renderTarget->getLevelIndex()) * readAngleFormat.pixelBytes;
+        size_t bufferRowPitch = static_cast<size_t>(texture->width(renderTarget->getLevelIndex())) *
+                                readAngleFormat.pixelBytes;
 
         buffer->syncContent(contextMtl, contextMtl->getBlitCommandEncoder());
         const uint8_t *bufferData = buffer->mapReadOnly(contextMtl);

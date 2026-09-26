@@ -90,13 +90,13 @@ class MachineLoweringReducer : public Next {
       }
       case ChangeOrDeoptOp::Kind::kInt64ToAdditiveSafeInteger: {
         V<Word64> i64_input = V<Word64>::Cast(input);
-        // Check the value actually fits in AdditiveSafeInteger.
-        // (value - kMinAdditiveSafeInteger) >> 52 == 0.
-        V<Word32> check_is_zero =
-            __ Word64Equal(__ Word64ShiftRightArithmetic(
-                               __ Word64Sub(i64_input, kMinAdditiveSafeInteger),
-                               kAdditiveSafeIntegerBitLength),
-                           0);
+        // Check the value actually fits in AdditiveSafeIntegerFeedback.
+        // (value - kMinAdditiveSafeIntegerFeedback) >> 51 == 0.
+        V<Word32> check_is_zero = __ Word64Equal(
+            __ Word64ShiftRightArithmetic(
+                __ Word64Sub(i64_input, kMinAdditiveSafeIntegerFeedback),
+                kAdditiveSafeIntegerFeedbackBitLength),
+            0);
         __ DeoptimizeIfNot(check_is_zero, frame_state,
                            DeoptimizeReason::kNotAdditiveSafeInteger, feedback);
         return i64_input;
@@ -176,13 +176,13 @@ class MachineLoweringReducer : public Next {
           }
         }
 
-        // Check the value actually fits in AdditiveSafeInteger.
-        // (value - kMinAdditiveSafeInteger) >> 52 == 0.
-        V<Word32> check_is_zero =
-            __ Word64Equal(__ Word64ShiftRightArithmetic(
-                               __ Word64Sub(i64, kMinAdditiveSafeInteger),
-                               kAdditiveSafeIntegerBitLength),
-                           0);
+        // Check the value actually fits in AdditiveSafeIntegerFeedback.
+        // (value - kMinAdditiveSafeIntegerFeedback) >> 51 == 0.
+        V<Word32> check_is_zero = __ Word64Equal(
+            __ Word64ShiftRightArithmetic(
+                __ Word64Sub(i64, kMinAdditiveSafeIntegerFeedback),
+                kAdditiveSafeIntegerFeedbackBitLength),
+            0);
         __ DeoptimizeIfNot(check_is_zero, frame_state,
                            DeoptimizeReason::kNotAdditiveSafeInteger, feedback);
 
@@ -524,10 +524,7 @@ class MachineLoweringReducer : public Next {
         GOTO_IF(__ Word32Equal(instance_type, ODDBALL_TYPE), done, 1);
 
 #if V8_STATIC_ROOTS_BOOL
-        GOTO(done,
-             __ Uint32LessThanOrEqual(
-                 __ TruncateWordPtrToWord32(__ BitcastHeapObjectToWordPtr(map)),
-                 __ Word32Constant(InstanceTypeChecker::kStringMapUpperBound)));
+        GOTO(done, __ IsStringMap(map));
 #else
         GOTO(done, __ Uint32LessThan(instance_type, FIRST_NONSTRING_TYPE));
 #endif  // V8_STATIC_ROOTS_BOOL
@@ -546,10 +543,7 @@ class MachineLoweringReducer : public Next {
         }
 
         V<Map> map = __ LoadMapField(input);
-        GOTO(done,
-             __ Uint32LessThanOrEqual(
-                 __ TruncateWordPtrToWord32(__ BitcastHeapObjectToWordPtr(map)),
-                 __ Word32Constant(InstanceTypeChecker::kStringMapUpperBound)));
+        GOTO(done, __ IsStringMap(map));
 
         BIND(done, result);
         return result;
@@ -1519,9 +1513,7 @@ class MachineLoweringReducer : public Next {
             }
           } ELSE {
 #if V8_STATIC_ROOTS_BOOL
-            V<Word32> is_string_map = __ Uint32LessThanOrEqual(
-                __ TruncateWordPtrToWord32(__ BitcastHeapObjectToWordPtr(map)),
-                __ Word32Constant(InstanceTypeChecker::kStringMapUpperBound));
+            V<Word32> is_string_map = __ IsStringMap(map);
 #else
             V<Word32> instance_type = __ LoadInstanceTypeField(map);
             V<Word32> is_string_map =
@@ -1920,19 +1912,17 @@ class MachineLoweringReducer : public Next {
     __ InitializeField(uninitialized_array,
                        AccessBuilder::ForFixedArrayLength(),
                        __ TagSmi(__ TruncateWordPtrToWord32(length)));
-    // TODO(nicohartmann@): Should finish initialization only after all elements
-    // have been initialized.
-    auto array = __ FinishInitialization(std::move(uninitialized_array));
 
     ScopedVar<WordPtr> index(this, 0);
 
     WHILE(__ UintPtrLessThan(index, length)) {
-      __ StoreNonArrayBufferElement(array, access, index, the_hole_value);
+      __ InitializeNonArrayBufferElement(uninitialized_array, access, index,
+                                         the_hole_value);
       // Advance the {index}.
       index = __ WordPtrAdd(index, 1);
     }
 
-    GOTO(done, array);
+    GOTO(done, __ FinishInitialization(std::move(uninitialized_array)));
 
     BIND(done, result);
     return result;

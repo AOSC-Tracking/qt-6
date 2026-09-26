@@ -25,7 +25,6 @@
 
 using namespace std::chrono_literals;
 
-QT_USE_NAMESPACE
 
 namespace {
 
@@ -460,10 +459,36 @@ void tst_QMediaRecorderBackend::record_writesVideo_withCorrectColors()
 
     // Assert that colors are similar (not exactly the same because compression introduces minor
     // differences)
-    QVERIFY(fuzzyCompare(expectedColors[0], actualColors[0]));
-    QVERIFY(fuzzyCompare(expectedColors[1], actualColors[1]));
-    QVERIFY(fuzzyCompare(expectedColors[2], actualColors[2]));
-    QVERIFY(fuzzyCompare(expectedColors[3], actualColors[3]));
+
+#ifdef Q_OS_MACOS
+    // workaround for hevc_videotoolbox
+    // YUV420P may encode to 10-bit yuv420p10le, which has more quantization artifacts when
+    // converting from 8-bit source frames. Use higher tolerance for all quadrants in this case.
+    const float tolerance = (pixelFormat == QVideoFrameFormat::Format_YUV420P) ? 0.05f : 0.01f;
+#else
+    const float tolerance = 0.01f;
+#endif
+
+    auto verifyQuadrantColor = [&](int quadrant) {
+        QVERIFY2(fuzzyCompare(expectedColors[quadrant], actualColors[quadrant], tolerance),
+                 qPrintable(QString("Quadrant %1 color mismatch for %2. "
+                                    "Expected RGBA(%3,%4,%5,%6), got RGBA(%7,%8,%9,%10)")
+                                    .arg(quadrant)
+                                    .arg(QVideoFrameFormat::pixelFormatToString(pixelFormat))
+                                    .arg(expectedColors[quadrant].red())
+                                    .arg(expectedColors[quadrant].green())
+                                    .arg(expectedColors[quadrant].blue())
+                                    .arg(expectedColors[quadrant].alpha())
+                                    .arg(actualColors[quadrant].red())
+                                    .arg(actualColors[quadrant].green())
+                                    .arg(actualColors[quadrant].blue())
+                                    .arg(actualColors[quadrant].alpha())));
+    };
+
+    verifyQuadrantColor(0);
+    verifyQuadrantColor(1);
+    verifyQuadrantColor(2);
+    verifyQuadrantColor(3);
 }
 
 void tst_QMediaRecorderBackend::actualLocation_returnsNonEmptyLocation_whenRecorderEntersRecordingState()
@@ -616,6 +641,14 @@ void tst_QMediaRecorderBackend::record_writesAudio_withAllSupportedAudioFormats_
 
             if (!f.isSupported(QMediaFormat::Encode))
                 continue;
+
+#ifdef Q_OS_WIN
+            // QTBUG-147882: Wave audio codec with container formats other than Wave is broken on Windows
+            if (c == QMediaFormat::AudioCodec::Wave
+                && f.fileFormat() != QMediaFormat::Wave) {
+                continue;
+            }
+#endif
 
             const auto formatName = QMediaFormat::fileFormatName(f.fileFormat()).toLatin1();
             const auto audioCodecName = QMediaFormat::audioCodecName(f.audioCodec()).toLatin1();

@@ -153,18 +153,31 @@ class ScopedCursorHider {
   ScopedCursorHider& operator=(const ScopedCursorHider&) = delete;
 
   ~ScopedCursorHider() {
-    if (!window_->IsRootWindow())
+    // Store the raw window pointer in a local variable and clear the `window_`
+    // raw_ptr to nullptr before carrying out the rest of the destructor. Since
+    // the window can be synchronously destroyed inside display query sink calls
+    // below, clearing the raw_ptr while the window is still alive prevents
+    // Chromium's dangling raw_ptr checks from triggering on destruction.
+    Window* window = window_;
+    window_ = nullptr;
+
+    if (!window->IsRootWindow()) {
       return;
+    }
 
     // Update the device scale factor of the cursor client only when the last
     // mouse location is on this root window.
     if (hid_cursor_) {
-      client::CursorClient* cursor_client = client::GetCursorClient(window_);
-      if (cursor_client) {
-        const display::Display& display =
-            display::Screen::GetScreen()->GetDisplayNearestWindow(window_);
-        cursor_client->SetDisplay(display);
-        cursor_client->ShowCursor();
+      aura::WindowTracker tracker;
+      tracker.Add(window);
+      const display::Display& display =
+          display::Screen::GetScreen()->GetDisplayNearestWindow(window);
+      if (tracker.Contains(window)) {
+        client::CursorClient* cursor_client = client::GetCursorClient(window);
+        if (cursor_client) {
+          cursor_client->SetDisplay(display);
+          cursor_client->ShowCursor();
+        }
       }
     }
   }
@@ -1226,9 +1239,10 @@ void Window::NotifyRemovingFromRootWindow(Window* new_root) {
     UnregisterFrameSinkId();
   for (WindowObserver& observer : observers_)
     observer.OnWindowRemovingFromRootWindow(this, new_root);
-  for (Window::Windows::const_iterator it = children_.begin();
-       it != children_.end(); ++it) {
-    (*it)->NotifyRemovingFromRootWindow(new_root);
+
+  WindowTracker tracker(children_);
+  while (!tracker.windows().empty()) {
+    tracker.Pop()->NotifyRemovingFromRootWindow(new_root);
   }
 }
 
@@ -1237,9 +1251,10 @@ void Window::NotifyAddedToRootWindow() {
     RegisterFrameSinkId();
   for (WindowObserver& observer : observers_)
     observer.OnWindowAddedToRootWindow(this);
-  for (Window::Windows::const_iterator it = children_.begin();
-       it != children_.end(); ++it) {
-    (*it)->NotifyAddedToRootWindow();
+
+  WindowTracker tracker(children_);
+  while (!tracker.windows().empty()) {
+    tracker.Pop()->NotifyAddedToRootWindow();
   }
 }
 
@@ -1261,9 +1276,9 @@ void Window::NotifyWindowHierarchyChange(
 void Window::NotifyWindowHierarchyChangeDown(
     const WindowObserver::HierarchyChangeParams& params) {
   NotifyWindowHierarchyChangeAtReceiver(params);
-  for (Window::Windows::const_iterator it = children_.begin();
-       it != children_.end(); ++it) {
-    (*it)->NotifyWindowHierarchyChangeDown(params);
+  WindowTracker tracker(children_);
+  while (!tracker.windows().empty()) {
+    tracker.Pop()->NotifyWindowHierarchyChangeDown(params);
   }
 }
 

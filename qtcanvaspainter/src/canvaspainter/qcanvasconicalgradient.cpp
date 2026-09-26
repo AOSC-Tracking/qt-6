@@ -41,7 +41,6 @@ QT_BEGIN_NAMESPACE
     \endtable
 */
 
-#define G_D() auto *d = QCanvasGradientPrivate::get(this)
 #define DECONST(d) const_cast<QCanvasConicalGradientPrivate *>(d)
 
 class QCanvasConicalGradientPrivate : public QCanvasGradientPrivate
@@ -70,7 +69,7 @@ public:
 QCanvasConicalGradient::QCanvasConicalGradient()
     : QCanvasGradient(new QCanvasConicalGradientPrivate)
 {
-    G_D();
+    auto *d = QCanvasGradientPrivate::get(this);
     d->data.conical.cx = 0.0f;
     d->data.conical.cy = 0.0f;
     d->data.conical.angle = 0.0f;
@@ -87,7 +86,7 @@ QCanvasConicalGradient::QCanvasConicalGradient()
 QCanvasConicalGradient::QCanvasConicalGradient(float centerX, float centerY, float startAngle)
     : QCanvasGradient(new QCanvasConicalGradientPrivate)
 {
-    G_D();
+    auto *d = QCanvasGradientPrivate::get(this);
     d->data.conical.cx = centerX;
     d->data.conical.cy = centerY;
     d->data.conical.angle = startAngle;
@@ -104,7 +103,7 @@ QCanvasConicalGradient::QCanvasConicalGradient(float centerX, float centerY, flo
 QCanvasConicalGradient::QCanvasConicalGradient(QPointF center, float startAngle)
     : QCanvasGradient(new QCanvasConicalGradientPrivate)
 {
-    G_D();
+    auto *d = QCanvasGradientPrivate::get(this);
     d->data.conical.cx = float(center.x());
     d->data.conical.cy = float(center.y());
     d->data.conical.angle = startAngle;
@@ -121,7 +120,7 @@ QCanvasConicalGradient::~QCanvasConicalGradient()
 
 QPointF QCanvasConicalGradient::centerPosition() const
 {
-    G_D();
+    auto *d = QCanvasGradientPrivate::get(this);
     return QPointF(d->data.conical.cx,
                    d->data.conical.cy);
 }
@@ -131,8 +130,8 @@ QPointF QCanvasConicalGradient::centerPosition() const
 */
 void QCanvasConicalGradient::setCenterPosition(float x, float y)
 {
-    G_D();
     detach();
+    auto *d = QCanvasGradientPrivate::get(this);
     d->data.conical.cx = x;
     d->data.conical.cy = y;
     d->dirty |= QCanvasGradientPrivate::DirtyFlag::Values;
@@ -151,7 +150,7 @@ void QCanvasConicalGradient::setCenterPosition(float x, float y)
 
 float QCanvasConicalGradient::angle() const
 {
-    G_D();
+    auto *d = QCanvasGradientPrivate::get(this);
     return d->data.conical.angle;
 }
 
@@ -163,8 +162,8 @@ float QCanvasConicalGradient::angle() const
 
 void QCanvasConicalGradient::setAngle(float angle)
 {
-    G_D();
     detach();
+    auto *d = QCanvasGradientPrivate::get(this);
     d->data.conical.angle = angle;
     d->dirty |= QCanvasGradientPrivate::DirtyFlag::Values;
 }
@@ -229,7 +228,6 @@ void QCanvasConicalGradientPrivate::createConicalGradient(const QColor &iColor, 
     }
 }
 
-#undef G_D
 #undef DECONST
 
 QT_END_NAMESPACE

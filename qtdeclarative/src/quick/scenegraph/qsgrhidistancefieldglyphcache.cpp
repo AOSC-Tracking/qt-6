@@ -116,7 +116,6 @@ void QSGRhiDistanceFieldGlyphCache::storeGlyphs(const QList<QDistanceField> &gly
 
     GlyphTextureHash glyphTextures;
 
-    QVarLengthArray<QRhiTextureUploadEntry, 32> uploads;
     for (int i = 0; i < glyphs.size(); ++i) {
         QDistanceField glyph = glyphs.at(i);
         glyph_t glyphIndex = glyph.glyph();
@@ -124,6 +123,9 @@ void QSGRhiDistanceFieldGlyphCache::storeGlyphs(const QList<QDistanceField> &gly
         TextureInfo *texInfo = m_glyphsTexture.value(glyphIndex);
 
         resizeTexture(texInfo, texInfo->allocatedArea.width(), texInfo->allocatedArea.height());
+
+        if (!texInfo->texture)
+            continue;
 
         glyphTextures[texInfo].append(glyphIndex);
 
@@ -151,7 +153,7 @@ void QSGRhiDistanceFieldGlyphCache::storeGlyphs(const QList<QDistanceField> &gly
     QRhiResourceUpdateBatch *resourceUpdates = m_rc->glyphCacheResourceUpdates();
     for (int i = 0; i < glyphs.size(); ++i) {
         TextureInfo *texInfo = m_glyphsTexture.value(glyphs.at(i).glyph());
-        if (!texInfo->uploads.isEmpty()) {
+        if (!texInfo->uploads.isEmpty() && texInfo->texture) {
             QRhiTextureUploadDescription desc;
             desc.setEntries(texInfo->uploads.cbegin(), texInfo->uploads.cend());
             resourceUpdates->uploadTexture(texInfo->texture, desc);
@@ -192,22 +194,28 @@ void QSGRhiDistanceFieldGlyphCache::createTexture(TextureInfo *texInfo,
                                                   int height,
                                                   const void *pixels)
 {
+    QRhiTexture *newTexture = m_rhi->newTexture(QRhiTexture::RED_OR_ALPHA8, QSize(width, height), 1, QRhiTexture::UsedAsTransferSource);
+    if (!newTexture->create()) {
+        qWarning("Failed to create distance field glyph cache");
+        delete newTexture;
+        texInfo->texture = nullptr;
+        texInfo->size = QSize();
+        texInfo->image = QDistanceField();
+        return;
+    }
+
     if (useTextureResizeWorkaround() && texInfo->image.isNull()) {
         texInfo->image = QDistanceField(width, height);
         memcpy(texInfo->image.bits(), pixels, width * height);
     }
 
-    texInfo->texture = m_rhi->newTexture(QRhiTexture::RED_OR_ALPHA8, QSize(width, height), 1, QRhiTexture::UsedAsTransferSource);
-    if (texInfo->texture->create()) {
-        QRhiResourceUpdateBatch *resourceUpdates = m_rc->glyphCacheResourceUpdates();
-        QRhiTextureSubresourceUploadDescription subresDesc(pixels, width * height);
-        subresDesc.setSourceSize(QSize(width, height));
-        resourceUpdates->uploadTexture(texInfo->texture, QRhiTextureUploadEntry(0, 0, subresDesc));
-    } else {
-        qWarning("Failed to create distance field glyph cache");
-    }
-
+    texInfo->texture = newTexture;
     texInfo->size = QSize(width, height);
+
+    QRhiResourceUpdateBatch *resourceUpdates = m_rc->glyphCacheResourceUpdates();
+    QRhiTextureSubresourceUploadDescription subresDesc(pixels, width * height);
+    subresDesc.setSourceSize(QSize(width, height));
+    resourceUpdates->uploadTexture(texInfo->texture, QRhiTextureUploadEntry(0, 0, subresDesc));
 }
 
 void QSGRhiDistanceFieldGlyphCache::resizeTexture(TextureInfo *texInfo, int width, int height)
@@ -219,6 +227,12 @@ void QSGRhiDistanceFieldGlyphCache::resizeTexture(TextureInfo *texInfo, int widt
 
     QRhiTexture *oldTexture = texInfo->texture;
     createTexture(texInfo, width, height);
+
+    if (!texInfo->texture) {
+        if (oldTexture)
+            m_rc->deferredReleaseGlyphCacheTexture(oldTexture);
+        return;
+    }
 
     if (!oldTexture)
         return;
@@ -487,6 +501,10 @@ bool QSGRhiDistanceFieldGlyphCache::loadPregeneratedCache(const QRawFont &font)
             }
 
             createTexture(texInfo, width, height, textureData);
+            textureData += size;
+
+            if (!texInfo->texture)
+                continue;
 
             QList<glyph_t> glyphs = glyphTextures.value(texInfo);
 
@@ -495,8 +513,6 @@ bool QSGRhiDistanceFieldGlyphCache::loadPregeneratedCache(const QRawFont &font)
             t.size = texInfo->size;
 
             setGlyphsTexture(glyphs, t);
-
-            textureData += size;
         }
     }
 

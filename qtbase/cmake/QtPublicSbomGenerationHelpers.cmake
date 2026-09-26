@@ -2,6 +2,8 @@
 # Copyright (C) 2023-2024 Jochem Rutgers
 # SPDX-License-Identifier: MIT AND BSD-3-Clause
 
+__qt_internal_cmake_include_guard(GLOBAL GUARD_KEY "QtPublicSbomGenerationHelpers")
+
 # Helper to set a single arg option to a default value if not set.
 function(_qt_internal_sbom_set_default_option_value option_name default)
     if(NOT arg_${option_name})
@@ -33,10 +35,24 @@ function(_qt_internal_get_current_project_sbom_relative_dir out_var)
     set(${out_var} "${sbom_dir}" PARENT_SCOPE)
 endfunction()
 
+# Helper that retuns the project binary dir of the current SBOM project which is recorded during
+# a _qt_internal_sbom_begin_project() call.
+# We don't just query PROJECT_BINARY_DIR, because subdirectories might have multiple
+# project() calls, but all of them should go to the same sbom document.
+function(_qt_internal_get_sbom_current_project_binary_dir out_var)
+    get_cmake_property(sbom_project_binary_dir _qt_internal_sbom_project_binary_dir)
+    if(NOT sbom_project_binary_dir)
+        message(FATAL_ERROR
+            "The SBOM project binary dir is empty. Call _qt_internal_sbom_begin_project() first")
+    endif()
+    set(${out_var} "${sbom_project_binary_dir}" PARENT_SCOPE)
+endfunction()
+
 # Helper that returns the directory where the intermediate sbom files will be generated.
 function(_qt_internal_get_current_project_sbom_dir out_var)
     _qt_internal_get_current_project_sbom_relative_dir(relative_dir)
-    set(sbom_dir "${PROJECT_BINARY_DIR}/${relative_dir}")
+    _qt_internal_get_sbom_current_project_binary_dir(project_binary_dir)
+    set(sbom_dir "${project_binary_dir}/${relative_dir}")
     set(${out_var} "${sbom_dir}" PARENT_SCOPE)
 endfunction()
 
@@ -262,13 +278,22 @@ function(_qt_internal_sbom_end_project_generate)
         ${build_time_args}
     )
 
+    _qt_internal_sbom_add_verify_source_sbom_build_time_target(
+        REPO_PROJECT_NAME_LOWERCASE "${repo_project_name_lowercase}"
+        SBOM_BUILD_OUTPUT_DIR "${sbom_build_output_dir}"
+        SBOM_BUILD_OUTPUT_PATH_WITHOUT_EXT "${sbom_build_output_path_without_ext}"
+    )
+
     # Add 'reuse lint' per-repo custom targets.
-    if(arg_LINT_SOURCE_SBOM AND NOT QT_INTERNAL_NO_SBOM_PYTHON_OPS)
+    # If the script exists, it means it was already opted in and we can create the target.
+    get_cmake_property(reuse_lint_script _qt_sbom_cmake_reuse_lint_build_time_script)
+    if(reuse_lint_script)
         if(NOT TARGET reuse_lint)
             add_custom_target(reuse_lint)
         endif()
 
         set(comment "Running 'reuse lint' for '${repo_project_name_lowercase}'.")
+        set(repo_sbom_target "sbom_${repo_project_name_lowercase}")
         add_custom_target(${repo_sbom_target}_reuse_lint
             COMMAND "${CMAKE_COMMAND}" -P "${reuse_lint_script}"
             COMMENT "${comment}"

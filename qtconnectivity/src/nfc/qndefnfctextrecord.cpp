@@ -50,28 +50,42 @@ QString QNdefNfcTextRecord::locale() const
     if (p.isEmpty())
         return QString();
 
-    quint8 status = p.at(0);
+    const quint8 status = p.at(0);
 
-    quint8 codeLength = status & 0x3f;
+    const quint8 codeLength = status & 0x3f;
+
+    if (p.size() < 1 + codeLength)
+        return QString();
 
     return QString::fromLatin1(p.constData() + 1, codeLength);
 }
 
 /*!
-    Sets the locale of the text record to \a locale.
+    Sets the locale of the text record to \a locale. Locales longer
+    than 63 bytes will be truncated.
 */
 void QNdefNfcTextRecord::setLocale(const QString &locale)
 {
     QByteArray p = payload();
 
-    quint8 status = p.isEmpty() ? 0 : p.at(0);
+    const quint8 status = p.isEmpty() ? 0 : p.at(0);
 
-    quint8 codeLength = status & 0x3f;
+    const quint8 codeLength = status & 0x3f;
 
-    quint8 newStatus = (status & 0xd0) | locale.size();
+    // Preserve encoding and RFU bits only (bits 7 and 6)
+    const quint8 statusWithoutLanguageCodeLength = status & 0xc0;
+
+    QByteArray localeData = locale.toLatin1();
+    if (localeData.size() > 0x3f) {
+        qWarning("QNdefNfcTextRecord::setLocale(): locale is %" PRIdQSIZETYPE " bytes long but max "
+                 "is 63. Truncating it.", localeData.size());
+        localeData.truncate(0x3f);
+    }
+
+    const quint8 newStatus = statusWithoutLanguageCodeLength | localeData.size();
 
     p[0] = newStatus;
-    p.replace(1, codeLength, locale.toLatin1());
+    p.replace(1, codeLength, localeData);
 
     setPayload(p);
 }
@@ -86,9 +100,12 @@ QString QNdefNfcTextRecord::text() const
     if (p.isEmpty())
         return QString();
 
-    quint8 status = p.at(0);
-    bool utf16 = status & 0x80;
-    quint8 codeLength = status & 0x3f;
+    const quint8 status = p.at(0);
+    const bool utf16 = status & 0x80;
+    const quint8 codeLength = status & 0x3f;
+
+    if (p.size() < 1 + codeLength)
+        return QString();
 
     auto toUnicode = QStringDecoder(
         utf16 ? QStringDecoder::Encoding::Utf16BE : QStringDecoder::Encoding::Utf8,
@@ -107,10 +124,10 @@ void QNdefNfcTextRecord::setText(const QString text)
 
     QByteArray p = payload();
 
-    quint8 status = p.at(0);
+    const quint8 status = p.at(0);
 
-    bool utf16 = status & 0x80;
-    quint8 codeLength = status & 0x3f;
+    const bool utf16 = status & 0x80;
+    const quint8 codeLength = status & 0x3f;
 
     p.truncate(1 + codeLength);
 
@@ -133,9 +150,9 @@ QNdefNfcTextRecord::Encoding QNdefNfcTextRecord::encoding() const
 
     QByteArray p = payload();
 
-    quint8 status = p.at(0);
+    const quint8 status = p.at(0);
 
-    bool utf16 = status & 0x80;
+    const bool utf16 = status & 0x80;
 
     if (utf16)
         return Utf16;
@@ -152,7 +169,7 @@ void QNdefNfcTextRecord::setEncoding(Encoding encoding)
 
     quint8 status = p.isEmpty() ? 0 : p.at(0);
 
-    QString string = text();
+    const QString string = text();
 
     if (encoding == Utf8)
         status &= ~0x80;

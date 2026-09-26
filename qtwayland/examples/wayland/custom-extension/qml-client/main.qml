@@ -8,12 +8,11 @@ import io.qt.examples.customextension
 
 Window {
     id: topLevelWindow
+    property real fontSize: height / 50
     title: "QML Client"
     visible: true
     width: 800
     height: 600
-
-    property real fontSize: height / 50
 
     Column {
         anchors.centerIn: parent
@@ -31,7 +30,7 @@ Window {
             Text {
                 anchors.centerIn: parent
                 text: "Press here to send spin request."
-                font.pixelSize: fontSize
+                font.pixelSize: topLevelWindow.fontSize
                 width: parent.width
                 height: parent.height
                 horizontalAlignment: Text.AlignHCenter
@@ -57,7 +56,7 @@ Window {
             Text {
                 anchors.centerIn: parent
                 text: "Press here to send bounce request."
-                font.pixelSize: fontSize
+                font.pixelSize: topLevelWindow.fontSize
                 width: parent.width
                 height: parent.height
                 horizontalAlignment: Text.AlignHCenter

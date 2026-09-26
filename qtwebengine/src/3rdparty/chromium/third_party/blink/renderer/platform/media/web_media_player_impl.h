@@ -180,6 +180,7 @@ class PLATFORM_EXPORT WebMediaPlayerImpl
 
   // Playback controls.
   void Play() override;
+  void UnlockBackgroundPlayback() override;
   void Pause(PauseReason pause_reason) override;
   void Seek(double seconds) override;
   void SetRate(double rate) override;
@@ -454,7 +455,7 @@ class PLATFORM_EXPORT WebMediaPlayerImpl
 
 #if BUILDFLAG(ENABLE_HLS_DEMUXER)
   void GetUrlData(const GURL& gurl,
-                  bool ignore_cache,
+                  media::DataSource::CacheMode cache_mode,
                   base::OnceCallback<void(scoped_refptr<UrlData>)> cb);
   base::SequenceBound<media::HlsDataSourceProvider> GetHlsDataSourceProvider()
       override;
@@ -484,8 +485,8 @@ class PLATFORM_EXPORT WebMediaPlayerImpl
   // Called after synchronous or asynchronous MemoryDataSource initialization.
   void MemoryDataSourceInitialized(bool success, size_t data_size);
 
-  // Called if the |MultiBufferDataSource| is redirected.
-  void OnDataSourceRedirected();
+  // Called if the data source becomes CORS tainted.
+  void OnDataSourceTainted(const media::DataSource* data_source);
 
   // Called when the data source is downloading or paused.
   void NotifyDownloading(bool is_downloading);
@@ -831,6 +832,11 @@ class PLATFORM_EXPORT WebMediaPlayerImpl
   // Cors and Caching flags set during `Load` and used while creating demuxers.
   CorsMode cors_mode_ = kCorsModeUnspecified;
   bool is_cache_disabled_ = false;
+
+  // Flag for shortcutting the WouldTaintOrigin check. When this is true, there
+  // is no reason to ask the data source vis-a-vis the demuxer manager. Once
+  // this flag is set, it may never be unset.
+  bool is_origin_tainted_ = false;
 
   // Whether the current decoder requires a restart on overlay transitions.
   bool decoder_requires_restart_for_overlay_ = false;

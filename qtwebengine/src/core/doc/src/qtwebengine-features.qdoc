@@ -8,7 +8,8 @@
 
     \brief Summarizes \QWE features.
 
-    \QWE supports the following features:
+    \QWE supports a variety of web content rendering features, most of which are provided
+    by the bundled Chromium engine and exposed via \QWE APIs.
 
     \list
         \li \l{Audio and Video Codecs}
@@ -56,6 +57,8 @@
     configure -webengine-proprietary-codecs
     \endcode
 
+    The actual encoding and decoding is performed by Chromium.
+
     For more information, see \l{Qt Configure Options}.
 
     When using cmake to build just the \QWE module, the following
@@ -84,7 +87,8 @@
     This feature can be tested by launching a \QWE application with the
     command line option \c {--remote-debugging-port=[your-port]} or by setting
     the environment variable \c QTWEBENGINE_REMOTE_DEBUGGING and then using a
-    Chromium based browser (such as \l{WebEngine Widgets Simple Browser Example}
+    Chromium-based browser or a \QWE application
+    (such as \l{WebEngine Widgets Simple Browser Example}
     {Simple Browser} or \l{WebEngine Quick Nano Browser}{Nano Browser}) to connect
     to \c {http://localhost:[your-port]}.
 
@@ -139,6 +143,9 @@
     Note that during the \c selectClientCertificate calls, \QWE lists both system
     and in-memory stored clients certificates.
 
+    The actual validation and use of certificates is performed by Chromium
+    libraries.
+
     See also \l{WebEngine Widgets Client Certificate Example}{Client Certificate Example}
     for more implementation details.
 
@@ -151,6 +158,8 @@
     all the usual web security policies, privileged internal schemes for
     displaying user interface components or debugging information, sandboxed
     schemes with extra restrictions, and so on.
+
+    The handling of custom schemes is performed primarily by Chromium.
 
     For more information, see \l QWebEngineUrlScheme and \l
     QWebEngineUrlSchemeHandler.
@@ -165,8 +174,10 @@
     Simple Browser Example}{Simple Browser} or \l{WebEngine Quick Nano Browser}
     {Nano Browser}.
 
-    Dragging files into the browser is not actually part of HTML5, but it is
+    Dragging files into the web view is not actually part of HTML5, but it is
     supported. It can be tested by opening \l{HTML5 Demos - File API}.
+
+    The actual implementation of this feature is provided by Chromium.
 
     \section1 Favicon
 
@@ -175,6 +186,7 @@
     call or a \l {WebEngineView::icon}{WebEngineView.icon} property for the currently loaded content.
 
     Moreover \QWE provides API for accessing already stored icons in the internal profile's database.
+    The database implementation itself is provided by Chromium.
 
     \note The icon database is not available for off-the-record profiles.
 
@@ -421,6 +433,8 @@
     The plugin comes only in a binary format, so it can hide DRM decryption implementation details.
     You can obtain it from a third party, or from a Google Chrome installation.
 
+    The support for HTML5 DRM is provided by Chromium.
+
     \note The Widevine plugin is not shipped with \QWE.
 
     On startup, \QWE looks for the \l{Widevine CDM} plugin in several well-known locations, like
@@ -469,6 +483,8 @@
     {Location services}, \uicontrol {Let apps access your location} and \uicontrol
     {Let desktop apps access your location}.
 
+    The JavaScript side of the Geolocation API is implemented and provided by Chromium.
+
     See \l{Qt Positioning} for a possible backend setup like the GPS or IP based positioning.
 
     \section1 HTML5 Permissions
@@ -491,6 +507,9 @@
     The full list of currently supported web permissions can be found
     \l {QWebEnginePermission::PermissionType}{in the QWebEnginePermission documentation}.
 
+    The implementation of permissions logic and the JavaScript Permissions API is provided
+    by Chromium.
+
     \note Web permissions are different from application permissions, which are
     governed by the QPermissions API. Web permissions are granted to individual
     web domains, and not to the full application. However, the two APIs are not mutually
@@ -504,12 +523,15 @@
     only the contents of the frame, ignoring the page it's embedded in. Frames can also
     be accessed recursively, for cases where frames exist inside other frames.
 
+    This capability is provided by Chromium and exposed via the \QWE API.
+
     \section1 HTML5 WebSockets
 
-    \QWE supports the WebSocket JavaScript API to communicate with WebSocket servers
-    using the \c {ws://} or \c {wss://} protocols. Moreover, integration with Qt WebChannel
-    and Qt WebSockets enables communication between JavaScript and the native side of
-    the application.
+    \QWE supports and exposes the Chromium-provided WebSocket JavaScript API to
+    communicate with WebSocket servers using the \c {ws://} or \c {wss://}
+    protocols. Moreover, integration with Qt WebChannel and Qt WebSockets
+    enables communication between JavaScript and the native side of the
+    application.
 
     The Qt WebChannel module has a great example for a
     \l[QtWebChannel]{Qt WebChannel ChatServer Example}{chat server}
@@ -535,7 +557,7 @@
     {https://developer.mozilla.org/en-US/docs/Web/API/Web_Storage_API/Using_the_Web_Storage_API}
     {Web Storage API}, where a user can access a \c Storage object for the given domains
     using the \c Window.localStorage JavaScript property. The stored data will persist even
-    after the page or the browser application is closed.
+    after the page or the application is closed.
 
     Note that the \c Local Storage can be also disabled with a
     \l QWebEngineSettings::LocalStorageEnabled
@@ -552,6 +574,8 @@
     \QWE offers also an easy way of investigating the content of the \c {Local Storage}
     with \l {Qt WebEngine Developer Tools} by visiting the \uicontrol Application panel
     and expanding the \uicontrol {Local Storage} menu.
+
+    The implementation of this feature is provided by Chromium.
 
     \section1 Native Dialogs
 
@@ -601,8 +625,8 @@
     \QWE supports the \l {https://wicg.github.io/page-lifecycle/spec.html}{Page
     Lifecycle API specification}, a work-in-progress extension to the HTML
     standard for allowing user agents to reduce their resource consumption by
-    freezing or discarding background pages. The feature is exposed both in the
-    Widgets and QML APIs.
+    freezing or discarding background pages. The feature is implemented by Chromium,
+    and exposed both in the Widgets and QML APIs.
 
     For an example of the QML API in use, see the \l {WebEngine Lifecycle
     Example}.
@@ -629,7 +653,7 @@
     renderer subprocess shut down. CPU and memory usage in this state is reduced
     virtually to zero. On exiting this state the web page will be automatically
     reloaded. The process of entering and exiting the discarded state is similar
-    to serializing the browsing history of the web view and destroying the view,
+    to serializing the history of the web view and destroying the view,
     then creating a new view and restoring its history.
 
     See also \l {WebEngineView::LifecycleState}. The equivalent in the Widgets
@@ -680,11 +704,15 @@
     This feature can be tested using \l{WebEngine Widgets Html2Pdf Example}
     {Html2Pdf}.
 
+    The implementation of this feature is provided by Chromium.
+
     \section1 Push Notifications
 
-    \QWE supports the JavaScript \l{https://www.w3.org/TR/push-api/}{Push API} to
-    subscribe to and receive push notifications. For more information, see
-    QWebEngineProfile::setPushServiceEnabled() and \l{WebEngineProfile::isPushServiceEnabled}
+    \QWE exposes an API to the JavaScript
+    \l{https://www.w3.org/TR/push-api/}{Push API} to subscribe to and receive
+    push notifications. The implementation of this API is provided by Chromium.
+    For more information, see QWebEngineProfile::setPushServiceEnabled() and
+    \l{WebEngineProfile::isPushServiceEnabled}
     {WebEngineProfile.setPushServiceEnabled}.
 
     This feature can be tested with the \l{WebEngine Push Notifications Example}.
@@ -695,6 +723,8 @@
     enable users to submit spellchecked messages. When the user clicks on
     an underlined misspelled word, the default context menu displays up to four
     suggestions. Selecting one will replace the misspelled word.
+
+    The spellchecker implementation is mainly provided by Chromium.
 
     To be able to check the spelling, the spellchecker needs dictionaries. It
     supports dictionaries from the \l{Hunspell project}, but they have to be
@@ -800,6 +830,8 @@
     using \l {QObject::installEventFilter} on the WebEngine view focus proxy object,
     and filtering out all touch events.
 
+    The implementation of this feature is provided by Chromium.
+
     \section1 View Source
 
     \QWE supports viewing the HTML source of a web page.
@@ -826,6 +858,8 @@
     view-source:qt.io
     \endcode
 
+    The implementation of this feature is provided by Chromium.
+
     \section1 Web Notifications
 
     Qt WebEngine supports JavaScript \l{Web Notifications API}.
@@ -833,19 +867,22 @@
     QWebEnginePage::Notifications or \l{WebEngineView::Feature}
     {WebEngineView.Notifications}.
 
+    The implementation of the JavaScript Web Notifications API is provided by
+    Chromium.
+
     \section1 WebEngineDriver
 
-    With WebEngineDriver, you can automate the testing of web sites across browsers.
-    WebEngineDriver is based on ChromeDriver and can be used the same way.
-    For more information about ChromeDriver and its use, visit
-    \l {https://chromedriver.chromium.org/}{ChromeDriver user site}.
+    With WebEngineDriver, you can automate the testing of web sites.
+    WebEngineDriver is based on the Chromium-provided ChromeDriver and can be
+    used the same way. For more information about ChromeDriver and its use,
+    visit \l {https://chromedriver.chromium.org/}{ChromeDriver user site}.
 
     WebEngineDriver has slight modifications compared to ChromeDriver to be able to connect to
-    \QWE based browsers. It is compatible with \QWE example browsers, such as
+    \QWE based applications. It is compatible with \QWE example browsers, such as
     \l {WebEngine Widgets Simple Browser Example}{Simple Browser} or
     \l{WebEngine Quick Nano Browser}{Nano Browser}.
 
-    The browser automation is scripted through a WebDriver client like the
+    The automation is scripted through a WebDriver client like the
     \l {https://www.selenium.dev/}{Selenium WebDriver}.
     For example, WebEngineDriver can be used with the Python lanugage bindings of
     Selenium WebDriver:
@@ -856,7 +893,7 @@
 
     service = Service(executable_path='QTDIR/libexec/webenginedriver')
     options = webdriver.ChromeOptions()
-    options.binary_location = 'path/to/browser_binary'
+    options.binary_location = 'path/to/binary'
 
     driver = webdriver.Chrome(service=service, options=options)
     driver.get("http://www.google.com/")
@@ -867,21 +904,21 @@
     \list
     \li \c executable_path has to be set to the WebEngineDriver's binary path
     \li \c QTDIR is the directory where Qt is installed
-    \li \c options.binary_location has to be set to the browser's binary path
+    \li \c options.binary_location has to be set to the application's binary path
     \endlist
 
     \note On Windows: \c executable_path='QTDIR/bin/webenginedriver.exe'
 
     Before executing the script, the \c QTWEBENGINE_REMOTE_DEBUGGING environment variable has to
-    be set. Its value is a port number what is used by both the browser and WebEngineDriver to
+    be set. Its value is a port number what is used by both the application and WebEngineDriver to
     communicate with each other.
     \badcode
     export QTWEBENGINE_REMOTE_DEBUGGING=12345
     \endcode
 
-    By executing, the script opens the specified web browser and loads the Google web site.
+    By executing, the script opens the specified application and loads the Google web site.
 
-    WebEngineDriver can be also attached to an already running browser if it was started with the
+    WebEngineDriver can be also attached to an already running application if it was started with the
     remote debugging port set. \c options.debugger_address has to be set to the remote debugging
     address in the script:
 
@@ -889,7 +926,7 @@
     options.debugger_address = 'localhost:12345'
     \endcode
 
-    In this case, \c options.binary_location should not be set because the browser is already
+    In this case, \c options.binary_location should not be set because the application is already
     running. The environment variable \c QTWEBENGINE_REMOTE_DEBUGGING is not used by the
     WebEngineDriver if \c options.debugger_address is set.
 
@@ -905,15 +942,19 @@
     The WebGL support is enabled by default. You can disable it with the
     \l QWebEngineSettings::WebGLEnabled setting.
 
+    The implementation of WebGL support is mainly provided by Chromium.
+
     \target webrtc_feature
     \section1 WebRTC
 
-    WebRTC provides browsers with Real-Time Communications (RTC) capabilities
+    WebRTC provides application with Real-Time Communications (RTC) capabilities
     via simple APIs. For more information, see \l{WebEngineView::Feature}
     {WebEngineView.Feature}, and QWebEnginePage::Feature.
 
     This feature can be tested by setting up a webcam or microphone and then
     opening \c https://test.webrtc.org/ in \l{WebEngine Widgets Simple Browser
     Example}{Simple Browser} or \l{WebEngine Quick Nano Browser}{Nano Browser}.
+
+    The implementation of WebRTC support is provided by Chromium libraries.
 
 */

@@ -1,16 +1,23 @@
 project(subproj2)
 
-# This is used by common_result_gen.cmake.
 set(SBOM_VERSION "1.0.2")
 set(SBOM_PROJECT_NAME "${PROJECT_NAME}")
 
-_qt_internal_sbom_begin_project(
-    SBOM_PROJECT_NAME "${SBOM_PROJECT_NAME}"
-    INSTALL_SBOM_DIR "${SBOM_INSTALL_DIR}"
-    SUPPLIER "QtProjectTest"
-    SUPPLIER_URL "https://qt-project.org/SbomTest"
-    VERSION "${SBOM_VERSION}"
-)
+if(NOT CREATE_SINGLE_SBOM)
+    # Default the install dir so we never pass an empty INSTALL_SBOM_DIR (CMP0174) when the
+    # including test does not set SBOM_INSTALL_DIR.
+    if(NOT SBOM_INSTALL_DIR)
+        set(SBOM_INSTALL_DIR "sbom")
+    endif()
+    _qt_internal_sbom_begin_project(
+        SBOM_PROJECT_NAME "${SBOM_PROJECT_NAME}"
+        INSTALL_SBOM_DIR "${SBOM_INSTALL_DIR}"
+        SUPPLIER "QtProjectTest"
+        SUPPLIER_URL "https://qt-project.org/SbomTest"
+        VERSION "${SBOM_VERSION}"
+    )
+    sbom_test_record_project()
+endif()
 
 add_library(subproj2_helper STATIC)
 target_sources(subproj2_helper PRIVATE subproj2_helper.cpp)
@@ -35,12 +42,15 @@ if(TARGET Threads::Threads)
     target_link_libraries(subproj2_helper PRIVATE Threads::Threads)
 endif()
 
-add_library(FancySystemLib IMPORTED INTERFACE)
-_qt_internal_add_sbom(FancySystemLib
-    TYPE SYSTEM_LIBRARY
-)
+if(NOT CREATE_SINGLE_SBOM)
+    add_library(FancySystemLib IMPORTED INTERFACE)
+    set_target_properties(FancySystemLib PROPERTIES IMPORTED_GLOBAL TRUE)
+    _qt_internal_add_sbom(FancySystemLib
+        TYPE SYSTEM_LIBRARY
+    )
+endif()
 target_link_libraries(subproj2_helper PRIVATE FancySystemLib)
 
-_qt_internal_sbom_end_project()
-
-include(CommonResultGen)
+if(NOT CREATE_SINGLE_SBOM)
+    _qt_internal_sbom_end_project()
+endif()

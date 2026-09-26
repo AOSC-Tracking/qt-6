@@ -69,6 +69,16 @@ paths:
       responses:
         "200":
           description: Updated
+  /test:
+    get:
+      operationId: testOperation
+      responses:
+        '200':
+          description: Created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TestObject'
 components:
   schemas:
     # here testing a few standard schema models.
@@ -252,3 +262,10 @@ components:
               type: array
               items:
                 type: string
+    TestObject:
+      type: object
+      required: [env]
+      properties:
+        env:
+          type: object
+          additionalProperties: { type: string }

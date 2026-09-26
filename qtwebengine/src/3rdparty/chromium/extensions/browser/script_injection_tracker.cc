@@ -35,6 +35,7 @@
 #include "extensions/common/permissions/permissions_data.h"
 #include "extensions/common/trace_util.h"
 #include "extensions/common/user_script.h"
+#include "net/base/net_errors.h"
 #include "services/metrics/public/cpp/metrics_utils.h"
 #include "services/metrics/public/cpp/ukm_builders.h"
 
@@ -641,6 +642,25 @@ bool DidProcessRunScriptFromExtension(
 }  // namespace
 
 // static
+void ScriptInjectionTracker::
+    AddExtensionThatRanContentScriptsInProcessForTesting(
+        const content::RenderProcessHost& process,
+        const ExtensionId& extension_id) {
+  RenderProcessHostUserData::GetOrCreate(
+      const_cast<content::RenderProcessHost&>(process))
+      .AddScript(ScriptType::kContentScript, extension_id);
+}
+
+// static
+void ScriptInjectionTracker::AddExtensionThatRanUserScriptsInProcessForTesting(
+    const content::RenderProcessHost& process,
+    const ExtensionId& extension_id) {
+  RenderProcessHostUserData::GetOrCreate(
+      const_cast<content::RenderProcessHost&>(process))
+      .AddScript(ScriptType::kUserScript, extension_id);
+}
+
+// static
 ExtensionIdSet
 ScriptInjectionTracker::GetExtensionsThatRanContentScriptsInProcess(
     const content::RenderProcessHost& process) {
@@ -675,6 +695,11 @@ void ScriptInjectionTracker::ReadyToCommitNavigation(
     base::PassKey<ExtensionWebContentsObserver> pass_key,
     content::NavigationHandle* navigation) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+
+  // Ignore error pages. They won't allow script injection.
+  if (navigation->GetNetErrorCode() != net::OK) {
+    return;
+  }
 
   content::RenderFrameHost& frame = *navigation->GetRenderFrameHost();
   content::RenderProcessHost& process = *frame.GetProcess();
@@ -729,14 +754,14 @@ void ScriptInjectionTracker::DidFinishNavigation(
 
   // Only consider cross-document navigations that actually commit.  (Documents
   // associated with same-document navigations should have already been
-  // processed by an earlier DidFinishNavigation.  Navigations that don't
-  // commit/load won't inject content scripts.  Content script injections are
+  // processed by an earlier DidFinishNavigation. Navigations that don't
+  // commit/load won't inject content scripts. Content script injections are
   // primarily driven by URL matching and therefore failed navigations may still
   // end up injecting content scripts into the error page. Pre-rendered pages
   // already ran content scripts at the initial navigation and don't need to
-  // run them again on activation.)
+  // run them again on activation. Error pages don't allow script injection.)
   if (!navigation->HasCommitted() || navigation->IsSameDocument() ||
-      navigation->IsPrerenderedPageActivation()) {
+      navigation->IsPrerenderedPageActivation() || navigation->IsErrorPage()) {
     return;
   }
 

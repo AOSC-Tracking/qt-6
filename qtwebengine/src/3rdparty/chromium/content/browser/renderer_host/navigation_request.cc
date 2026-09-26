@@ -151,6 +151,7 @@
 #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
 #include "net/base/url_util.h"
 #include "net/cookies/cookie_access_result.h"
+#include "net/cookies/cookie_setting_override.h"
 #include "net/filter/source_stream_type.h"
 #include "net/http/http_request_headers.h"
 #include "net/http/http_status_code.h"
@@ -371,7 +372,8 @@ void AddAdditionalRequestHeaders(
     const std::string& user_agent_override,
     const std::optional<url::Origin>& initiator_origin,
     blink::mojom::Referrer* referrer,
-    FrameTreeNode* frame_tree_node) {
+    FrameTreeNode* frame_tree_node,
+    bool is_browser_initiated) {
   if (!url.SchemeIsHTTPOrHTTPS())
     return;
 
@@ -399,12 +401,44 @@ void AddAdditionalRequestHeaders(
   }
 
   // Next, set the HTTP Origin if needed.
+  std::optional<std::string> existing_origin =
+      headers->GetHeader(net::HttpRequestHeaders::kOrigin);
   if (NeedsHTTPOrigin(headers, method)) {
+    // TODO(https://crbug.com/491783215): investigate whether it is possible to
+    // set Origin headers (at least on navigation requests) exclusively in the
+    // browser process and kill any renderer that provides Origin itself.
     url::Origin origin_header_value = initiator_origin.value_or(url::Origin());
     origin_header_value = Referrer::SanitizeOriginForRequest(
         url, origin_header_value, referrer->policy);
-    headers->SetHeader(net::HttpRequestHeaders::kOrigin,
-                       origin_header_value.Serialize());
+    std::string serialized_origin = origin_header_value.Serialize();
+    if (existing_origin && existing_origin != serialized_origin &&
+        !is_browser_initiated &&
+        base::FeatureList::IsEnabled(features::kDumpOnOriginHeaderMismatch)) {
+      // TODO(https://crbug.com/487795397): this should
+      // be a `bad_message::ReceivedBadMessage` and return `false` once
+      // DumpWithoutCrashing data is evaluated.
+      SCOPED_CRASH_KEY_STRING64("Bug487795397", "invalid_header",
+                                net::HttpRequestHeaders::kOrigin);
+      SCOPED_CRASH_KEY_STRING64("Bug487795397", "existing_origin",
+                                existing_origin.value());
+      SCOPED_CRASH_KEY_STRING64("Bug487795397", "serialized_origin",
+                                serialized_origin);
+      SCOPED_CRASH_KEY_BOOL("Bug487795397", "needs_origin_header", true);
+      base::debug::DumpWithoutCrashing();
+    }
+    headers->SetHeader(net::HttpRequestHeaders::kOrigin, serialized_origin);
+  } else if (existing_origin && !is_browser_initiated &&
+             base::FeatureList::IsEnabled(
+                 features::kDumpOnUnexpectedOriginHeader)) {
+    // TODO(https://crbug.com/40093290): this should
+    // be a `bad_message::ReceivedBadMessage` and return `false` once
+    // DumpWithoutCrashing() data is evaluated.
+    SCOPED_CRASH_KEY_STRING64("Bug487795397", "invalid_header",
+                              net::HttpRequestHeaders::kOrigin);
+    SCOPED_CRASH_KEY_STRING64("Bug487795397", "existing_origin",
+                              existing_origin.value());
+    SCOPED_CRASH_KEY_BOOL("Bug487795397", "needs_origin_header", false);
+    base::debug::DumpWithoutCrashing();
   }
 
   if (base::FeatureList::IsEnabled(features::kDocumentPolicyNegotiation)) {
@@ -1177,20 +1211,28 @@ net::StorageAccessApiStatus ShouldLoadWithStorageAccess(
   //
   // Note: `begin_params` and `common_params` are not trusted, so we have to
   // check the frame token.
-  switch (begin_params.storage_access_api_status) {
-    case net::StorageAccessApiStatus::kNone:
-      return net::StorageAccessApiStatus::kNone;
-    case net::StorageAccessApiStatus::kAccessViaAPI:
-      return common_params.initiator_origin &&
-                     common_params.initiator_origin->IsSameOriginWith(
-                         response_url) &&
-                     begin_params.initiator_frame_token &&
-                     begin_params.initiator_frame_token ==
-                         previous_document_rfh->GetFrameToken() &&
-                     !did_encounter_cross_origin_redirect
-                 ? begin_params.storage_access_api_status
-                 : net::StorageAccessApiStatus::kNone;
+  // If a document has storage access, and initiates a same-origin navigation in
+  // the same frame toward a document from the same origin, the `has storage
+  // access` bit is inherited.
+  if (!previous_document_rfh->document_associated_data()
+           .cookie_setting_overrides()
+           .Has(net::CookieSettingOverride::kStorageAccessGrantEligible)) {
+    // Frame was missing the grant eligible override, so there's no access to
+    // carry over.
+    return net::StorageAccessApiStatus::kNone;
   }
+  if (begin_params.initiator_frame_token !=
+      previous_document_rfh->GetFrameToken()) {
+    // Navigation was not self-initiated.
+    return net::StorageAccessApiStatus::kNone;
+  }
+  if (!common_params.initiator_origin ||
+      !common_params.initiator_origin->IsSameOriginWith(response_url) ||
+      did_encounter_cross_origin_redirect) {
+    // Navigation is not fully same-origin.
+    return net::StorageAccessApiStatus::kNone;
+  }
+  return net::StorageAccessApiStatus::kAccessViaAPI;
 }
 
 // The sampling rate for UKM.
@@ -1229,7 +1271,7 @@ std::unique_ptr<NavigationRequest> NavigationRequest::CreateBrowserInitiated(
           kDidNotStartWithTransientActivation,
       is_pdf, is_embedder_initiated_fenced_frame_navigation,
       /*is_container_initiated=*/false, /*has_rel_opener=*/false,
-      net::StorageAccessApiStatus::kNone, embedder_shared_storage_context);
+      embedder_shared_storage_context);
   // It is only possible for a null NavigationRequest to be returned if an
   // initiator_frame_token is provided.
   CHECK(request);
@@ -1257,7 +1299,6 @@ std::unique_ptr<NavigationRequest> NavigationRequest::Create(
     bool is_embedder_initiated_fenced_frame_navigation,
     bool is_container_initiated,
     bool has_rel_opener,
-    net::StorageAccessApiStatus storage_access_api_status,
     std::optional<std::u16string> embedder_shared_storage_context) {
   TRACE_EVENT1("navigation", "NavigationRequest::Create", "browser_initiated",
                browser_initiated);
@@ -1279,7 +1320,7 @@ std::unique_ptr<NavigationRequest> NavigationRequest::Create(
       base::TimeTicks() /* renderer_before_unload_start */,
       base::TimeTicks() /* renderer_before_unload_end */,
       initiator_activation_and_ad_status, is_container_initiated,
-      storage_access_api_status, has_rel_opener);
+      has_rel_opener);
 
   // Shift-Reload forces bypassing caches and service workers.
   if (common_params->navigation_type ==
@@ -1381,6 +1422,16 @@ std::unique_ptr<NavigationRequest> NavigationRequest::CreateRendererInitiated(
   common_params->request_destination =
       GetDestinationFromFrameTreeNode(frame_tree_node);
 
+  GURL original_url = common_params->url;
+  if (base::FeatureList::IsEnabled(
+          features::kSanitizeOriginalUrlDuringNavigation)) {
+    // It is safe to convert GURL to an Origin and back in the code below
+    // because we only want to discard the rest of the URL (e.g., path and
+    // params). The actual underlying Origin is not needed, which could be
+    // inherited or opaque in sandbox cases.
+    original_url = common_params->url.DeprecatedGetOriginAsURL();
+  }
+
   // TODO(clamy): See if the navigation start time should be measured in the
   // renderer and sent to the browser instead of being measured here.
   blink::mojom::CommitNavigationParamsPtr commit_params =
@@ -1393,7 +1444,7 @@ std::unique_ptr<NavigationRequest> NavigationRequest::CreateRendererInitiated(
           /*redirect_response=*/
           std::vector<network::mojom::URLResponseHeadPtr>(),
           /*redirect_infos=*/std::vector<net::RedirectInfo>(),
-          /*post_content_type=*/std::string(), common_params->url,
+          /*post_content_type=*/std::string(), original_url,
           common_params->method,
           /*can_load_local_resources=*/false,
           /*page_state=*/std::string(),
@@ -1540,6 +1591,15 @@ NavigationRequest::CreateForSynchronousRendererCommit(
   // by navigations that went through the browser (e.g. page_state is only
   // set in CommitNavigationParams of history navigations) or these values are
   // not used by the browser after commit.
+  // It is safe to convert GURL to an Origin and back in the code below because
+  // we only want to discard the rest of the URL (e.g., path and params). The
+  // actual underlying Origin is not needed, which could be inherited or opaque
+  // in sandbox cases.
+  const GURL original_url_for_renderer =
+      base::FeatureList::IsEnabled(
+          features::kSanitizeOriginalUrlDuringNavigation)
+          ? original_url.DeprecatedGetOriginAsURL()
+          : original_url;
   blink::mojom::CommitNavigationParamsPtr commit_params =
       blink::mojom::CommitNavigationParams::New(
           url::Origin(),
@@ -1549,7 +1609,7 @@ NavigationRequest::CreateForSynchronousRendererCommit(
           /*redirect_response=*/
           std::vector<network::mojom::URLResponseHeadPtr>(),
           /*redirect_infos=*/std::vector<net::RedirectInfo>(),
-          /*post_content_type=*/std::string(), original_url,
+          /*post_content_type=*/std::string(), original_url_for_renderer,
           /*original_method=*/method,
           /*can_load_local_resources=*/false,
           /*page_state=*/std::string(),
@@ -1748,6 +1808,7 @@ NavigationRequest::NavigationRequest(
       embedder_shared_storage_context_(embedder_shared_storage_context),
       has_ad_auction_headers_attribute_(frame_tree_node->ad_auction_headers()),
       request_method_(common_params_->method),
+      original_url_(common_params_->url),
       prerender_host_id_(
           GetPrerenderHostRegistry().GetPrerenderHostIdForNavigation(this)) {
   TRACE_EVENT_WITH_FLOW1("navigation", "NavigationRequest::NavigationRequest",
@@ -1756,9 +1817,20 @@ NavigationRequest::NavigationRequest(
                          TRACE_EVENT_FLAG_FLOW_OUT, "navigation_request", this);
   CHECK(!common_params_->initiator_base_url ||
         !common_params_->initiator_base_url->is_empty());
-  DCHECK(!blink::IsRendererDebugURL(common_params_->url));
-  DCHECK(common_params_->method == "POST" || !common_params_->post_data);
-  DCHECK_EQ(common_params_->url, commit_params_->original_url);
+  CHECK(!blink::IsRendererDebugURL(common_params_->url));
+  CHECK(common_params_->method == "POST" || !common_params_->post_data);
+  CHECK_EQ(common_params_->url, original_url_);
+  if (base::FeatureList::IsEnabled(
+          features::kSanitizeOriginalUrlDuringNavigation)) {
+    // TODO(crbug.com/495463654): We need to get the origin of the original_url
+    // here because the NavigationRequestTest helpers directly set original_url
+    // without triggering paths that may sanitize it. This will no longer be an
+    // issue once original_url is converted to be an original_origin.
+    CHECK_EQ(common_params_->url.DeprecatedGetOriginAsURL(),
+            commit_params_->original_url.DeprecatedGetOriginAsURL());
+  } else {
+    CHECK_EQ(common_params_->url, commit_params_->original_url);
+  }
   // Navigations can't be a replacement and a reload at the same time.
   DCHECK(!common_params_->should_replace_current_entry ||
          !NavigationTypeUtils::IsReload(common_params_->navigation_type));
@@ -2032,7 +2104,8 @@ NavigationRequest::NavigationRequest(
         ui::PageTransitionFromInt(common_params_->transition),
         controller->GetBrowserContext(), common_params_->method,
         GetUserAgentOverride(), common_params_->initiator_origin,
-        common_params_->referrer.get(), frame_tree_node);
+        common_params_->referrer.get(), frame_tree_node,
+        commit_params_->is_browser_initiated);
 
     if (begin_params_->is_form_submission) {
       // During form resubmit, `commit_params_->post_content_type` is populated
@@ -2710,7 +2783,17 @@ void NavigationRequest::OnFencedFrameURLMappingComplete(
   const GURL& mapped_url_value =
       properties->mapped_url()->GetValueIgnoringVisibility();
   common_params_->url = mapped_url_value;
-  commit_params_->original_url = mapped_url_value;
+  original_url_ = mapped_url_value;
+  if (base::FeatureList::IsEnabled(
+          features::kSanitizeOriginalUrlDuringNavigation)) {
+    // It is safe to convert GURL to an Origin and back in the code below
+    // because we only want to discard the rest of the URL (e.g., path and
+    // params). The actual underlying Origin is not needed, which could be
+    // inherited or opaque in sandbox cases.
+    commit_params_->original_url = mapped_url_value.DeprecatedGetOriginAsURL();
+  } else {
+    commit_params_->original_url = mapped_url_value;
+  }
 
   // Store the browser's view of the fenced frame properties along with any
   // embedder context for shared storage in the`NavigationRequest`. Upon commit,
@@ -2758,9 +2841,9 @@ void NavigationRequest::BeginNavigationImpl() {
 
   if (!GetContentClient()->browser()->ShouldOverrideUrlLoading(
           frame_tree_node_->frame_tree_node_id(),
-          commit_params_->is_browser_initiated, commit_params_->original_url,
-          commit_params_->original_method, common_params_->has_user_gesture,
-          false, frame_tree_node_->IsOutermostMainFrame(),
+          commit_params_->is_browser_initiated, original_url_, request_method_,
+          common_params_->has_user_gesture, false,
+          frame_tree_node_->IsOutermostMainFrame(),
           frame_tree_node_->frame_tree().is_prerendering(),
           ui::PageTransitionFromInt(common_params_->transition),
           &should_override_url_loading)) {
@@ -3468,6 +3551,15 @@ void NavigationRequest::OnRequestRedirected(
   DCHECK(response_head->parsed_headers);
   response_head_ = std::move(response_head);
   ssl_info_ = response_head_->ssl_info;
+  BrowserContext* browser_context =
+      frame_tree_node_->navigator().controller().GetBrowserContext();
+
+  if (SiteIsolationPolicy::ShouldUrlUseApplicationIsolationLevel(
+          browser_context, GetURL())) {
+    GetContentClient()->browser()->EnsureRequiredHeadersForIsolatedApp(
+        browser_context, GetURL(), response_head_.get(),
+        frame_tree_node_->frame_tree_node_id());
+  }
 
   // Reset the page state as it can no longer be used at commit time since the
   // navigation was redirected.
@@ -3476,6 +3568,10 @@ void NavigationRequest::OnRequestRedirected(
   // Reset NotRestoredReasons as the reasons are for the original page and not
   // for the redirected one.
   commit_params_->not_restored_reasons = nullptr;
+
+  // Reset the LCPP hint as the hint is for the original page and not for the
+  // redirected one.
+  commit_params_->lcpp_hint = nullptr;
 
   // Reset the tentative origin_to_commit, as the redirected one is different.
   tentative_data_origin_to_commit_ = std::nullopt;
@@ -4457,6 +4553,15 @@ void NavigationRequest::OnResponseStarted(
   response_body_ = std::move(response_body);
   ssl_info_ = response_head_->ssl_info;
   auth_challenge_info_ = response_head_->auth_challenge_info;
+  BrowserContext* browser_context =
+      frame_tree_node_->navigator().controller().GetBrowserContext();
+
+  if (SiteIsolationPolicy::ShouldUrlUseApplicationIsolationLevel(
+          browser_context, GetURL())) {
+    GetContentClient()->browser()->EnsureRequiredHeadersForIsolatedApp(
+        browser_context, GetURL(), response_head_.get(),
+        frame_tree_node_->frame_tree_node_id());
+  }
 
   // TODO(crbug.com/40218207): Store the whole EarlyHints struct instead
   // of duplicating all of its fields.
@@ -5331,9 +5436,6 @@ NavigationRequest::ComputeErrorPageProcess() {
   }
 
   if (state_ < NavigationRequest::CANCELING) {
-    CHECK(browser_initiated_error_navigation_type_ !=
-          BrowserInitiatedErrorNavigationType::kNone);
-
     if (browser_initiated_error_navigation_type_ ==
         BrowserInitiatedErrorNavigationType::kPostCommit) {
       // Post-commit error page normally goes through the "non-error page"
@@ -5341,9 +5443,8 @@ NavigationRequest::ComputeErrorPageProcess() {
       return ErrorPageProcess::kPostCommitErrorPage;
     }
 
-    // Otherwise, this is a normal browser-initiated error navigation, which
-    // should fall out of this block and use existing process selection
-    // behavior.
+    // Otherwise, this is a normal error navigation, which should fall out of
+    // this block and use existing process selection behavior.
   }
 
   // By policy we can isolate all error pages from both the current and
@@ -5716,9 +5817,9 @@ void NavigationRequest::AddResourceTimingEntryForFailedSubframeNavigation(
 
   GetParentFrame()->AddResourceTimingEntryForFailedSubframeNavigation(
       frame_tree_node(), common_params().navigation_start,
-      commit_params().navigation_timing->redirect_end,
-      commit_params().original_url, common_params().url,
-      std::move(response_head), allow_response_details, status);
+      commit_params().navigation_timing->redirect_end, original_url_,
+      common_params().url, std::move(response_head), allow_response_details,
+      status);
 }
 
 void NavigationRequest::OnRedirectChecksComplete(
@@ -6306,6 +6407,13 @@ void NavigationRequest::CommitErrorPage(
           previous_origin.GetTupleOrPrecursorTupleIfOpaque();
   if (!is_error_page_with_same_precursor) {
     commit_params_->force_new_document_sequence_number = true;
+  } else {
+    // We only preserve the document sequence number for temporary errors that
+    // could later be reloaded and succeed, which don't stay in the current
+    // process. Fatal errors routed to kCurrentProcess have a pure opaque origin
+    // and will not share the precursor, so they will always force a new
+    // document sequence number.
+    CHECK_NE(ComputeErrorPageProcess(), ErrorPageProcess::kCurrentProcess);
   }
 
   // If the outermost main frame is performing an error navigation, capture the
@@ -6814,6 +6922,18 @@ void NavigationRequest::CommitNavigation() {
   SendDeferredConsoleMessages();
 }
 
+void NavigationRequest::UpdateViewTransitionStateForDestinationOrigin(
+    const url::Origin& origin) {
+  if (!commit_params().view_transition_state && !view_transition_resources_) {
+    return;
+  }
+  // Disallow cross origin view transitions.
+  if (!view_transition_source_origin_.IsSameOriginWith(origin)) {
+    commit_params_->view_transition_state.reset();
+    view_transition_resources_.reset();
+  }
+}
+
 void NavigationRequest::CommitPageActivation() {
   TRACE_EVENT_WITH_FLOW0("navigation",
                          "NavigationRequest::CommitPageActivation",
@@ -6898,6 +7018,11 @@ void NavigationRequest::CommitPageActivation() {
     // ReadyToCommitNavigation call).
     page_activation_commit_time_ = base::TimeTicks::Now();
 
+    // Make sure to update the view transition state before passing the state to
+    // `activated_entry`. This may need to clear the state if the origin
+    // changed.
+    UpdateViewTransitionStateForDestinationOrigin(GetOriginToCommit().value());
+
     // Use std::exchange instead of move, so that we clear out the optional on
     // the commit_params.
     activated_entry->SetViewTransitionState(
@@ -6944,6 +7069,11 @@ void NavigationRequest::CommitPageActivation() {
     // Treat this as the commit start time for the activation (i.e., after the
     // ReadyToCommitNavigation call).
     page_activation_commit_time_ = base::TimeTicks::Now();
+
+    // Make sure to update the view transition state before passing the state to
+    // `stored_page`. This may need to clear the state if the origin
+    // changed.
+    UpdateViewTransitionStateForDestinationOrigin(GetOriginToCommit().value());
 
     // Use std::exchange instead of move, so that we clear out the optional on
     // the commit_params.
@@ -7186,8 +7316,8 @@ bool NavigationRequest::IsAllowedByCSPDirective(
     url = common_params_->url;
   }
   network::CSPCheckResult result = context->IsAllowedByCsp(
-      policies, directive, url, commit_params_->original_url,
-      has_followed_redirect, common_params_->source_location, disposition,
+      policies, directive, url, original_url_, has_followed_redirect,
+      common_params_->source_location, disposition,
       begin_params_->is_form_submission, is_opaque_fenced_frame);
   if (result.WouldBlockIfWildcardDoesNotMatchWs()) {
     GetContentClient()->browser()->LogWebFeatureForCurrentPage(
@@ -7330,7 +7460,18 @@ net::Error NavigationRequest::CheckContentSecurityPolicy(
       network::UpgradeInsecureRequest(&common_params_->url);
       common_params_->referrer = Referrer::SanitizeForRequest(
           common_params_->url, *common_params_->referrer);
-      commit_params_->original_url = common_params_->url;
+      if (base::FeatureList::IsEnabled(
+              features::kSanitizeOriginalUrlDuringNavigation)) {
+        // It is safe to convert GURL to an Origin and back in the code below
+        // because we only want to discard the rest of the URL (e.g., path and
+        // params). The actual underlying Origin is not needed, which could be
+        // inherited or opaque in sandbox cases.
+        commit_params_->original_url =
+            common_params_->url.DeprecatedGetOriginAsURL();
+      } else {
+        commit_params_->original_url = common_params_->url;
+      }
+      original_url_ = common_params_->url;
     }
   }
 
@@ -7584,6 +7725,31 @@ void NavigationRequest::SanitizeRedirectsForCommit(
     for (net::RedirectInfo& redirect :
          redirect_infos_span.first(redirect_infos_span.size() - 1)) {
       redirect.new_url = redirect.new_url.DeprecatedGetOriginAsURL();
+    }
+  }
+
+  if (base::FeatureList::IsEnabled(
+          features::kSanitizeLocationHeadersDuringNavigation)) {
+    url::Origin final_origin = url::Origin::Create(common_params_->url);
+
+    // Sanitize the "Location" headers for redirects that are cross-origin to
+    // the final committed URL.
+    // TODO(crbug.com/495463654): Consider if we need to handle cases that
+    // inherit an origin (e.g. about:blank), or if we cross a CSP sandbox
+    // boundary where the origin becomes unique/opaque.
+    for (size_t i = 0; i < commit_params->redirect_response.size(); ++i) {
+      auto& response_head = commit_params->redirect_response[i];
+      if (!response_head || !response_head->headers ||
+          !response_head->headers->HasHeader("Location")) {
+        continue;
+      }
+
+      const GURL& target_url = commit_params->redirect_infos[i].new_url;
+      const url::Origin target_origin = url::Origin::Create(target_url);
+      if (!target_origin.IsSameOriginWith(final_origin)) {
+        response_head->headers->SetHeader("Location",
+                                          target_origin.GetURL().spec());
+      }
     }
   }
 }
@@ -7930,12 +8096,13 @@ void NavigationRequest::Resume(NavigationThrottle* resuming_throttle) {
       CHECK(response_body_callback_);
       response_body_watcher_.reset();
       base::WeakPtr<NavigationRequest> this_ptr(weak_factory_.GetWeakPtr());
+      std::string throttle_name = resuming_throttle->GetNameForLogging();
       std::move(response_body_callback_).Run(std::string());
       if (this_ptr.WasInvalidated()) {
         // TODO(https://crbug.com/411238078): Replace the debug code with a
         // comment once we ensure that this is the root cause.
         SCOPED_CRASH_KEY_STRING32("Bug411238078", "throttle",
-                                  resuming_throttle->GetNameForLogging());
+                                  throttle_name.c_str());
         base::debug::DumpWithoutCrashing();
         return;
       }
@@ -9065,10 +9232,10 @@ void NavigationRequest::SetCorsExemptRequestHeader(
 }
 
 void NavigationRequest::SetLCPPNavigationHint(
-    const blink::mojom::LCPCriticalPathPredictorNavigationTimeHint& hint) {
+    blink::mojom::LCPCriticalPathPredictorNavigationTimeHintPtr hint) {
   DCHECK(WILL_START_REQUEST == state_ || WILL_REDIRECT_REQUEST == state_)
       << state_;
-  commit_params_->lcpp_hint = hint.Clone();
+  commit_params_->lcpp_hint = std::move(hint);
 }
 
 const blink::mojom::LCPCriticalPathPredictorNavigationTimeHintPtr&
@@ -11005,11 +11172,13 @@ NavigationRequest::GetJavaNavigationHandle() {
 #endif
 
 void NavigationRequest::SetViewTransitionState(
+    const url::Origin& source_origin,
     std::unique_ptr<ScopedViewTransitionResources> resources,
     blink::ViewTransitionState view_transition_state) {
   commit_params_->view_transition_state = std::move(view_transition_state);
   CHECK(resources);
   view_transition_resources_ = std::move(resources);
+  view_transition_source_origin_ = source_origin;
 }
 
 void NavigationRequest::ResetViewTransitionState() {
@@ -11307,10 +11476,16 @@ void NavigationRequest::RecordEarlyRenderFrameHostSwapMetrics() {
 url::Origin NavigationRequest::GetOriginForURLLoaderFactoryUnchecked() {
   if (DidEncounterError()) {
     // Error pages commit in an opaque origin in the renderer process. If this
-    // NavigationRequest resulted in committing an error page, return an
-    // opaque origin that has precursor information consistent with the URL
-    // being requested.  Note: this is intentionally done first; cases like
-    // errors in srcdoc frames need not inherit the parent's origin for errors.
+    // NavigationRequest resulted in committing an error page, return an opaque
+    // origin. We usually derive the precursor for that opaque origin from the
+    // destination URL, with one exception: if the error page commits in the
+    // current process (e.g., for unrecoverable errors in subframes), we leave
+    // the precursor empty. This prevents compromised renderers from gaining
+    // access to opaque origins with precursors that aren't normally allowed in
+    // the process (crbug.com/502348223).
+    if (ComputeErrorPageProcess() == ErrorPageProcess::kCurrentProcess) {
+      return url::Origin();
+    }
     return url::Origin::Create(common_params().url).DeriveNewOpaqueOrigin();
   }
 

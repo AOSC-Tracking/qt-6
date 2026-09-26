@@ -25,16 +25,16 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include <utility>
-
 #include "dawn/native/CommandBuffer.h"
 
 #include "dawn/native/Buffer.h"
 #include "dawn/native/CommandEncoder.h"
 #include "dawn/native/CommandValidation.h"
 #include "dawn/native/Commands.h"
+#include "dawn/native/Device.h"
 #include "dawn/native/Format.h"
 #include "dawn/native/ObjectType_autogen.h"
+#include "dawn/native/QuerySet.h"
 #include "dawn/native/Texture.h"
 
 namespace dawn::native {
@@ -101,7 +101,7 @@ const CommandBufferResourceUsage& CommandBufferBase::GetResourceUsages() const {
     return mResourceUsages;
 }
 
-const std::vector<IndirectDrawMetadata>& CommandBufferBase::GetIndirectDrawMetadata() {
+const ityp::vector<PassIndex, IndirectDrawMetadata>& CommandBufferBase::GetIndirectDrawMetadata() {
     return mIndirectDrawMetadata;
 }
 
@@ -155,7 +155,13 @@ SubresourceRange GetSubresourcesAffectedByCopy(const TextureCopy& copy, const Ex
     DAWN_UNREACHABLE();
 }
 
-void LazyClearRenderPassAttachments(BeginRenderPassCmd* renderPass) {
+MaybeError LazyClearRenderPassAttachments(DeviceBase* device,
+                                          BeginRenderPassCmd* renderPass,
+                                          LazyClearTexture3DHelper clearTexture3D) {
+    if (!device->IsToggleEnabled(Toggle::LazyClearResourceOnFirstUse)) {
+        return {};
+    }
+
     for (auto i : renderPass->attachmentState->GetColorAttachmentsMask()) {
         auto& attachmentInfo = renderPass->colorAttachments[i];
         TextureViewBase* view = attachmentInfo.view.Get();
@@ -164,12 +170,22 @@ void LazyClearRenderPassAttachments(BeginRenderPassCmd* renderPass) {
         DAWN_ASSERT(view->GetLayerCount() == 1);
         DAWN_ASSERT(view->GetLevelCount() == 1);
         SubresourceRange range = view->GetSubresourceRange();
+        TextureBase* texture = view->GetTexture();
 
         // If the loadOp is Load, but the subresource is not initialized, use Clear instead.
         if (attachmentInfo.loadOp == wgpu::LoadOp::Load &&
-            !view->GetTexture()->IsSubresourceContentInitialized(range)) {
+            !texture->IsSubresourceContentInitialized(range)) {
             attachmentInfo.loadOp = wgpu::LoadOp::Clear;
             attachmentInfo.clearColor = {0.f, 0.f, 0.f, 0.f};
+        }
+
+        // For 3D textures, rendering to a single depthSlice marks the entire mip level as
+        // initialized. If it wasn't already initialized, we must clear the other slices
+        // before the render pass starts.
+        // TODO(500975625): Optimize this.
+        if (texture->GetDimension() == wgpu::TextureDimension::e3D &&
+            !texture->IsSubresourceContentInitialized(range)) {
+            DAWN_TRY(clearTexture3D(texture, range));
         }
 
         if (hasResolveTarget) {
@@ -266,6 +282,7 @@ void LazyClearRenderPassAttachments(BeginRenderPassCmd* renderPass) {
             }
         }
     }
+    return {};
 }
 
 bool IsFullBufferOverwrittenInTextureToBufferCopy(const CopyTextureToBufferCmd* copy) {
@@ -332,6 +349,23 @@ std::array<uint32_t, 4> ConvertToUnsignedIntegerColor(dawn::native::Color color)
         static_cast<uint32_t>(color.r), static_cast<uint32_t>(color.g),
         static_cast<uint32_t>(color.b), static_cast<uint32_t>(color.a)};
     return outputValue;
+}
+
+void UpdateQueryAvailability(const WriteTimestampCmd* cmd) {
+    cmd->querySet->MarkQueryAvailable(cmd->queryIndex);
+}
+
+void UpdateQueryAvailability(const EndOcclusionQueryCmd* cmd) {
+    cmd->querySet->MarkQueryAvailable(cmd->queryIndex);
+}
+
+void UpdateQueryAvailability(const TimestampWrites& writes) {
+    if (writes.beginningOfPassWriteIndex != kQuerySetIndexUndefinedTyped) {
+        writes.querySet->MarkQueryAvailable(writes.beginningOfPassWriteIndex);
+    }
+    if (writes.endOfPassWriteIndex != kQuerySetIndexUndefinedTyped) {
+        writes.querySet->MarkQueryAvailable(writes.endOfPassWriteIndex);
+    }
 }
 
 }  // namespace dawn::native

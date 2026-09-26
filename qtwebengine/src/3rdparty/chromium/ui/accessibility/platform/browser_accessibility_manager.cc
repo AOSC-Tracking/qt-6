@@ -254,7 +254,9 @@ void BrowserAccessibilityManager::FireGeneratedEvent(
     return;
   }
 
-  auto* wrapper = GetFromAXNode(node);
+  // Mitigation for b/498205735. Using raw_ptr on the stack as defense-in-depth
+  // to ensure memory is quarantined if freed during the loop below.
+  raw_ptr<BrowserAccessibility> wrapper = GetFromAXNode(node);
   DCHECK(wrapper);
 
   const auto& node_data = wrapper->GetData();
@@ -456,9 +458,13 @@ bool BrowserAccessibilityManager::OnAccessibilityEvents(
   // remove this exclusion.
   base::ScopedSafetyChecksExclusion scoped_unsafe;
 
-#if DCHECK_IS_ON()
+#if BUILDFLAG(IS_WIN)
+  CHECK(!in_on_accessibility_events_)
+      << "Should not re-enter OnAccessiblityEvents()";
+#endif  // BUILDFLAG(IS_WIN)
+#if BUILDFLAG(IS_WIN) || DCHECK_IS_ON()
   base::AutoReset<bool> auto_reset(&in_on_accessibility_events_, true);
-#endif  // DCHECK_IS_ON()
+#endif  // BUILDFLAG(IS_WIN) || DCHECK_IS_ON()
 
   // Update the cached device scale factor.
   if (!use_custom_device_scale_factor_for_testing_)

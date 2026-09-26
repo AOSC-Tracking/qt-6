@@ -157,6 +157,8 @@ class CONTENT_EXPORT WebBluetoothServiceImpl
                            NoShowBluetoothScanningPromptInPrerendering);
   FRIEND_TEST_ALL_PREFIXES(WebBluetoothServiceImplTest,
                            DeferredStartNotifySession);
+  FRIEND_TEST_ALL_PREFIXES(WebBluetoothServiceImplTest,
+                           StartNotificationsBlocklisted);
   FRIEND_TEST_ALL_PREFIXES(WebBluetoothServiceImplTest, DeviceDisconnected);
   FRIEND_TEST_ALL_PREFIXES(WebBluetoothServiceImplTest,
                            DeviceGattServicesDiscoveryTimeout);
@@ -165,11 +167,19 @@ class CONTENT_EXPORT WebBluetoothServiceImpl
   FRIEND_TEST_ALL_PREFIXES(WebBluetoothServiceImplTest,
                            TwoWatchAdvertisementsReqFail);
   FRIEND_TEST_ALL_PREFIXES(WebBluetoothServiceImplTest,
+                           WatchAdvertisementsReqAbortedWhenTabHidden);
+  FRIEND_TEST_ALL_PREFIXES(WebBluetoothServiceImplTest,
                            SecWatchAdvertisementsReqAfterFirstSuccess);
   FRIEND_TEST_ALL_PREFIXES(WebBluetoothServiceImplTestWithBaseAdapter,
                            EmulatedAdapterRemovalRestoresOriginalAdapter);
   FRIEND_TEST_ALL_PREFIXES(WebBluetoothServiceImplTest,
                            ServiceDestroyedDuringAdapterAcquisition);
+  FRIEND_TEST_ALL_PREFIXES(
+      WebBluetoothServiceImplTest,
+      RemoteDescriptorReadValue_ParentCharacteristicBlocklisted);
+  FRIEND_TEST_ALL_PREFIXES(
+      WebBluetoothServiceImplTest,
+      RemoteDescriptorWriteValue_ParentCharacteristicBlocklisted);
 
 #if PAIR_BLUETOOTH_ON_DEMAND()
   FRIEND_TEST_ALL_PREFIXES(WebBluetoothServiceImplTest,

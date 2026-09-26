@@ -580,7 +580,7 @@ public:
                                                                float lodThreshold);
 
     // Convenience wrappers for getting values from the node, model store.
-    [[nodiscard]] QMatrix4x4 getGlobalTransform(QSSGRenderNodeHandle h, QMatrix4x4 defaultValue) const
+    [[nodiscard]] QMatrix4x4 getGlobalTransform(QSSGRenderNodeHandle h, const QMatrix4x4 &defaultValue) const
     {
         return nodeData->getGlobalTransform(h, defaultValue);
     }
@@ -592,7 +592,7 @@ public:
     {
         return nodeData->getGlobalTransform(node.h, node.localTransform);
     }
-    [[nodiscard]] QMatrix3x3 getNormalMatrix(QSSGRenderModelHandle h) const
+    [[nodiscard]] QMatrix3x3 getNormalMatrix(QSSGRenderNodeHandle h) const
     {
         return modelData->getNormalMatrix(h, QMatrix3x3(Qt::Uninitialized));
     }
@@ -600,7 +600,7 @@ public:
     {
         return modelData->getNormalMatrix(model);
     }
-    [[nodiscard]] ModelViewProjections getModelMvps(QSSGRenderModelHandle h) const
+    [[nodiscard]] ModelViewProjections getModelMvps(QSSGRenderNodeHandle h) const
     {
         return modelData->getModelViewProjection(h);
     }
@@ -631,7 +631,7 @@ public:
         return item2DData->getItem2DRenderer(item);
     }
 
-    [[nodiscard]] ModelViewProjections getItem2DMvps(QSSGRenderItem2DHandle h) const
+    [[nodiscard]] ModelViewProjections getItem2DMvps(QSSGRenderNodeHandle h) const
     {
         return item2DData->getModelViewProjection(h);
     }

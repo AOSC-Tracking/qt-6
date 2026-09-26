@@ -20,20 +20,9 @@ namespace media {
 
 class MEDIA_EXPORT HlsDataSourceProviderImpl : public HlsDataSourceProvider {
  public:
-  // An instance of DataSourceFactory allows separation of DataSource creation
-  // and DataSourceStream buffer management for easier testing.
-  class DataSourceFactory {
-   public:
-    using DataSourceCb = base::OnceCallback<void(std::unique_ptr<DataSource>)>;
-    virtual ~DataSourceFactory() = default;
-    virtual void CreateDataSource(GURL uri,
-                                  bool ignore_cache,
-                                  DataSourceCb cb) = 0;
-  };
-
   ~HlsDataSourceProviderImpl() override;
   explicit HlsDataSourceProviderImpl(
-      std::unique_ptr<DataSourceFactory> factory);
+      std::unique_ptr<DataSource::Factory> factory);
 
   // HlsDataSourceProvider implementation
   void ReadFromCombinedUrlQueue(SegmentQueue segments,
@@ -46,7 +35,8 @@ class MEDIA_EXPORT HlsDataSourceProviderImpl : public HlsDataSourceProvider {
  private:
   void UpdateStreamMetadata(HlsDataSourceStream::StreamId,
                             HlsDataSourceStream& stream);
-  void OnDataSourceCreated(std::unique_ptr<HlsDataSourceStream> stream,
+  void OnDataSourceCreated(DataSource::RangeMode range_mode,
+                           std::unique_ptr<HlsDataSourceStream> stream,
                            ReadCb callback,
                            std::unique_ptr<DataSource> data_source);
   void OnStreamReleased(HlsDataSourceStream::StreamId stream_id);
@@ -54,7 +44,7 @@ class MEDIA_EXPORT HlsDataSourceProviderImpl : public HlsDataSourceProvider {
                              ReadCb callback,
                              bool success);
 
-  std::unique_ptr<DataSourceFactory> data_source_factory_;
+  std::unique_ptr<DataSource::Factory> data_source_factory_;
 
   HlsDataSourceStream::StreamId::Generator stream_id_generator_;
 

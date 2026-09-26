@@ -441,7 +441,8 @@ static void addOpaqueDepthPrePassBindings(QSSGRhiContext *rhiCtx,
     if (isCustomMaterialMeshSubset) {
         QVector<QShaderDescription::InOutVariable> samplerVars =
                 shaderPipeline->fragmentStage()->shader().description().combinedImageSamplers();
-        for (const QShaderDescription::InOutVariable &var : shaderPipeline->vertexStage()->shader().description().combinedImageSamplers()) {
+        const auto combinedSamplers = shaderPipeline->vertexStage()->shader().description().combinedImageSamplers();
+        for (const QShaderDescription::InOutVariable &var : combinedSamplers) {
             auto it = std::find_if(samplerVars.cbegin(), samplerVars.cend(),
                                    [&var](const QShaderDescription::InOutVariable &v) { return var.binding == v.binding; });
             if (it == samplerVars.cend())
@@ -1852,7 +1853,7 @@ void RenderHelpers::rhiRenderReflectionMap(QSSGRhiContext *rhiCtx,
                                            const QSSGLayerRenderData &inData,
                                            QSSGRhiGraphicsPipelineState *ps,
                                            QSSGRenderReflectionMap &reflectionMapManager,
-                                           const QVector<QSSGRenderReflectionProbe *> &reflectionProbes,
+                                           const std::vector<QSSGRenderReflectionProbe *> &reflectionProbes,
                                            const QSSGRenderableObjectList &reflectionPassObjects,
                                            QSSGRenderer &renderer)
 {
@@ -2908,7 +2909,7 @@ qsizetype RenderHelpers::rhiPrepareOverrideMaterialUserPass(QSSGRhiContext *rhiC
         return -1;
     }
 
-    for (const QSSGRenderableObjectHandle &handle : inObjects) {
+    for (const QSSGRenderableObjectHandle &handle : std::as_const(inObjects)) {
         QSSGRenderableObject *obj = handle.obj;
 
         if (obj->type != QSSGRenderableObject::Type::DefaultMaterialMeshSubset &&
@@ -2955,7 +2956,8 @@ qsizetype RenderHelpers::rhiPrepareOverrideMaterialUserPass(QSSGRhiContext *rhiC
 
         if (isCustomMaterial) {
             const auto &material = static_cast<const QSSGRenderCustomMaterial &>(*overrideMaterial);
-            ps.cullMode = QSSGRhiHelpers::toCullMode(material.m_cullMode);
+            if (!ps.userSetCullMode)
+                ps.cullMode = QSSGRhiHelpers::toCullMode(material.m_cullMode);
 
             QSSGCustomMaterialSystem &customMaterialSystem(*subsetRenderable.renderer->contextInterface()->customMaterialSystem().get());
             shaderPipeline = customMaterialSystem.shadersForCustomMaterial(&ps, material, subsetRenderable,
@@ -2969,7 +2971,8 @@ qsizetype RenderHelpers::rhiPrepareOverrideMaterialUserPass(QSSGRhiContext *rhiC
             }
         } else {
             const auto &material = static_cast<const QSSGRenderDefaultMaterial &>(*overrideMaterial);
-            ps.cullMode = QSSGRhiHelpers::toCullMode(material.cullMode);
+            if (!ps.userSetCullMode)
+                ps.cullMode = QSSGRhiHelpers::toCullMode(material.cullMode);
 
             shaderPipeline = shadersForDefaultMaterial(&ps, subsetRenderable, featureSet);
             if (shaderPipeline) {
@@ -3152,7 +3155,7 @@ qsizetype RenderHelpers::rhiPrepareOriginalMaterialUserPass(QSSGRhiContext *rhiC
     QSSGRhiGraphicsPipelineState ps = basePipelineState;
     QSSGRhiContextPrivate *rhiCtxD = QSSGRhiContextPrivate::get(rhiCtx);
 
-    for (const QSSGRenderableObjectHandle &handle : inObjects) {
+    for (const QSSGRenderableObjectHandle &handle : std::as_const(inObjects)) {
         QSSGRenderableObject *obj = handle.obj;
         QSSGRhiShaderPipelinePtr shaderPipeline;
 
@@ -3167,7 +3170,8 @@ qsizetype RenderHelpers::rhiPrepareOriginalMaterialUserPass(QSSGRhiContext *rhiC
         if (obj->type == QSSGRenderableObject::Type::DefaultMaterialMeshSubset) {
             QSSGSubsetRenderable &subsetRenderable(*static_cast<QSSGSubsetRenderable *>(obj));
             const auto &material = static_cast<const QSSGRenderDefaultMaterial &>(subsetRenderable.getMaterial());
-            ps.cullMode = QSSGRhiHelpers::toCullMode(material.cullMode);
+            if (!ps.userSetCullMode)
+                ps.cullMode = QSSGRhiHelpers::toCullMode(material.cullMode);
 
             shaderPipeline = shadersForDefaultMaterial(&ps, subsetRenderable, featureSet);
             if (shaderPipeline) {
@@ -3180,7 +3184,8 @@ qsizetype RenderHelpers::rhiPrepareOriginalMaterialUserPass(QSSGRhiContext *rhiC
         } else if (obj->type == QSSGRenderableObject::Type::CustomMaterialMeshSubset) {
             QSSGSubsetRenderable &subsetRenderable(*static_cast<QSSGSubsetRenderable *>(obj));
             const auto &material = static_cast<const QSSGRenderCustomMaterial &>(subsetRenderable.getMaterial());
-            ps.cullMode = QSSGRhiHelpers::toCullMode(material.m_cullMode);
+            if (!ps.userSetCullMode)
+                ps.cullMode = QSSGRhiHelpers::toCullMode(material.m_cullMode);
 
             QSSGCustomMaterialSystem &customMaterialSystem(*subsetRenderable.renderer->contextInterface()->customMaterialSystem().get());
             shaderPipeline = customMaterialSystem.shadersForCustomMaterial(&ps, material, subsetRenderable,
@@ -3411,7 +3416,8 @@ qsizetype RenderHelpers::rhiPrepareOriginalMaterialUserPass(QSSGRhiContext *rhiC
                 int maxSamplerBinding = -1;
                 QVector<QShaderDescription::InOutVariable> samplerVars =
                         shaderPipeline->fragmentStage()->shader().description().combinedImageSamplers();
-                for (const QShaderDescription::InOutVariable &var : shaderPipeline->vertexStage()->shader().description().combinedImageSamplers()) {
+                const auto combinedSamplers = shaderPipeline->vertexStage()->shader().description().combinedImageSamplers();
+                for (const QShaderDescription::InOutVariable &var : combinedSamplers) {
                     auto it = std::find_if(samplerVars.cbegin(), samplerVars.cend(),
                                            [&var](const QShaderDescription::InOutVariable &v) { return var.binding == v.binding; });
                     if (it == samplerVars.cend())
@@ -3468,7 +3474,7 @@ qsizetype RenderHelpers::rhiPrepareAugmentedUserPass(QSSGRhiContext *rhiCtx,
         return index;
 
     QSSGRhiGraphicsPipelineState ps = basePipelineState;
-    for (const QSSGRenderableObjectHandle &handle : inObjects) {
+    for (const QSSGRenderableObjectHandle &handle : std::as_const(inObjects)) {
         QSSGRenderableObject *obj = handle.obj;
         QSSGRhiShaderPipelinePtr shaderPipeline;
         QSSGRhiContextPrivate *rhiCtxD = QSSGRhiContextPrivate::get(rhiCtx);
@@ -3486,7 +3492,8 @@ qsizetype RenderHelpers::rhiPrepareAugmentedUserPass(QSSGRhiContext *rhiCtx,
         if (obj->type == QSSGRenderableObject::Type::DefaultMaterialMeshSubset) {
             QSSGSubsetRenderable &subsetRenderable(*static_cast<QSSGSubsetRenderable *>(obj));
             const auto &material = static_cast<const QSSGRenderDefaultMaterial &>(subsetRenderable.getMaterial());
-            ps.cullMode = QSSGRhiHelpers::toCullMode(material.cullMode);
+            if (!ps.userSetCullMode)
+                ps.cullMode = QSSGRhiHelpers::toCullMode(material.cullMode);
 
             shaderPipeline = shadersForDefaultMaterial(&ps, subsetRenderable, featureSet, shaderAugmentation);
             if (shaderPipeline) {
@@ -3501,7 +3508,8 @@ qsizetype RenderHelpers::rhiPrepareAugmentedUserPass(QSSGRhiContext *rhiCtx,
         } else if (obj->type == QSSGRenderableObject::Type::CustomMaterialMeshSubset) {
             QSSGSubsetRenderable &subsetRenderable(*static_cast<QSSGSubsetRenderable *>(obj));
             const auto &material = static_cast<const QSSGRenderCustomMaterial &>(subsetRenderable.getMaterial());
-            ps.cullMode = QSSGRhiHelpers::toCullMode(material.m_cullMode);
+            if (!ps.userSetCullMode)
+                ps.cullMode = QSSGRhiHelpers::toCullMode(material.m_cullMode);
 
             QSSGCustomMaterialSystem &customMaterialSystem(*subsetRenderable.renderer->contextInterface()->customMaterialSystem().get());
             // Don't apply a shader augmentation to an unshaded custom material (they should do their own augmentations with preprocessor conditionals)
@@ -3748,7 +3756,8 @@ qsizetype RenderHelpers::rhiPrepareAugmentedUserPass(QSSGRhiContext *rhiCtx,
 
                 QVector<QShaderDescription::InOutVariable> samplerVars =
                         shaderPipeline->fragmentStage()->shader().description().combinedImageSamplers();
-                for (const QShaderDescription::InOutVariable &var : shaderPipeline->vertexStage()->shader().description().combinedImageSamplers()) {
+                const auto combinedSamplers = shaderPipeline->vertexStage()->shader().description().combinedImageSamplers();
+                for (const QShaderDescription::InOutVariable &var : combinedSamplers) {
                     auto it = std::find_if(samplerVars.cbegin(), samplerVars.cend(),
                                            [&var](const QShaderDescription::InOutVariable &v) { return var.binding == v.binding; });
                     if (it == samplerVars.cend())

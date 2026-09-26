@@ -210,7 +210,7 @@ static FORMATETC setCf(int cf)
     return formatetc;
 }
 
-static bool setData(const QByteArray &data, STGMEDIUM *pmedium)
+static bool setData(const QByteArray &data, STGMEDIUM *pmedium, DWORD tymed = TYMED_HGLOBAL)
 {
     HGLOBAL hData = GlobalAlloc(0, SIZE_T(data.size()));
     if (!hData)
@@ -219,6 +219,25 @@ static bool setData(const QByteArray &data, STGMEDIUM *pmedium)
     void *out = GlobalLock(hData);
     memcpy(out, data.data(), size_t(data.size()));
     GlobalUnlock(hData);
+
+    // MS Office (and other consumers that prefer streamed delivery for image
+    // payloads) request CF_PNG via TYMED_ISTREAM rather than TYMED_HGLOBAL,
+    // and reject the result if the returned tymed doesn't match. Wrap the
+    // buffer in an IStream only when TYMED_HGLOBAL was not requested, so that
+    // legacy consumers asking for HGLOBAL (or HGLOBAL|ISTREAM) keep getting
+    // it. (QTBUG-126191)
+    if (!(tymed & TYMED_HGLOBAL) && (tymed & TYMED_ISTREAM)) {
+        IStream *stream = nullptr;
+        if (FAILED(::CreateStreamOnHGlobal(hData, /*fDeleteOnRelease*/ TRUE, &stream))) {
+            GlobalFree(hData);
+            return false;
+        }
+        pmedium->tymed = TYMED_ISTREAM;
+        pmedium->pstm = stream;
+        pmedium->pUnkForRelease = nullptr;
+        return true;
+    }
+
     pmedium->tymed = TYMED_HGLOBAL;
     pmedium->hGlobal = hData;
     pmedium->pUnkForRelease = nullptr;
@@ -232,12 +251,18 @@ static QByteArray getData(int cf, IDataObject *pDataObj, int lindex = -1)
     formatetc.lindex = lindex;
     STGMEDIUM s;
     if (pDataObj->GetData(&formatetc, &s) == S_OK) {
-        const void *val = GlobalLock(s.hGlobal);
-        data = QByteArray::fromRawData(reinterpret_cast<const char *>(val), int(GlobalSize(s.hGlobal)));
-        data.detach();
-        GlobalUnlock(s.hGlobal);
+        // Explorer's zipped-folder shell extension returns S_OK with a null
+        // or zero-sized hGlobal for CFSTR_FILECONTENTS (QTBUG-126980); fall
+        // through to the IStream path in that case.
+        if (s.hGlobal && GlobalSize(s.hGlobal) > 0) {
+            const void *val = GlobalLock(s.hGlobal);
+            data = QByteArray::fromRawData(reinterpret_cast<const char *>(val), int(GlobalSize(s.hGlobal)));
+            data.detach();
+            GlobalUnlock(s.hGlobal);
+        }
         ReleaseStgMedium(&s);
-    } else  {
+    }
+    if (data.isEmpty()) {
         //Try reading IStream data
         formatetc.tymed = TYMED_ISTREAM;
         if (pDataObj->GetData(&formatetc, &s) == S_OK) {
@@ -824,10 +849,14 @@ QList<FORMATETC> QWindowsMimeImage::formatsForMime(const QString &mimeType, cons
 {
     QList<FORMATETC> formatetcs;
     if (mimeData->hasImage() && mimeType == u"application/x-qt-image") {
-        //add DIBV5 if image has alpha channel. Do not add CF_PNG here as it will confuse MS Office (QTBUG47656).
         auto image = qvariant_cast<QImage>(mimeData->imageData());
-        if (!image.isNull() && image.hasAlphaChannel())
+        if (!image.isNull() && image.hasAlphaChannel()) {
+            // CF_PNG is the only format modern MS Office (and other apps that
+            // deliver image data via TYMED_ISTREAM) reads with alpha
+            // preserved (QTBUG-126191).
+            formatetcs += setCf(CF_PNG);
             formatetcs += setCf(CF_DIBV5);
+        }
         formatetcs += setCf(CF_DIB);
     }
     if (!formatetcs.isEmpty())
@@ -882,7 +911,7 @@ bool QWindowsMimeImage::convertFromMime(const FORMATETC &formatetc, const QMimeD
             const bool written = buffer.open(QIODevice::WriteOnly) && img.save(&buffer, "PNG");
             buffer.close();
             if (written)
-                return setData(ba, pmedium);
+                return setData(ba, pmedium, formatetc.tymed);
         } else {
             QDataStream s(&ba, QIODevice::WriteOnly);
             s.setByteOrder(QDataStream::LittleEndian);// Intel byte order ####

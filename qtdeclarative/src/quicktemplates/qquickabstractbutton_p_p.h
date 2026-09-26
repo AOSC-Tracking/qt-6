@@ -52,6 +52,7 @@ public:
 
     virtual bool acceptKeyClick(Qt::Key key) const;
     virtual void accessiblePressAction();
+    virtual void accessibleToggleAction();
 
     bool isPressAndHoldConnected();
     bool isDoubleClickConnected();
@@ -102,6 +103,7 @@ public:
     bool autoRepeat = false;
     bool wasHeld = false;
     bool wasDoubleClick = false;
+    bool wasEnabledBeforeTrigger = false;
     int holdTimer = 0;
     int delayTimer = 0;
     int repeatTimer = 0;

@@ -14,14 +14,13 @@
 // We mean it.
 //
 
-#include <QtCore/qobject.h>
-#include <QtCore/qstring.h>
-#include <QtCore/private/qexpected_p.h>
-
-#include <QtMultimedia/qcapturablewindow.h>
-#include <QtMultimedia/qmediarecorder.h>
 #include <QtMultimedia/private/qmultimediautils_p.h>
 #include <QtMultimedia/private/qtmultimediaglobal_p.h>
+#include <QtMultimedia/qcapturablewindow.h>
+#include <QtMultimedia/qmediarecorder.h>
+#include <QtCore/private/qexpected_p.h>
+#include <QtCore/qobject.h>
+#include <QtCore/qstring.h>
 
 #include <memory>
 #include <mutex>
@@ -136,6 +135,8 @@ public:
 
     virtual bool isCameraSwitchingDuringRecordingSupported() const { return true; }
 
+    void resetInstance(); // tests only
+
 protected:
     virtual QPlatformMediaFormatInfo *createFormatInfo();
 
@@ -149,7 +150,6 @@ protected:
 
 private:
     friend class QMockIntegration;
-    void resetInstance(); // tests only
 
 private:
     std::unique_ptr<QPlatformVideoDevices> m_videoDevices;

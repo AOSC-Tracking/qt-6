@@ -1133,8 +1133,6 @@ MaybeError BlitTextureToBuffer(DeviceBase* device,
     auto scope = commandEncoder->MakeInternalUsageScope();
 
     const bool fullSizeCopy = IsFullBufferOverwrittenInTextureToBufferCopy(src, dst, copyExtent);
-    // Skip clearing the buffer if this is full size copy.
-    dst.buffer->SetInitialized(fullSizeCopy || dst.buffer->IsInitialized());
 
     Ref<BufferBase> destinationBuffer = dst.buffer.Get();
     const uint32_t bytesPerRow = dst.bytesPerRow == wgpu::kCopyStrideUndefined
@@ -1329,6 +1327,12 @@ MaybeError BlitTextureToBuffer(DeviceBase* device,
                                                          },
                                                          UsageValidationMode::Internal));
     }
+
+    // TODO(b/513631768): Skip clearing the buffer if this is full size copy.
+    // dst.buffer->SetInitialized(fullSizeCopy || dst.buffer->IsInitialized());
+    //
+    // This optimization is temporarily removed because we cannot mark the buffer as initialized
+    // until the command buffer is submitted.
 
     Ref<ComputePassEncoder> pass = commandEncoder->BeginComputePass();
     pass->APISetPipeline(pipeline.Get());

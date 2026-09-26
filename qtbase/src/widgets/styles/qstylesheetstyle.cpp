@@ -2470,7 +2470,7 @@ static QWidget *embeddedWidget(QWidget *w)
   When \a w is not embedded, this function return \a w itself.
 
 */
-static QWidget *containerWidget(const QWidget *w)
+static const QWidget *containerWidget(const QWidget *w)
 {
 #if QT_CONFIG(lineedit)
     if (qobject_cast<const QLineEdit *>(w)) {
@@ -2493,7 +2493,7 @@ static QWidget *containerWidget(const QWidget *w)
     }
 #endif
 
-    return const_cast<QWidget *>(w);
+    return w;
 }
 
 /** \internal
@@ -4017,7 +4017,8 @@ void QStyleSheetStyle::drawControl(ControlElement ce, const QStyleOption *opt, Q
 
             if (subRule.hasDrawable()) {
                 subRule.drawRule(p, opt->rect);
-                QCommonStyle::drawControl(ce, &mi, p, w); // deliberate bypass of the base
+                // AXIVION Next Line Qt-SkippedBaseMethod: deliberate bypass of the base
+                QCommonStyle::drawControl(ce, &mi, p, w);
             } else {
                 if (rule.hasDrawable() && !(opt->state & QStyle::State_Selected)) {
                     // So that the menu bar background is not hidden by the items
@@ -4664,7 +4665,7 @@ void QStyleSheetStyle::drawPrimitive(PrimitiveElement pe, const QStyleOption *op
         if (const QStyleOptionFrame *frm = qstyleoption_cast<const QStyleOptionFrame *>(opt)) {
             // Fall back to container widget's render rule
             if (w) {
-                if (QWidget *container = containerWidget(w); container != w) {
+                if (const QWidget *container = containerWidget(w); container != w) {
                     QRenderRule containerRule = renderRule(container, opt);
                     if (!containerRule.hasNativeBorder() || !containerRule.baseStyleCanDraw())
                         return;
@@ -4692,7 +4693,7 @@ void QStyleSheetStyle::drawPrimitive(PrimitiveElement pe, const QStyleOption *op
 
     case PE_Widget:
         if (w && !rule.hasDrawable()) {
-            QWidget *container = containerWidget(w);
+            const QWidget *container = containerWidget(w);
             if (styleSheetCaches->autoFillDisabledWidgets.contains(container)
                 && (container == w || !renderRule(container, opt).hasBackground())) {
                 //we do not have a background, but we disabled the autofillbackground anyway. so fill the background now.
@@ -6445,7 +6446,7 @@ void QStyleSheetStyle::updateStyleSheetFont(QWidget* w) const
     if (w->objectName() == "qt_fontDialog_sampleEdit"_L1)
         return;
 
-    QWidget *container = containerWidget(w);
+    const QWidget *container = containerWidget(w);
     QRenderRule rule = renderRule(container, PseudoElement_None,
             PseudoClass_Active | PseudoClass_Enabled | extendedPseudoClass(container));
 

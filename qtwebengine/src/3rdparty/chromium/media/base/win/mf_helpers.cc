@@ -796,7 +796,12 @@ HRESULT CreateDecryptConfigFromSample(
             MFSampleExtension_Encryption_CryptByteBlock, &crypt_byte_block)) &&
         SUCCEEDED(mf_sample->GetUINT32(
             MFSampleExtension_Encryption_SkipByteBlock, &skip_byte_block))) {
-      encryption_pattern = EncryptionPattern(crypt_byte_block, skip_byte_block);
+      auto pattern =
+          EncryptionPattern::Create(crypt_byte_block, skip_byte_block);
+      if (!pattern) {
+        return MF_E_INVALID_STREAM_DATA;
+      }
+      encryption_pattern = *pattern;
     }
 
     DVLOG(3) << __func__ << ": encryption_pattern=" << encryption_pattern;
@@ -984,6 +989,8 @@ void GenerateSampleOnSyncTokenReleased(
     // the texture when ProcessInput is finished.
     D3D11_TEXTURE2D_DESC texture_desc;
     input_texture->GetDesc(&texture_desc);
+    texture_desc.Width = static_cast<UINT>(frame->visible_rect().width());
+    texture_desc.Height = static_cast<UINT>(frame->visible_rect().height());
     texture_desc.Usage = D3D11_USAGE_DEFAULT;
     texture_desc.BindFlags = D3D11_BIND_VIDEO_ENCODER;
     texture_desc.ArraySize = 1;

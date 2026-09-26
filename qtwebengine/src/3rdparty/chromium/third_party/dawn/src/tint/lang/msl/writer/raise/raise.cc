@@ -39,6 +39,7 @@
 #include "src/tint/lang/core/ir/transform/builtin_polyfill.h"
 #include "src/tint/lang/core/ir/transform/builtin_scalarize.h"
 #include "src/tint/lang/core/ir/transform/change_immediate_to_uniform.h"
+#include "src/tint/lang/core/ir/transform/collapse_subgroup_min_max.h"
 #include "src/tint/lang/core/ir/transform/conversion_polyfill.h"
 #include "src/tint/lang/core/ir/transform/demote_to_helper.h"
 #include "src/tint/lang/core/ir/transform/multiplanar_external_texture.h"
@@ -78,6 +79,10 @@ Result<RaiseResult> Raise(core::ir::Module& module, const Options& options) {
             return result.Failure();     \
         }                                \
     } while (false)
+
+    if (options.collapse_subgroup_min_max) {
+        RUN_TRANSFORM(core::ir::transform::CollapseSubgroupMinMax, module);
+    }
 
     RaiseResult raise_result;
 
@@ -249,7 +254,13 @@ Result<RaiseResult> Raise(core::ir::Module& module, const Options& options) {
 
     RUN_TRANSFORM(raise::ModuleScopeVars, module);
 
-    RUN_TRANSFORM(raise::BinaryPolyfill, module);
+    {
+        raise::BinaryPolyfillConfig config{
+            .fix_u32_div_mod = options.fix_u32_div_mod,
+        };
+        RUN_TRANSFORM(raise::BinaryPolyfill, module, config);
+    }
+
     RUN_TRANSFORM(raise::BuiltinPolyfill, module);
     // After 'BuiltinPolyfill' as that transform can introduce signed dot products.
     core::ir::transform::SignedIntegerPolyfillConfig signed_integer_cfg{

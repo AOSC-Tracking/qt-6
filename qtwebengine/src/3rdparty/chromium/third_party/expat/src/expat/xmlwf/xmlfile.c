@@ -11,11 +11,12 @@
    Copyright (c) 2002-2003 Fred L. Drake, Jr. <fdrake@users.sourceforge.net>
    Copyright (c) 2004-2006 Karl Waclawek <karl@waclawek.net>
    Copyright (c) 2005-2007 Steven Solie <steven@solie.ca>
-   Copyright (c) 2016-2023 Sebastian Pipping <sebastian@pipping.org>
+   Copyright (c) 2016-2025 Sebastian Pipping <sebastian@pipping.org>
    Copyright (c) 2017      Rhodri James <rhodri@wildebeest.org.uk>
    Copyright (c) 2019      David Loffredo <loffredo@steptools.com>
    Copyright (c) 2021      Donghee Na <donghee.na@python.org>
    Copyright (c) 2024      Hanno Böck <hanno@gentoo.org>
+   Copyright (c) 2025      Alfonso Gregory <gfunni234@gmail.com>
    Licensed under the MIT license:
 
    Permission is  hereby granted,  free of charge,  to any  person obtaining
@@ -96,8 +97,8 @@ reportError(XML_Parser parser, const XML_Char *filename) {
     ftprintf(stdout,
              T("%s") T(":%") T(XML_FMT_INT_MOD) T("u") T(":%")
                  T(XML_FMT_INT_MOD) T("u") T(": %s\n"),
-             filename, XML_GetErrorLineNumber(parser),
-             XML_GetErrorColumnNumber(parser), message);
+             filename, XML_GetCurrentLineNumber(parser),
+             XML_GetCurrentColumnNumber(parser), message);
   else
     ftprintf(stderr, T("%s: (unknown message %u)\n"), filename,
              (unsigned int)code);
@@ -137,8 +138,7 @@ resolveSystemId(const XML_Char *base, const XML_Char *systemId,
 #endif
   )
     return systemId;
-  *toFree = (XML_Char *)malloc((tcslen(base) + tcslen(systemId) + 2)
-                               * sizeof(XML_Char));
+  *toFree = malloc((tcslen(base) + tcslen(systemId) + 2) * sizeof(XML_Char));
   if (! *toFree)
     return systemId;
   tcscpy(*toFree, base);
@@ -225,7 +225,6 @@ processStream(const XML_Char *filename, XML_Parser parser) {
       if (filename != NULL)
         close(fd);
       break;
-      ;
     }
   }
   return 1;

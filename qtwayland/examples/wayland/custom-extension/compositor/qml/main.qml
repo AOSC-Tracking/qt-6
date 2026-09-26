@@ -1,6 +1,7 @@
 // Copyright (C) 2017 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR BSD-3-Clause
 
+pragma ComponentBehavior: Bound
 import QtQuick
 import QtWayland.Compositor
 import QtWayland.Compositor.XdgShell
@@ -11,18 +12,21 @@ WaylandCompositor {
     id: comp
 
     property alias customExtension: custom
-    property var itemList: []
+    property list<ShellSurfaceItem> itemList: []
 
     function itemForSurface(surface) {
-        var n = itemList.length
-        for (var i = 0; i < n; i++) {
-            if (itemList[i].surface === surface)
-                return itemList[i]
+        for (const elem of itemList) {
+            if (elem.surface === surface)
+                return elem
         }
     }
 
     CompositorScreen {
+        id: output
         compositor: comp
+        itemList: comp.itemList
+        customExtension: comp.customExtension
+        onSetDecorations: (shown) => comp.setDecorations(shown)
     }
 
     Component {
@@ -30,16 +34,14 @@ WaylandCompositor {
         ShellSurfaceItem {
             id: chrome
 
+            required property Window window
             property bool isCustom
             property int fontSize: 12
 
             onSurfaceDestroyed: {
-                var index = itemList.indexOf(chrome)
-                if (index > -1) {
-                    var listCopy = itemList
-                    listCopy.splice(index, 1)
-                    itemList = listCopy
-                }
+                const index = comp.itemList.indexOf(chrome)
+                if (index > -1)
+                    comp.itemList.splice(index, 1)
                 chrome.destroy()
             }
 
@@ -80,7 +82,7 @@ WaylandCompositor {
                 target: chrome
                 property: "y"
                 from: 0
-                to: output.window.height - chrome.height
+                to: window.height - chrome.height
                 easing.type: Easing.OutBounce
                 duration: 1000
             }
@@ -103,28 +105,28 @@ WaylandCompositor {
         id: customObjectComponent
         Rectangle {
             id: customItem
-            property QtObject obj
-            property alias text: label.text
+            property var obj
 
             width: 100
             height: 100
             radius: width / 2
-            x: Math.random() * (defaultOutput.surfaceArea.width - 100)
-            y: Math.random() * (defaultOutput.surfaceArea.height - 100)
+            x: Math.random() * (output.surfaceArea.width - 100)
+            y: Math.random() * (output.surfaceArea.height - 100)
+            color: obj.color
 
             Text {
                 id: label
                 anchors.centerIn: parent
-                text: "?"
+                text: customItem.obj.text
             }
 
             MouseArea {
                 anchors.fill: parent
-                onClicked: obj.sendClicked()
+                onClicked: customItem.obj.sendClicked()
             }
 
             Connections {
-                target: obj
+                target: customItem.obj
                 function onResourceDestroyed() {
                     customItem.destroy()
                 }
@@ -134,14 +136,11 @@ WaylandCompositor {
 
     XdgShell {
         onToplevelCreated: (toplevel, xdgSurface) => {
-            var item = chromeComponent.createObject(defaultOutput.surfaceArea, { "shellSurface": xdgSurface } )
-            var w = defaultOutput.surfaceArea.width / 2
-            var h = defaultOutput.surfaceArea.height / 2
-            item.x = Math.random() * w
-            item.y = Math.random() * h
-            var listCopy = itemList // List properties cannot be modified through Javascript operations
-            listCopy.push(item)
-            itemList = listCopy
+            const item = chromeComponent.createObject(output.surfaceArea,
+                                                      { "shellSurface": xdgSurface, "window": output.window } )
+            item.x = Math.random() * output.surfaceArea.width / 2
+            item.y = Math.random() * output.surfaceArea.height / 2
+            comp.itemList.push(item)
         }
     }
 
@@ -150,33 +149,29 @@ WaylandCompositor {
         id: custom
 
         onSurfaceAdded: (surface) => {
-            var item = itemForSurface(surface)
+            const item = comp.itemForSurface(surface)
             item.isCustom = true
         }
 
         onBounce: (surface, ms) => {
-            var item = itemForSurface(surface)
+            const item = comp.itemForSurface(surface)
             item.doBounce(ms)
         }
 
         onSpin: (surface, ms) => {
-            var item = itemForSurface(surface)
+            const item = comp.itemForSurface(surface)
             item.doSpin(ms)
         }
 
         onCustomObjectCreated: (obj) => {
-            var item = customObjectComponent.createObject(defaultOutput.surfaceArea,
-                                                          { "color": obj.color,
-                                                            "text": obj.text,
-                                                            "obj": obj } )
+            const item = customObjectComponent.createObject(output.surfaceArea, { "obj": obj } )
         }
     }
 
     function setDecorations(shown) {
-        var n = itemList.length
-        for (var i = 0; i < n; i++) {
-            if (itemList[i].isCustom)
-                custom.showDecorations(itemList[i].surface.client, shown)
+        for (const elem of itemList) {
+            if (elem.isCustom)
+                custom.showDecorations(elem.surface.client, shown)
         }
     }
 //! [CustomExtension]

@@ -1,5 +1,6 @@
 // Copyright (C) 2017 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "qwaylandquickitem.h"
 #include "qwaylandquickitem_p.h"
@@ -832,9 +833,10 @@ void QWaylandQuickItem::touchUngrabEvent()
 {
     Q_D(QWaylandQuickItem);
 
-    if (d->shouldSendInputEvents())
-        for (auto seat : d->touchingSeats)
+    if (d->shouldSendInputEvents()) {
+        for (auto seat : std::as_const(d->touchingSeats))
             seat->sendTouchCancelEvent(surface()->client());
+    }
 
     d->touchingSeats.clear();
 }
@@ -1111,7 +1113,7 @@ void QWaylandQuickItem::handleSurfaceChanged()
             QWaylandOutput *output = newSurface->compositor()->outputFor(window());
             d->view->setOutput(output);
         }
-        for (auto subsurface : QWaylandSurfacePrivate::get(newSurface)->subsurfaceChildren) {
+        for (const auto &subsurface : std::as_const(QWaylandSurfacePrivate::get(newSurface)->subsurfaceChildren)) {
             if (!subsurface.isNull())
                 handleSubsurfaceAdded(subsurface.data());
         }

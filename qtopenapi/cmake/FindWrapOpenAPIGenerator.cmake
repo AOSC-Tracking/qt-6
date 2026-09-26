@@ -19,6 +19,8 @@ find_file(OPENAPI_GENERATOR_CLI_JAR
         /usr/share/java
         /usr/local/share/java
         ${Java_JAR_PATHS}
+    PATH_SUFFIXES
+        openapi-generator
 )
 
 # Option 2: - Try to find openapi-generator-cli executable

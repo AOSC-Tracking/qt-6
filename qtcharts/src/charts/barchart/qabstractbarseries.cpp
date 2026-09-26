@@ -34,7 +34,8 @@ QT_BEGIN_NAMESPACE
     grouped around the index value of the category.
 
     See the \l {Charts with Widgets Gallery} to learn how to use the QBarSeries class to create a simple bar chart.
-    \image examples_barchart.png
+    \image examples_barchart.png {Vertical bar chart grouping monthly values
+           for five people from January to June}
 
     \sa QBarSet, QBarSeries, QStackedBarSeries, QPercentBarSeries
     \sa QHorizontalBarSeries, QHorizontalStackedBarSeries, QHorizontalPercentBarSeries
@@ -63,7 +64,8 @@ QT_BEGIN_NAMESPACE
     \snippet qmlchartsgallery/qml/BarSeries.qml 1
 
     \beginfloatleft
-    \image examples_qmlchart6.png
+    \image examples_qmlchart6.png {Vertical bar chart grouping yearly values
+           for Bob, Susan, and James from 2007 to 2012}
     \endfloat
     \clearfloat
 */
@@ -533,7 +535,7 @@ void QAbstractBarSeries::clear()
     if (success) {
         emit barsetsRemoved(sets);
         emit countChanged();
-        foreach (QBarSet *set, sets)
+        for (auto set : std::as_const(sets))
             delete set;
     }
 }
@@ -1008,14 +1010,14 @@ bool QAbstractBarSeriesPrivate::remove(const QList<QBarSet *> &sets)
     if (sets.size() == 0)
         return false;
 
-    foreach (QBarSet *set, sets) {
+    for (auto set : sets) {
         if ((set == 0) || (!m_barSets.contains(set)))
             return false; // Fail if any of the sets is null or is not in series
         if (sets.count(set) != 1)
             return false; // Also fail if same set is more than once in given list.
     }
 
-    foreach (QBarSet *set, sets) {
+    for (auto set : sets) {
         m_barSets.removeOne(set);
         QObject::disconnect(set->d_ptr.data(), &QBarSetPrivate::updatedBars,
                             this, &QAbstractBarSeriesPrivate::updatedBars);
@@ -1059,7 +1061,7 @@ void QAbstractBarSeriesPrivate::initializeAxes()
 {
     Q_Q(QAbstractBarSeries);
 
-    foreach(QAbstractAxis* axis, m_axes) {
+    for (auto axis : std::as_const(m_axes)) {
         if (axis->type() == QAbstractAxis::AxisTypeBarCategory) {
             switch (q->type()) {
             case QAbstractSeries::SeriesTypeHorizontalBar:

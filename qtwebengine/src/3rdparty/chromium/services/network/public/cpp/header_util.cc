@@ -14,6 +14,8 @@
 #include "net/http/http_request_headers.h"
 #include "net/http/http_response_headers.h"
 #include "net/http/http_status_code.h"
+#include "net/http/http_util.h"
+#include "services/network/public/cpp/cors/cors.h"
 #include "services/network/public/mojom/url_response_head.mojom.h"
 #include "url/gurl.h"
 
@@ -91,6 +93,17 @@ bool IsRequestHeaderSafe(std::string_view key, std::string_view value) {
   if (base::StartsWith(key, "Proxy-", base::CompareCase::INSENSITIVE_ASCII))
     return false;
 
+  if (base::EqualsCaseInsensitiveASCII(key, "X-HTTP-Method") ||
+      base::EqualsCaseInsensitiveASCII(key, "X-HTTP-Method-Override") ||
+      base::EqualsCaseInsensitiveASCII(key, "X-Method-Override")) {
+    net::HttpUtil::ValuesIterator method_iterator(value, ',');
+    while (method_iterator.GetNext()) {
+      if (cors::IsForbiddenMethod(method_iterator.value())) {
+        return false;
+      }
+    }
+  }
+
   return true;
 }
 
@@ -145,18 +158,8 @@ mojom::ReferrerPolicy ParseReferrerPolicy(
 
 bool ShouldSniffContent(const GURL& url,
                         const mojom::URLResponseHead& response) {
-  std::string content_type_options;
-  if (response.headers) {
-    content_type_options =
-        response.headers->GetNormalizedHeader("x-content-type-options")
-            .value_or(std::string());
-  }
-  bool sniffing_blocked =
-      base::EqualsCaseInsensitiveASCII(content_type_options, "nosniff");
-  bool we_would_like_to_sniff =
-      net::ShouldSniffMimeType(url, response.mime_type);
-
-  return !sniffing_blocked && we_would_like_to_sniff;
+  return net::ShouldSniffMimeType(url, response.headers.get(),
+                                  response.mime_type);
 }
 
 bool IsSuccessfulStatus(int status) {

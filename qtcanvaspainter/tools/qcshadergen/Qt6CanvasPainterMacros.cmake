@@ -55,18 +55,22 @@ function(_qc_internal_add_shaders_impl target resourcename)
                 AND CMAKE_VERSION VERSION_GREATER_EQUAL "3.20")
             set(qcshadergen_executable "$<COMMAND_CONFIG:${qcshadergen_executable}>")
         endif()
-        add_custom_command(
-            OUTPUT
-                ${processed_file}
-            COMMAND
-                ${tool_wrapper}
-                ${qcshadergen_executable}
-                ${shadergen_args}
-            DEPENDS
-                ${qcshadergen_executable}
-                "${file}"
-            VERBATIM
-        )
+        if("$ENV{AXIVION_ANALYSIS}" STREQUAL "1")
+            message(STATUS "Skipping qcshadergen executable (Axivion)")
+        else()
+            add_custom_command(
+                OUTPUT
+                    ${processed_file}
+                COMMAND
+                    ${tool_wrapper}
+                    ${qcshadergen_executable}
+                    ${shadergen_args}
+                DEPENDS
+                    ${qcshadergen_executable}
+                    "${file}"
+                VERBATIM
+            )
+        endif()
 
         math(EXPR file_index "${file_index}+1")
     endforeach()

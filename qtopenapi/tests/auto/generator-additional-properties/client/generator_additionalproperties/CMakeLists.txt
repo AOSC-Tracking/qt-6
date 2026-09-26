@@ -27,7 +27,6 @@ qt_add_openapi_client(GeneratorAdditionalPropertiesClient
         ${CMAKE_CURRENT_SOURCE_DIR}/generator-additional-properties.yaml
     ADDITIONAL_PROPERTIES
         cppNamespace=AddPropNamespace
-        modelNamePrefix=AddProp
         addDownloadProgress=true
         ensureUniqueParams=true # default value
         enumUnknownDefaultCase=false # default value

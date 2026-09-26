@@ -276,14 +276,13 @@ QSSGRenderCameraData QSSGLayerRenderData::getCameraDataImpl(const QSSGRenderCame
     if (camera) {
         // Calculate viewProjection and clippingFrustum for Render Camera
         QMatrix4x4 viewProjection(Qt::Uninitialized);
-        QMatrix4x4 cameraGlobalTransform = getGlobalTransform(*camera);
+        const QMatrix4x4 cameraGlobalTransform = getGlobalTransform(*camera);
         camera->calculateViewProjectionMatrix(cameraGlobalTransform, viewProjection);
         std::optional<QSSGClippingFrustum> clippingFrustum;
-        const QMatrix4x4 camGlobalTransform = getGlobalTransform(*camera);
-        const QVector3D camGlobalPos = QSSGRenderNode::getGlobalPos(camGlobalTransform);
+        const QVector3D camGlobalPos = QSSGRenderNode::getGlobalPos(cameraGlobalTransform);
         if (camera->enableFrustumClipping) {
             QSSGClipPlane nearPlane;
-            QMatrix3x3 theUpper33(camGlobalTransform.normalMatrix());
+            QMatrix3x3 theUpper33(cameraGlobalTransform.normalMatrix());
             QVector3D dir(QSSGUtils::mat33::transform(theUpper33, QVector3D(0, 0, -1)));
             dir.normalize();
             nearPlane.normal = dir;
@@ -293,8 +292,7 @@ QSSGRenderCameraData QSSGLayerRenderData::getCameraDataImpl(const QSSGRenderCame
             // constructor.
             clippingFrustum = QSSGClippingFrustum{viewProjection, nearPlane};
         }
-        QMatrix4x4 globalTransform = getGlobalTransform(*camera);
-        ret = { viewProjection, clippingFrustum, camera->getScalingCorrectDirection(globalTransform), camGlobalPos };
+        ret = { viewProjection, clippingFrustum, camera->getScalingCorrectDirection(cameraGlobalTransform), camGlobalPos };
     }
 
     return ret;
@@ -2063,8 +2061,9 @@ bool QSSGLayerRenderData::prepareParticlesForRender(const RenderableNodeEntries 
         }
 
         float opacity = getGlobalOpacity(particles);
+        const QMatrix4x4 globalTransform = getGlobalTransform(particles);
         QVector3D center(particles.m_particleBuffer.bounds().center());
-        center = QSSGUtils::mat44::transform(getGlobalTransform(particles), center);
+        center = QSSGUtils::mat44::transform(globalTransform, center);
 
         QSSGRenderableImage *firstImage = nullptr;
         if (particles.m_sprite) {
@@ -2094,7 +2093,6 @@ bool QSSGLayerRenderData::prepareParticlesForRender(const RenderableNodeEntries 
         }
 
         if (opacity > 0.0f && particles.m_particleBuffer.particleCount()) {
-            const auto globalTransform = getGlobalTransform(particles);
             auto *theRenderableObject = RENDER_FRAME_NEW<QSSGParticlesRenderable>(contextInterface,
                                                                                   renderableFlags,
                                                                                   center,
@@ -2465,14 +2463,15 @@ void QSSGLayerRenderData::prepareForRender()
     if (layer.oitMethod == QSSGRenderLayer::OITMethod::WeightedBlended) {
         orderIndependentTransparencyEnabled = rhiCtx->rhi()->isFeatureSupported(QRhi::PerRenderTargetBlending);
         if (rhiCtx->mainPassSampleCount() > 1)
-            orderIndependentTransparencyEnabled |= rhiCtx->rhi()->isFeatureSupported(QRhi::TexelFetch) && rhiCtx->rhi()->isFeatureSupported(QRhi::SampleVariables);
+            orderIndependentTransparencyEnabled &= rhiCtx->rhi()->isFeatureSupported(QRhi::TexelFetch) && rhiCtx->rhi()->isFeatureSupported(QRhi::SampleVariables);
         if (!orderIndependentTransparencyEnabled && !oitWarningUnsupportedShown) {
             qCWarning(lcQuick3DRender) << "WeightedBlended OIT is requested, but it is not supported.";
             oitWarningUnsupportedShown = true;
         }
     } else if (layer.oitMethod == QSSGRenderLayer::OITMethod::LinkedList) {
+        orderIndependentTransparencyEnabled = rhiCtx->rhi()->isTextureFormatSupported(QRhiTexture::RGBA32UI, QRhiTexture::UsedWithLoadStore);
         if (rhiCtx->mainPassSampleCount() > 1)
-            orderIndependentTransparencyEnabled |= rhiCtx->rhi()->isFeatureSupported(QRhi::SampleVariables);
+            orderIndependentTransparencyEnabled &= rhiCtx->rhi()->isFeatureSupported(QRhi::SampleVariables);
         if (!orderIndependentTransparencyEnabled && !oitWarningUnsupportedShown) {
             qCWarning(lcQuick3DRender) << "LinkedList OIT is requested, but it is not supported.";
             oitWarningUnsupportedShown = true;
@@ -2582,6 +2581,15 @@ void QSSGLayerRenderData::prepareForRender()
 
         wasDataDirty |= transformAndOpacityDirty;
     }
+
+    // If the viewport visibility changed, we mark the data as dirty to ensure a proper update
+    // happens. This is important because if there are shared imported nodes between layers,
+    // they might have been updated by one of the other layers and therefore considered "clean", causing
+    // things like progressiveAA to not work correctly when toggling the visibility of a layer.
+    const bool viewportVisibilityDirty = layer.isDirty(QSSGRenderLayer::DirtyFlag::VisibilityDirty);
+    layer.clearDirty(QSSGRenderLayer::DirtyFlag::VisibilityDirty);
+    if (viewportVisibilityDirty)
+        wasDataDirty = true;
 
     // Check if we have an explicit camera!
     // NOTE: We only do layering if we have an explicit camera!!!
@@ -2945,7 +2953,8 @@ void QSSGLayerRenderData::prepareForRender()
         activePasses.push_back(&screenMapPass);
 
     // Reflection pass
-    activePasses.push_back(&reflectionMapPass);
+    if (reflectionProbesView.size() != 0)
+        activePasses.push_back(&reflectionMapPass);
 
     auto &textureExtensionPass = userPasses[size_t(QSSGRenderLayer::RenderExtensionStage::TextureProviders)];
     if (textureExtensionPass.hasData())

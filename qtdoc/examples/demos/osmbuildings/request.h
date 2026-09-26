@@ -5,11 +5,10 @@
 #define OSMREQUEST_H
 
 #include <QNetworkAccessManager>
+#include <QPoint>
 #include <QQueue>
 #include <QTimer>
 #include <qcomparehelpers.h>
-
-QT_FORWARD_DECLARE_CLASS(QPoint)
 
 struct OSMTileData
 {
@@ -45,6 +44,7 @@ public:
 public slots:
     void getBuildingsData(const QQueue<OSMTileData> &buildingsQueue);
     void getMapsData(const QQueue<OSMTileData> &mapsQueue);
+    void stop();
 
 signals:
     void buildingsDataReady( const QList<QVariant> &geoVariantsList, int tileX, int tileY, int zoomLevel );

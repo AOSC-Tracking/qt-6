@@ -208,26 +208,39 @@ void CPURegList::Align() {
   DCHECK_EQ(Count() % 2, 0);
 }
 
-CPURegList CPURegList::GetCalleeSaved(int size) {
-  return CPURegList(CPURegister::kRegister, size, 19, 28);
+CPURegList CPURegList::GetCalleeSaved() {
+  return CPURegList(CPURegister::kRegister, kXRegSizeInBits, 19, 28);
 }
 
-CPURegList CPURegList::GetCalleeSavedV(int size) {
-  return CPURegList(CPURegister::kVRegister, size, 8, 15);
+CPURegList CPURegList::GetCalleeSavedD() {
+  // AAPCS64 only requires the callee to preserve d8-d15 which are the
+  // *lower* 64 bits of v8-v15.
+  return CPURegList(CPURegister::kVRegister, kDRegSizeInBits, 8, 15);
 }
 
-CPURegList CPURegList::GetCallerSaved(int size) {
+CPURegList CPURegList::GetCalleeSavedV() {
+  return CPURegList(kQRegSizeInBits, Simd128RegList{});
+}
+
+CPURegList CPURegList::GetCallerSaved() {
   // x18 is the platform register and is reserved for the use of platform ABIs.
   // Registers x0-x17 are caller-saved.
-  CPURegList list = CPURegList(CPURegister::kRegister, size, 0, 17);
+  CPURegList list = CPURegList(CPURegister::kRegister, kXRegSizeInBits, 0, 17);
   return list;
 }
 
-CPURegList CPURegList::GetCallerSavedV(int size) {
+CPURegList CPURegList::GetCallerSavedD() {
   // Registers d0-d7 and d16-d31 are caller-saved.
-  CPURegList list = CPURegList(CPURegister::kVRegister, size, 0, 7);
-  list.Combine(CPURegList(CPURegister::kVRegister, size, 16, 31));
+  CPURegList list = CPURegList(CPURegister::kVRegister, kDRegSizeInBits, 0, 7);
+  list.Combine(CPURegList(CPURegister::kVRegister, kDRegSizeInBits, 16, 31));
   return list;
+}
+
+CPURegList CPURegList::GetCallerSavedV() {
+  // AAPCS64 only requires the callee to preserve the *lower* 64 bits of v8-v15
+  // (which are essentially the d8-d15 registers), thus all V registers are
+  // caller-saved.
+  return CPURegList(CPURegister::kVRegister, kQRegSizeInBits, 0, 31);
 }
 
 // -----------------------------------------------------------------------------
@@ -4652,13 +4665,7 @@ bool Assembler::IsImmFP64(uint64_t bits) {
 void Assembler::GrowBuffer() {
   // Compute new buffer size.
   int old_size = buffer_->size();
-  int new_size = std::min(2 * old_size, old_size + 1 * MB);
-
-  // Some internal data structures overflow for very large buffers,
-  // they must ensure that kMaximalBufferSize is not too large.
-  if (new_size > kMaximalBufferSize) {
-    V8::FatalProcessOutOfMemory(nullptr, "Assembler::GrowBuffer");
-  }
+  int new_size = ComputeNewBufferSize(BufferGrowthStrategy::kDoubleCapped1MB);
 
   // Set up new buffer.
   std::unique_ptr<AssemblerBuffer> new_buffer = buffer_->Grow(new_size);

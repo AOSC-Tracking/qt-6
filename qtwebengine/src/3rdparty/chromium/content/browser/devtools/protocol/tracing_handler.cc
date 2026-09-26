@@ -175,15 +175,11 @@ class DevToolsStreamEndpoint : public TracingController::TraceDataEndpoint {
   base::WeakPtr<TracingHandler> tracing_handler_;
 };
 
-std::string GetProcessHostHex(RenderProcessHost* host) {
-  return base::StringPrintf("0x%" PRIxPTR, reinterpret_cast<uintptr_t>(host));
-}
 
 void SendProcessReadyInBrowserEvent(const base::UnguessableToken& frame_token,
                                     RenderProcessHost* host) {
   auto data = std::make_unique<base::trace_event::TracedValue>();
   data->SetString("frame", frame_token.ToString());
-  data->SetString("processPseudoId", GetProcessHostHex(host));
   data->SetInteger("processId", static_cast<int>(host->GetProcess().Pid()));
   TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"),
                        "ProcessReadyInBrowser", TRACE_EVENT_SCOPE_THREAD,
@@ -214,7 +210,6 @@ void FillFrameData(base::trace_event::TracedValue* data,
   RenderProcessHost* process_host = frame_host->GetProcess();
   const base::Process& process_handle = process_host->GetProcess();
   if (!process_handle.IsValid()) {
-    data->SetString("processPseudoId", GetProcessHostHex(process_host));
     frame_host->GetProcess()->PostTaskWhenProcessIsReady(
         base::BindOnce(&SendProcessReadyInBrowserEvent,
                        frame_host->devtools_frame_token(), process_host));
@@ -233,23 +228,6 @@ StringToMemoryDumpLevelOfDetail(const std::string& str) {
   if (str == Tracing::MemoryDumpLevelOfDetailEnum::Light)
     return {base::trace_event::MemoryDumpLevelOfDetail::kLight};
   return {};
-}
-
-void AddPidsToProcessFilter(
-    const std::unordered_set<base::ProcessId>& included_process_ids,
-    perfetto::TraceConfig& trace_config) {
-  const std::string kDataSourceName = kTrackEventDataSourceName;
-  for (auto& data_source : *(trace_config.mutable_data_sources())) {
-    auto* source_config = data_source.mutable_config();
-    if (source_config->name() == kDataSourceName) {
-      for (auto& enabled_pid : included_process_ids) {
-        *data_source.add_producer_name_filter() = base::StrCat(
-            {tracing::mojom::kPerfettoProducerNamePrefix,
-             base::NumberToString(static_cast<uint32_t>(enabled_pid))});
-      }
-      break;
-    }
-  }
 }
 
 bool IsChromeDataSource(const std::string& data_source_name) {
@@ -1179,6 +1157,32 @@ void TracingHandler::FrameDeleted(FrameTreeNodeId frame_tree_node_id) {
   TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"),
                        "FrameDeletedInBrowser", TRACE_EVENT_SCOPE_THREAD,
                        "data", std::move(data));
+}
+
+// static
+void TracingHandler::AddPidsToProcessFilter(
+    const std::unordered_set<base::ProcessId>& included_process_ids,
+    perfetto::TraceConfig& trace_config) {
+  for (auto& data_source : *(trace_config.mutable_data_sources())) {
+    auto* source_config = data_source.mutable_config();
+    if (IsChromeDataSource(source_config->name())) {
+      if (data_source.producer_name_regex_filter_size() > 0) {
+        data_source.clear_producer_name_regex_filter();
+        data_source.clear_producer_name_filter();
+      }
+      std::unordered_set<std::string> existing_filters(
+          data_source.producer_name_filter().begin(),
+          data_source.producer_name_filter().end());
+      for (auto& enabled_pid : included_process_ids) {
+        std::string new_filter = base::StrCat(
+            {tracing::mojom::kPerfettoProducerNamePrefix,
+             base::NumberToString(static_cast<uint32_t>(enabled_pid))});
+        if (existing_filters.find(new_filter) == existing_filters.end()) {
+          *data_source.add_producer_name_filter() = std::move(new_filter);
+        }
+      }
+    }
+  }
 }
 
 // static

@@ -10,6 +10,7 @@
         "CMake": {
             "_active": true,
             "_copy_from": "CMakeIntegration",
+            "build_directory": "../qtcanvaspainter_build",
             "build_environment": {},
             "build_options": "-j4",
             "generate_options": "--fresh",
@@ -24,9 +25,9 @@
             "_active": true,
             "_copy_from": "AxivionLinker",
             "input_files": [
-                "build/lib/lib*.so*.ir"
+                "../qtcanvaspainter_build/lib/lib*.so*.ir"
             ],
-            "ir": "build/$(env:TESTED_MODULE_COIN).ir"
+            "ir": "../qtcanvaspainter_build/$(env:TESTED_MODULE_COIN).ir"
         }
     },
     "_Format": "1.0",

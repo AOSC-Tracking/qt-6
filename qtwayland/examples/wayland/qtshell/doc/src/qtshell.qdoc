@@ -12,7 +12,7 @@
  * complete Qt Wayland Compositor which uses the specialized
  * \l{Shell Extensions - Qt Wayland Compositor}{shell extension protocol} called \l{QtShell}.
  *
- * \image qtshell.jpg
+ * \image qtshell.jpg {QtShell compositor with two client windows}
  *
  * The compositor is implemented with Qt Quick and QML.
  *

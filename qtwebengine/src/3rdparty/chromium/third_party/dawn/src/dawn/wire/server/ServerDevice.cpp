@@ -99,14 +99,13 @@ WireResult Server::DoDeviceCreateComputePipelineAsync(
     ObjectHandle pipelineObjectHandle,
     const WGPUComputePipelineDescriptor* descriptor) {
     Reserved<WGPUComputePipeline> pipeline;
-    WIRE_TRY(Objects<WGPUComputePipeline>().Allocate(&pipeline, pipelineObjectHandle,
-                                                     AllocationState::Reserved));
+    WIRE_TRY(Allocate(&pipeline, pipelineObjectHandle, AllocationState::Reserved));
 
     auto userdata = MakeUserdata<CreatePipelineAsyncUserData>();
     userdata->device = device.AsHandle();
     userdata->eventManager = eventManager;
     userdata->future = future;
-    userdata->pipelineObjectID = pipeline.id;
+    userdata->pipeline = pipeline.AsHandle();
 
     mProcs.deviceCreateComputePipelineAsync(
         device->handle, descriptor,
@@ -127,7 +126,7 @@ void Server::OnCreateComputePipelineAsyncCallback(CreatePipelineAsyncUserData* d
     cmd.message = message;
 
     if (status == WGPUCreatePipelineAsyncStatus_Success &&
-        FillReservation(data->pipelineObjectID, pipeline) == WireResult::FatalError) {
+        FillReservation(data->pipeline, pipeline) == WireResult::FatalError) {
         cmd.status = WGPUCreatePipelineAsyncStatus_CallbackCancelled;
         cmd.message = ToOutputStringView("Destroyed before request was fulfilled.");
     }
@@ -141,14 +140,13 @@ WireResult Server::DoDeviceCreateRenderPipelineAsync(
     ObjectHandle pipelineObjectHandle,
     const WGPURenderPipelineDescriptor* descriptor) {
     Reserved<WGPURenderPipeline> pipeline;
-    WIRE_TRY(Objects<WGPURenderPipeline>().Allocate(&pipeline, pipelineObjectHandle,
-                                                    AllocationState::Reserved));
+    WIRE_TRY(Allocate(&pipeline, pipelineObjectHandle, AllocationState::Reserved));
 
     auto userdata = MakeUserdata<CreatePipelineAsyncUserData>();
     userdata->device = device.AsHandle();
     userdata->eventManager = eventManager;
     userdata->future = future;
-    userdata->pipelineObjectID = pipeline.id;
+    userdata->pipeline = pipeline.AsHandle();
 
     mProcs.deviceCreateRenderPipelineAsync(
         device->handle, descriptor,
@@ -169,7 +167,7 @@ void Server::OnCreateRenderPipelineAsyncCallback(CreatePipelineAsyncUserData* da
     cmd.message = message;
 
     if (status == WGPUCreatePipelineAsyncStatus_Success &&
-        FillReservation(data->pipelineObjectID, pipeline) == WireResult::FatalError) {
+        FillReservation(data->pipeline, pipeline) == WireResult::FatalError) {
         cmd.status = WGPUCreatePipelineAsyncStatus_CallbackCancelled;
         cmd.message = ToOutputStringView("Destroyed before request was fulfilled.");
     }

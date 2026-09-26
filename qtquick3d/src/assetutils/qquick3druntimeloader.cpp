@@ -26,6 +26,26 @@
 
     RuntimeLoader supports .obj and glTF version 2.0 files in both in text (.gltf) and binary
     (.glb) formats.
+
+    \warning RuntimeLoader does not sandbox or validate asset contents. Loading
+    malformed or untrusted assets may have security implications. See \l source
+    for details.
+*/
+
+/*!
+    \qmlenum RuntimeLoader::QueryFilter
+
+    Specifies the type of objects to query for.
+
+    \value Textures Query for texture objects
+    \value Materials Query for material objects
+    \value Nodes Query for node objects
+    \value Cameras Query for camera objects
+    \value Lights Query for light objects
+    \value Models Query for model objects
+
+
+    \sa queryAll()
 */
 
 /*!
@@ -36,6 +56,11 @@
     the given URL.
 
     The success or failure of the load operation is indicated by \l status.
+
+    \warning RuntimeLoader does not sandbox or validate asset contents. Loading
+    malformed or untrusted assets may have security implications. Application
+    developers should carefully consider these before allowing the loading of
+    user-provided content that is not part of the application.
 */
 
 /*!
@@ -174,7 +199,8 @@ static void boxBoundsRecursive(const QQuick3DNode *baseNode, const QQuick3DNode 
                 accBounds.bounds.include(p);
         }
     }
-    for (auto *child : node->childItems())
+    const auto childItems1 = node->childItems();
+    for (auto *child : childItems1)
         boxBoundsRecursive(baseNode, qobject_cast<const QQuick3DNode *>(child), accBounds);
 }
 
@@ -183,7 +209,8 @@ static void applyToModels(QQuick3DObject *obj, Func &&lambda)
 {
     if (!obj)
         return;
-    for (auto *child : obj->childItems()) {
+    const auto childItems2 = obj->childItems();
+    for (auto *child : childItems2) {
         if (auto *model = qobject_cast<QQuick3DModel *>(child))
             lambda(model);
         applyToModels(child, lambda);

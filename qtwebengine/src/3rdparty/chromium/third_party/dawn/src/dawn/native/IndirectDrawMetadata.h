@@ -36,6 +36,7 @@
 #include "absl/container/flat_hash_set.h"
 #include "dawn/common/NonCopyable.h"
 #include "dawn/common/Ref.h"
+#include "dawn/common/ityp_vector.h"
 #include "dawn/native/Buffer.h"
 #include "dawn/native/CommandBufferStateTracker.h"
 #include "dawn/native/Commands.h"
@@ -45,6 +46,11 @@ namespace dawn::native {
 
 class RenderBundleBase;
 struct CombinedLimits;
+
+// The IndirectDrawIndex indicates the order in which an indirect draw is executed in a render
+// pass. It is tracked to enable association of validated buffer/offset data with the original
+// draw after draws are batched for validation.
+using IndirectDrawIndex = TypedInteger<struct IndirectDrawIndexT, uint64_t>;
 
 // In the unlikely scenario that indirect offsets used over a single buffer span more than
 // this length of the buffer, we split the validation work into multiple batches.
@@ -62,6 +68,7 @@ class IndirectDrawMetadata : public NonCopyable {
     };
 
     struct IndirectDraw {
+        IndirectDrawIndex validatedDrawIndex;
         uint64_t inputBufferOffset;
         uint64_t numIndexBufferElements;
         uint64_t indexBufferOffsetInElements;
@@ -71,6 +78,12 @@ class IndirectDrawMetadata : public NonCopyable {
         // the backend processes the command. Valid until the backend has processed the
         // commands.
         raw_ptr<DrawIndirectCmd> cmd;
+    };
+
+    // Stores a side-channel of indirect draw args post-validation.
+    struct ValidatedIndirectDraw {
+        Ref<BufferBase> indirectBuffer;
+        uint64_t indirectOffset;
     };
 
     struct IndirectValidationBatch {
@@ -115,7 +128,8 @@ class IndirectDrawMetadata : public NonCopyable {
         // it's added to mBatch.
         void AddBatch(uint32_t maxDrawCallsPerIndirectValidationBatch,
                       uint64_t maxBatchOffsetRange,
-                      const IndirectValidationBatch& batch);
+                      const IndirectValidationBatch& batch,
+                      IndirectDrawIndex indirectDrawIndexOffset);
 
         const std::vector<IndirectValidationBatch>& GetBatches() const;
 
@@ -137,9 +151,16 @@ class IndirectDrawMetadata : public NonCopyable {
     };
 
     struct IndexedIndirectConfig {
-        uintptr_t inputIndirectBufferPtr;
-        bool duplicateBaseVertexInstance;
-        DrawType drawType;
+        const uintptr_t inputIndirectBufferPtr;
+        const bool duplicateBaseVertexInstance;
+        const DrawType drawType;
+
+        IndexedIndirectConfig(uintptr_t inputIndirectBufferPtr,
+                              bool duplicateBaseVertexInstance,
+                              DrawType drawType)
+            : inputIndirectBufferPtr(inputIndirectBufferPtr),
+              duplicateBaseVertexInstance(duplicateBaseVertexInstance),
+              drawType(drawType) {}
 
         bool operator<(const IndexedIndirectConfig& other) const;
         bool operator==(const IndexedIndirectConfig& other) const = default;
@@ -186,11 +207,20 @@ class IndirectDrawMetadata : public NonCopyable {
 
     const std::vector<IndirectMultiDraw>& GetIndirectMultiDraws() const;
 
+    void SetValidatedIndirectDrawArgs(const IndirectDraw& draw,
+                                      BufferBase* indirectBuffer,
+                                      uint64_t indirectOffset);
+    ValidatedIndirectDraw GetValidatedIndirectDraw(DrawIndirectCmd* cmd,
+                                                   IndirectDrawIndex indirectDrawIndex) const;
+
   private:
     IndexedIndirectBufferValidationInfoMap mIndexedIndirectBufferValidationInfo;
     absl::flat_hash_set<RenderBundleBase*> mAddedBundles;
 
     std::vector<IndirectMultiDraw> mMultiDraws;
+
+    IndirectDrawIndex mNextIndirectDrawIndex{0};
+    ityp::vector<IndirectDrawIndex, ValidatedIndirectDraw> mValidatedIndirectDraws;
 
     uint64_t mMaxBatchOffsetRange;
     uint32_t mMaxDrawCallsPerBatch;

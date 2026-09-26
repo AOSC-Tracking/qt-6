@@ -20,7 +20,7 @@ struct CssKeyFrameValue{
 
 bool fillColorProperty(const QList<CssKeyFrameValue> &keyFrames, QSvgAnimatedPropertyColor *prop)
 {
-    for (CssKeyFrameValue keyFrame : keyFrames) {
+    for (const CssKeyFrameValue &keyFrame : keyFrames) {
         if (keyFrame.values.size() != 1)
             return false;
 
@@ -35,7 +35,7 @@ bool fillColorProperty(const QList<CssKeyFrameValue> &keyFrames, QSvgAnimatedPro
 
 bool fillOpacityProperty(const QList<CssKeyFrameValue> &keyFrames, QSvgAnimatedPropertyFloat *prop)
 {
-    for (CssKeyFrameValue keyFrame : keyFrames) {
+    for (const CssKeyFrameValue &keyFrame : keyFrames) {
         if (keyFrame.values.size() != 1)
             return false;
 
@@ -117,9 +117,10 @@ bool fillTransformProperty(const QList<CssKeyFrameValue> &keyFrames, QSvgAnimate
         QList<QSvgAnimatedPropertyTransform::TransformComponent> components;
         for (const QCss::Value &val : keyFrame.values) {
             if (val.type == QCss::Value::Function) {
-                QStringList lst = val.variant.toStringList();
-                QStringView transformType = lst.value(0);
-                QStringList args = lst.value(1).split(QStringLiteral(","), Qt::SkipEmptyParts);
+                const QStringList lst = val.variant.toStringList();
+                const QStringView transformType = lst.value(0);
+                const QList<QStringView> args =
+                        QStringView{ lst.value(1) }.split(QStringLiteral(","), Qt::SkipEmptyParts);
                 if (transformType == QStringLiteral("scale")) {
                     QSvgAnimatedPropertyTransform::TransformComponent component;
                     qreal scale0 = QSvgUtils::toDouble(args.value(0).trimmed());
@@ -248,7 +249,7 @@ QSvgCssAnimation *QSvgCssHandler::createAnimation(QStringView name)
     // we store the key frames and values for each property for easier parsing.
     QHash<QString, QList<CssKeyFrameValue>> keyFrameValues;
     for (const auto &ruleSet : std::as_const(animationRule.ruleSets)) {
-        for (QCss::Declaration decl : ruleSet.declarations) {
+        for (const QCss::Declaration &decl : ruleSet.declarations) {
             CssKeyFrameValue keyFrameValue = {ruleSet.keyFrame, decl.d->values};
             QList<CssKeyFrameValue> &value = keyFrameValues[decl.d->property];
             value.append(keyFrameValue);

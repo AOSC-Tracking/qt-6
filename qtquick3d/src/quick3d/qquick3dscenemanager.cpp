@@ -140,9 +140,12 @@ void QQuick3DSceneManager::sync()
 
 void QQuick3DSceneManager::updateBoundingBoxes(QSSGBufferManager &mgr)
 {
-    mgr.setLightmapSource(lightmapSource);
-    const QList<QQuick3DObject *> dirtyList = dirtyBoundingBoxList;
-    for (auto object : dirtyList) {
+    if (lightmapSourceTracker.isDirty) {
+        mgr.setLightmapSource(lightmapSourceTracker.lightmapSource);
+        lightmapSourceTracker.isDirty = false;
+    }
+
+    for (auto *object : std::as_const(dirtyBoundingBoxList)) {
         QQuick3DObjectPrivate *itemPriv = QQuick3DObjectPrivate::get(object);
         if (itemPriv->sceneManager == nullptr)
             continue;
@@ -151,8 +154,9 @@ void QQuick3DSceneManager::updateBoundingBoxes(QSSGBufferManager &mgr)
             QSSGBounds3 bounds = mgr.getModelBounds(model);
             static_cast<QQuick3DModel *>(object)->setBounds(bounds.minimum, bounds.maximum);
         }
-        dirtyBoundingBoxList.removeOne(object);
     }
+
+    dirtyBoundingBoxList.clear();
 }
 
 QQuick3DSceneManager::SyncResult QQuick3DSceneManager::updateDirtyResourceNodes()
@@ -578,7 +582,7 @@ QQuick3DWindowAttachment::QQuick3DWindowAttachment(QQuickWindow *window)
 
 QQuick3DWindowAttachment::~QQuick3DWindowAttachment()
 {
-    for (auto manager: sceneManagerCleanupQueue) {
+    for (auto *manager : std::as_const(sceneManagerCleanupQueue)) {
         sceneManagers.removeOne(manager);
         delete manager;
     }
@@ -688,7 +692,7 @@ void QQuick3DWindowAttachment::onInvalidated()
 QQuick3DWindowAttachment::SyncResult QQuick3DWindowAttachment::synchronize(QSet<QSSGRenderGraphObject *> &resourceLoaders)
 {
     // Terminate old scene managers
-    for (auto manager: sceneManagerCleanupQueue) {
+    for (auto *manager : std::as_const(sceneManagerCleanupQueue)) {
         sceneManagers.removeOne(manager);
         delete manager;
     }

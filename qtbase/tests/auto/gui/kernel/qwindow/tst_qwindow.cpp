@@ -59,6 +59,7 @@ private slots:
     void isActive();
 #if defined(Q_OS_WIN)
     void activateTopLevelOnClickWhenFocusInDescendant();
+    void framelessMaximizeWindowStateSync();
 #endif
     void testInputEvents();
     void touchToMouseTranslation();
@@ -84,7 +85,7 @@ private slots:
     void modalDialog();
     void modalDialogClosingOneOfTwoModal();
     void modalWithChildWindow();
-    void modalWindowModallity();
+    void modalWindowModality();
     void modalWindowPosition();
     void modalCloseWhileBlocked();
 #ifndef QT_NO_CURSOR
@@ -1106,6 +1107,50 @@ void tst_QWindow::activateTopLevelOnClickWhenFocusInDescendant()
     QTRY_COMPARE(QGuiApplication::focusWindow(), &parent);
     QVERIFY(parent.isActive());
     QVERIFY(parent.received(QEvent::FocusIn) >= 1);
+}
+
+// QTBUG-145092: showMaximized()/showNormal() on a frameless window must keep
+// the native zoomed state in sync with Qt's window state, and the window must
+// maximize to the work area (QTBUG-129791), not the full screen.
+void tst_QWindow::framelessMaximizeWindowStateSync()
+{
+    if (QGuiApplication::platformName().compare(QStringLiteral("windows"), Qt::CaseInsensitive))
+        QSKIP("Windows-specific test");
+
+    QWindow window;
+    window.setTitle(QLatin1String(QTest::currentTestFunction()));
+    window.setFlag(Qt::FramelessWindowHint);
+    const QRect normalGeometry(m_availableTopLeft + QPoint(80, 80), m_testWindowSize);
+    window.setGeometry(normalGeometry);
+    window.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&window));
+    const HWND hwnd = reinterpret_cast<HWND>(window.winId());
+
+    // Programmatic maximize must set the native zoomed state and cover the
+    // work area, leaving the taskbar visible.
+    window.showMaximized();
+    QTRY_COMPARE(window.windowState(), Qt::WindowMaximized);
+    QTRY_VERIFY(IsZoomed(hwnd));
+    QTRY_COMPARE(window.geometry(), window.screen()->availableGeometry());
+
+    // Programmatic restore must clear the zoomed state and bring back the
+    // normal geometry.
+    window.showNormal();
+    QTRY_COMPARE(window.windowState(), Qt::WindowNoState);
+    QTRY_VERIFY(!IsZoomed(hwnd));
+    QTRY_COMPARE(window.geometry(), normalGeometry);
+
+    // A native maximize (system menu, Win+Up) must be reflected in Qt's
+    // state and undoable with showNormal().
+    ShowWindow(hwnd, SW_MAXIMIZE);
+    QTRY_COMPARE(window.windowState(), Qt::WindowMaximized);
+    QTRY_VERIFY(IsZoomed(hwnd));
+    QTRY_COMPARE(window.geometry(), window.screen()->availableGeometry());
+
+    window.showNormal();
+    QTRY_COMPARE(window.windowState(), Qt::WindowNoState);
+    QTRY_VERIFY(!IsZoomed(hwnd));
+    QTRY_COMPARE(window.geometry(), normalGeometry);
 }
 #endif
 
@@ -2561,7 +2606,7 @@ void tst_QWindow::modalWithChildWindow()
     QTRY_COMPARE(QGuiApplication::focusWindow(), &sub_window);
 }
 
-void tst_QWindow::modalWindowModallity()
+void tst_QWindow::modalWindowModality()
 {
     if (isPlatformWayland() && qgetenv("XDG_CURRENT_DESKTOP").toLower().contains("ubuntu:gnome"))
         QSKIP("Wayland: This will trigger a 'X is ready' system notification in GNOME.");
@@ -2591,6 +2636,9 @@ void tst_QWindow::modalWindowModallity()
     modal_dialog.show();
     QVERIFY(QTest::qWaitForWindowExposed(&modal_dialog));
     QTRY_COMPARE(QGuiApplication::focusWindow(), &modal_dialog);
+
+    if (isPlatformWayland())
+        QEXPECT_FAIL("", "Wayland: A modal dialog cannot pass focus to the parent while active", Abort);
 
     normal_window.requestActivate();
     QTRY_COMPARE(QGuiApplication::focusWindow(), &normal_window);
@@ -3347,6 +3395,9 @@ void tst_QWindow::childGeometryAfterReparent()
 
     if (QGuiApplication::platformName() == QStringLiteral("xcb"))
         QSKIP("Behavior currently broken on X11: QTBUG-143664");
+
+    if (isPlatformWayland())
+        QSKIP("Wayland: cannot move windows; geometry's position invalid after reparent");
 
 #ifdef Q_OS_ANDROID
     QSKIP("Fails on Android. QTBUG-105201");

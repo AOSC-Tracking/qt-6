@@ -1,5 +1,5 @@
 {{>licenseInfo}}{{#models}}{{#model}}
-#include "{{#lambda.lowercase}}{{{classname}}}{{/lambda.lowercase}}.h"
+#include "{{classFilename}}.h"
 #include "{{prefixLowerCase}}helpers.h"
 
 using namespace Qt::StringLiterals;
@@ -31,23 +31,20 @@ void {{classname}}::initializeModel()
 {{^isEnum}}
 {{#vars}}
     m_{{name}} = {};
+    m_{{name}}IsSet = false;
 {{#complexType}}
 {{^isContainer}}
     m_{{name}}IsValid = m_{{name}}.isValid();
-    m_{{name}}IsSet = m_{{name}}.isSet();
 {{/isContainer}}
 {{#isContainer}}
-    m_{{name}}IsSet = false;
     m_{{name}}IsValid = !{{{required}}};
 {{/isContainer}}
 {{/complexType}}
 {{^complexType}}
 {{#isFreeFormObject}}
-    m_{{name}}IsValid = m_{{name}}.isValid();
-    m_{{name}}IsSet = m_{{name}}.isSet();
+    m_{{name}}IsValid = {{#isMap}}!{{{required}}}{{/isMap}}{{^isMap}}m_{{name}}.isValid(){{/isMap}};
 {{/isFreeFormObject}}
 {{^isFreeFormObject}}
-    m_{{name}}IsSet = false;
     // If value isn't set AND isn't required
     // it's counted as valid
     m_{{name}}IsValid = !{{{required}}};
@@ -219,16 +216,16 @@ void {{classname}}::fromJson{{^isEnum}}Object{{/isEnum}}{{#isEnum}}Value{{/isEnu
     {
         const QJsonValue modelValue = json[u"{{baseName}}"_s];
         if (modelValue.isObject()) {
-            ::{{cppCommonNamespace}}::fromJsonValue(m_{{name}}, modelValue);
-            m_{{name}}IsValid = m_{{name}}.isValid();
+            const bool result = ::{{cppCommonNamespace}}::fromJsonValue(m_{{name}}, modelValue);
+            m_{{name}}IsValid = result;
             // NOTE: An empty JSON object is still a valid value
             // for models without required properties.
             // Users may intentionally set it for specific reasons.
-            m_{{name}}IsSet = m_{{name}}.isSet() || (m_{{name}}IsValid && modelValue.toObject().isEmpty());
+            m_{{name}}IsSet = {{#isMap}}result{{/isMap}}{{^isMap}}m_{{name}}.isSet() || (m_{{name}}IsValid && modelValue.toObject().isEmpty()){{/isMap}};
         } else {
             m_{{name}} = {};
-            m_{{name}}IsValid = m_{{name}}.isValid();
-            m_{{name}}IsSet = m_{{name}}.isSet();
+            m_{{name}}IsValid = {{#isMap}}false{{/isMap}}{{^isMap}}m_{{name}}.isValid(){{/isMap}};
+            m_{{name}}IsSet = {{#isMap}}false{{/isMap}}{{^isMap}}m_{{name}}.isSet(){{/isMap}};
         }
     }
 {{/isFreeFormObject}}
@@ -317,7 +314,11 @@ QJson{{^isEnum}}Object{{/isEnum}}{{#isEnum}}Value{{/isEnum}} {{classname}}::asJs
 void {{classname}}::{{setter}}(const {{{dataType}}} &{{name}})
 {
     m_{{name}} = {{name}};
-    m_{{name}}IsValid = true{{#complexType}}{{^isContainer}} && {{name}}.isValid(){{/isContainer}}{{/complexType}}{{^complexType}}{{#isFreeFormObject}} && {{name}}.isValid(){{/isFreeFormObject}}{{/complexType}};
+    m_{{name}}IsValid = true{{^isMap}}{{#complexType}}{{^isContainer}} && {{name}}.isValid(){{/isContainer}}{{/complexType}}{{^complexType}}{{#isFreeFormObject}} && {{name}}.isValid(){{/isFreeFormObject}}{{/complexType}}{{/isMap}};
+{{#isMap}}
+    m_{{name}}IsSet = true;
+{{/isMap}}
+{{^isMap}}
 {{#complexType}}
 {{#isModel}}
     // NOTE: An empty JSON object is still a valid value
@@ -337,9 +338,10 @@ void {{classname}}::{{setter}}(const {{{dataType}}} &{{name}})
     m_{{name}}IsSet = m_{{name}}.isSet() || (m_{{name}}IsValid && {{name}}.asJsonObject().isEmpty());
 {{/isFreeFormObject}}
 {{^isFreeFormObject}}
-    m_{{name}}IsSet = m_{{name}}IsValid;
+    m_{{name}}IsSet = true;
 {{/isFreeFormObject}}
 {{/complexType}}
+{{/isMap}}
 }
 
 bool {{classname}}::is{{#camelcase}}{{name}}{{/camelcase}}Set() const

@@ -271,11 +271,10 @@ void StringOrTranslation::setString(const QString &s)
     clear();
     if (s.isEmpty())
         return;
-    QString mutableString(s);
-    QString::DataPointer dataPointer = mutableString.data_ptr();
-    arrayData = dataPointer->d_ptr();
-    stringData = dataPointer->data();
-    stringSize = mutableString.size();
+    QString::DataPointer dataPointer = s.data_ptr();
+    arrayData = dataPointer.d_ptr();
+    stringData = dataPointer.data();
+    stringSize = dataPointer.size;
     if (arrayData)
         arrayData->ref();
 }
@@ -1593,6 +1592,7 @@ ModelNodeMetaObject *ModelNodeMetaObject::get(QObject *obj)
 
 void ModelNodeMetaObject::updateValues()
 {
+    Q_ALLOCA_INIT();
     const int roleCount = m_model->m_listModel->roleCount();
     if (!m_initialized) {
         if (roleCount) {

@@ -1,20 +1,22 @@
 // Copyright (C) 2017 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR BSD-3-Clause
 
+pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Window
 import QtWayland.Compositor
 
 WaylandOutput {
-    id: output
+    id: root
     property alias surfaceArea: background
+    required property list<ShellSurfaceItem> itemList
+    required property var customExtension
+    signal setDecorations(bool shown)
+
     sizeFollowsWindow: true
 
     window: Window {
         id: screen
-
-        property QtObject output
-
         width: 1600
         height: 900
         visible: true
@@ -33,35 +35,38 @@ WaylandOutput {
                 spacing: 5
 
                 Repeater {
-                    model: comp.itemList
+                    model: root.itemList
                     Rectangle {
+                        id: delegateItem
+                        required property var modelData
                         height: 54
                         width: sidebar.width - 5
                         color: "white"
                         radius: 5
                         Text {
-                            text: "window: " + modelData.shellSurface.toplevel.title + "\n["
-                                  + modelData.shellSurface.toplevel.appId
-                                  + (modelData.isCustom ? "]\nfont size: " + modelData.fontSize : "]\nNo extension")
-                            color: modelData.isCustom ? "black" : "darkgray"
+                            text: "window: " + delegateItem.modelData.shellSurface?.toplevel.title + "\n["
+                                  + delegateItem.modelData.shellSurface?.toplevel.appId
+                                  + (delegateItem.modelData.isCustom ? "]\nfont size: "
+                                  + delegateItem.modelData.fontSize : "]\nNo extension")
+                            color: delegateItem.modelData.isCustom ? "black" : "darkgray"
                         }
                         MouseArea {
-                            enabled: modelData.isCustom
+                            enabled: delegateItem.modelData.isCustom
                             anchors.fill: parent
                             onWheel: (wheel) => {
                                 if (wheel.angleDelta.y > 0)
-                                    modelData.fontSize++
-                                else if (wheel.angleDelta.y < 0 && modelData.fontSize > 3)
-                                    modelData.fontSize--
+                                    delegateItem.modelData.fontSize++
+                                else if (wheel.angleDelta.y < 0 && delegateItem.modelData.fontSize > 3)
+                                    delegateItem.modelData.fontSize--
                             }
                             onDoubleClicked: {
-                                output.compositor.customExtension.close(modelData.surface)
+                                root.customExtension.close(delegateItem.modelData.surface)
                             }
                         }
                     }
                 }
                 Text {
-                    visible: comp.itemList.length > 0
+                    visible: root.itemList.length > 0
                     width: sidebar.width - 5
                     text: "Mouse wheel to change font size. Double click to close"
                     wrapMode: Text.Wrap
@@ -89,16 +94,16 @@ WaylandOutput {
                 x: mouseTracker.mouseX
                 y: mouseTracker.mouseY
 
-                seat: output.compositor.defaultSeat
+                seat: root.compositor.defaultSeat
             }
 
             Rectangle {
+                property bool decor: true
                 anchors.top: parent.top
                 anchors.right: parent.right
                 width: 100
                 height: 100
-                property bool on : true
-                color: on ? "#DEC0DE" : "#FACADE"
+                color: decor ? "#DEC0DE" : "#FACADE"
                 Text {
                     anchors.fill: parent
                     text: "Toggle window decorations"
@@ -108,8 +113,8 @@ WaylandOutput {
                 MouseArea {
                     anchors.fill: parent
                     onClicked: {
-                        parent.on = !parent.on
-                        comp.setDecorations(parent.on);
+                        parent.decor = !parent.decor
+                        root.setDecorations(parent.decor);
                     }
                 }
             }

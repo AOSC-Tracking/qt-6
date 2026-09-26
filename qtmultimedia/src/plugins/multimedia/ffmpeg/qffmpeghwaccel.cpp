@@ -1,8 +1,6 @@
 // Copyright (C) 2021 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
-#include "libavutil/version.h"
-
 #include "qffmpeghwaccel_p.h"
 
 #ifdef Q_OS_WINDOWS
@@ -122,6 +120,11 @@ static bool checkHwType(AVHWDeviceType type)
         return false;
     }
 
+#if QT_FFMPEG_HAS_D3D12VA
+    if (type == AV_HWDEVICE_TYPE_D3D12VA)
+        return false; // QTBUG-146635: opening d3d12va codecs fails
+#endif
+
     if (type == AV_HWDEVICE_TYPE_MEDIACODEC ||
         type == AV_HWDEVICE_TYPE_VIDEOTOOLBOX ||
         type == AV_HWDEVICE_TYPE_D3D11VA ||
@@ -129,8 +132,7 @@ static bool checkHwType(AVHWDeviceType type)
         type == AV_HWDEVICE_TYPE_D3D12VA ||
 #endif
         type == AV_HWDEVICE_TYPE_DXVA2)
-        return true; // Don't waste time; it's expected to work fine of the precheck is OK
-
+        return true; // Don't waste time; it's expected to work fine if the precheck is OK
 
     QScopedValueRollback rollback(FFmpegLogsEnabledInThread);
     FFmpegLogsEnabledInThread = false;

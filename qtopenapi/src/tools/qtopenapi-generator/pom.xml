@@ -140,7 +140,7 @@
     <properties>
         <qt.build.dir>${project.basedir}/target</qt.build.dir>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <openapi-generator-version>7.15.0</openapi-generator-version>
+        <openapi-generator-version>7.18.0</openapi-generator-version>
         <maven-plugin-version>1.0.0</maven-plugin-version>
         <junit-version>5.10.2</junit-version>
         <lombok-version>1.18.38</lombok-version>

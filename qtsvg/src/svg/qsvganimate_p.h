@@ -27,6 +27,8 @@ QT_BEGIN_NAMESPACE
 class Q_SVG_EXPORT QSvgLinearEasing : public QSvgEasingInterface
 {
 public:
+    ~QSvgLinearEasing() override;
+
     virtual qreal progress(qreal t) override
     {
         return qBound(0., t, 1.);
@@ -48,8 +50,9 @@ public:
     };
 
 public:
-    QSvgAnimateNode(QSvgNode *parent = nullptr);
-    virtual ~QSvgAnimateNode() {}
+    QSvgAnimateNode() : QSvgAnimateNode(nullptr) {}
+    explicit QSvgAnimateNode(QSvgNode *parent);
+    ~QSvgAnimateNode() override;
 
     void setLinkId(const QString &link) { m_linkId = link; }
     const QString &linkId() const { return m_linkId; }
@@ -79,14 +82,20 @@ protected:
 class Q_SVG_EXPORT QSvgAnimateColor : public QSvgAnimateNode
 {
 public:
-    QSvgAnimateColor(QSvgNode *parent = nullptr) : QSvgAnimateNode(parent) {}
+    QSvgAnimateColor() : QSvgAnimateColor(nullptr) {}
+    explicit QSvgAnimateColor(QSvgNode *parent) : QSvgAnimateNode(parent) {}
+    ~QSvgAnimateColor() override;
+
     virtual Type type() const override { return QSvgNode::AnimateColor; }
 };
 
 class Q_SVG_EXPORT QSvgAnimateTransform : public QSvgAnimateNode
 {
 public:
-    QSvgAnimateTransform(QSvgNode *parent = nullptr) : QSvgAnimateNode(parent) {}
+    QSvgAnimateTransform() : QSvgAnimateTransform(nullptr) {}
+    explicit QSvgAnimateTransform(QSvgNode *parent) : QSvgAnimateNode(parent) {}
+    ~QSvgAnimateTransform() override;
+
     virtual Type type() const override { return Type::AnimateTransform; }
 };
 

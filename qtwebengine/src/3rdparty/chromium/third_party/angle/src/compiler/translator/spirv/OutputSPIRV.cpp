@@ -2263,26 +2263,6 @@ void OutputSPIRVTraverser::visitArrayLength(TIntermUnary *node)
     nodeDataInitRValue(&mNodeData.back(), castResultId, intTypeId);
 }
 
-bool IsShortCircuitNeeded(TIntermOperator *node)
-{
-    TOperator op = node->getOp();
-
-    // Short circuit is only necessary for && and ||.
-    if (op != EOpLogicalAnd && op != EOpLogicalOr)
-    {
-        return false;
-    }
-
-    ASSERT(node->getChildCount() == 2);
-
-    // If the right hand side does not have side effects, short-circuiting is unnecessary.
-    // TODO: experiment with the performance of OpLogicalAnd/Or vs short-circuit based on the
-    // complexity of the right hand side expression.  We could potentially only allow
-    // OpLogicalAnd/Or if the right hand side is a constant or an access chain and have more complex
-    // expressions be placed inside an if block.  http://anglebug.com/40096715
-    return node->getChildNode(1)->getAsTyped()->hasSideEffects();
-}
-
 using WriteUnaryOp      = void (*)(spirv::Blob *blob,
                               spirv::IdResultType idResultType,
                               spirv::IdResult idResult,
@@ -2550,7 +2530,7 @@ spirv::IdRef OutputSPIRVTraverser::visitOperator(TIntermOperator *node, spirv::I
             break;
 
         case EOpLogicalOr:
-            ASSERT(!IsShortCircuitNeeded(node));
+            ASSERT(!node->isShortCircuitNeeded());
             extendScalarToVector = false;
             writeBinaryOp        = spirv::WriteLogicalOr;
             break;
@@ -2559,7 +2539,7 @@ spirv::IdRef OutputSPIRVTraverser::visitOperator(TIntermOperator *node, spirv::I
             writeBinaryOp        = spirv::WriteLogicalNotEqual;
             break;
         case EOpLogicalAnd:
-            ASSERT(!IsShortCircuitNeeded(node));
+            ASSERT(!node->isShortCircuitNeeded());
             extendScalarToVector = false;
             writeBinaryOp        = spirv::WriteLogicalAnd;
             break;
@@ -4933,7 +4913,7 @@ bool OutputSPIRVTraverser::visitBinary(Visit visit, TIntermBinary *node)
         return true;
     }
 
-    if (IsShortCircuitNeeded(node))
+    if (node->isShortCircuitNeeded())
     {
         // For && and ||, if short-circuiting behavior is needed, we need to emulate it with an
         // |if| construct.  At this point, the left-hand side is already evaluated, so we need to
@@ -5110,8 +5090,8 @@ bool OutputSPIRVTraverser::visitTernary(Visit visit, TIntermTernary *node)
     // prior to 1.4 requires the type to be either scalar or vector.
     const TType &type   = node->getType();
     bool canUseOpSelect = (type.isScalar() || type.isVector() || mCompileOptions.emitSPIRV14) &&
-                          !node->getTrueExpression()->hasSideEffects() &&
-                          !node->getFalseExpression()->hasSideEffects();
+                          node->getTrueExpression()->isSafeToExecuteInShortCircuit() &&
+                          node->getFalseExpression()->isSafeToExecuteInShortCircuit();
 
     // Don't use OpSelect on buggy drivers.  Technically this is only needed if the two sides don't
     // have matching use of RelaxedPrecision, but not worth being precise about it.

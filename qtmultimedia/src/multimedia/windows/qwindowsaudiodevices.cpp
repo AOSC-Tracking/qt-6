@@ -5,10 +5,12 @@
 
 #include <QtCore/qdebug.h>
 #include <QtCore/private/qcomobject_p.h>
+#include <QtCore/private/qfunctions_win_p.h>
 #include <QtCore/private/qsystemerror_p.h>
 
 #include <QtMultimedia/qmediadevices.h>
 #include <QtMultimedia/private/qcomtaskresource_p.h>
+#include <QtMultimedia/private/qmultimedia_ranges_p.h>
 #include <QtMultimedia/private/qwindowsaudiodevice_p.h>
 #include <QtMultimedia/private/qwindowsaudiosink_p.h>
 #include <QtMultimedia/private/qwindowsaudiosource_p.h>
@@ -21,6 +23,7 @@
 #include <map>
 
 QT_BEGIN_NAMESPACE
+namespace ranges = QtMultimediaPrivate::ranges;
 
 // older mingw does not have PKEY_Device_ContainerId defined
 // https://github.com/mingw-w64/mingw-w64/commit/7e6eca69655c81976acfd7cd6a1ed25e7961e8c7
@@ -238,8 +241,9 @@ private:
 } // namespace QtWASAPI
 
 QWindowsAudioDevices::QWindowsAudioDevices()
-    : QPlatformAudioDevices()
 {
+    qt_win_ensureComInitializedOnThisThread();
+
     using namespace QtWASAPI;
 
     // Debounce device change notifications. Bluetooth devices (and some USB
@@ -468,7 +472,7 @@ QList<QAudioDevice> QWindowsAudioDevices::availableDevices(QAudioDevice::Mode mo
         }
     }
 
-    auto deviceOrder = [](const QAudioDevice &lhs, const QAudioDevice &rhs) {
+    ranges::sort(devices, [](const QAudioDevice &lhs, const QAudioDevice &rhs) {
         auto lhsHandle = QAudioDevicePrivate::handle<QWindowsAudioDevice>(lhs);
         auto rhsHandle = QAudioDevicePrivate::handle<QWindowsAudioDevice>(rhs);
         auto lhsKey = std::tie(lhsHandle->m_device_ContainerId, lhsHandle->m_formFactor,
@@ -476,9 +480,7 @@ QList<QAudioDevice> QWindowsAudioDevices::availableDevices(QAudioDevice::Mode mo
         auto rhsKey = std::tie(rhsHandle->m_device_ContainerId, rhsHandle->m_formFactor,
                                rhsHandle->description);
         return lhsKey < rhsKey;
-    };
-
-    std::sort(devices.begin(), devices.end(), deviceOrder);
+    });
     return devices;
 }
 

@@ -8,7 +8,6 @@
 \ingroup qtqml-tooling
 \ingroup qtqml-tooling-devtools
 
-\section1 qmlformat
 \e qmlformat is a tool that automatically formats QML files in accordance
 with the \l{QML Coding Conventions}.
 
@@ -57,9 +56,6 @@ The following options only affect the tool behavior:
 \row
     \li \c{-i}, \c{--inplace}
     \li Edit file in-place instead of outputting to stdout.
-\row
-    \li \c{-f}, \c{--force}
-    \li Continue even if an error has occurred.
 \row
     \li \c{-F}, \c{--files <file>}
     \li Format all files listed in file, in-place
@@ -181,7 +177,9 @@ controlled via a  \l{Settings File}{settings file}.:
 \endtable
 
 \section2 Details
-\e qmlformat is flexible and can be configured according to your needs.
+\e qmlformat is flexible and can be configured according to your needs. \e qmlformat should be
+deployed in a sandbox, container, or other safe environment when running on untrusted code, for
+example when formatting QML files during testing in a public CI.
 
 \section3 Output
 qmlformat writes the formatted version of the file to stdout.

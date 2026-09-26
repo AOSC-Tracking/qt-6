@@ -3,11 +3,11 @@
 
 #include "qsoundeffectsynchronous_p.h"
 
-#include <QtMultimedia/qmediadevices.h>
 #include <QtMultimedia/private/qaudiosystem_p.h>
 #include <QtMultimedia/private/qplatformaudiodevices_p.h>
 #include <QtMultimedia/private/qplatformaudioresampler_p.h>
 #include <QtMultimedia/private/qplatformmediaintegration_p.h>
+#include <QtMultimedia/qmediadevices.h>
 
 #ifdef Q_OS_WIN
 #  include <QtMultimedia/private/qwindows_wasapi_warmup_client_p.h>
@@ -210,7 +210,7 @@ bool QSoundEffectPrivateSynchronous::updateAudioOutput()
 
 void QSoundEffectPrivateSynchronous::decoderError()
 {
-    qWarning("QSoundEffect(qaudio): Error decoding source %ls", qUtf16Printable(m_url.toString()));
+    qWarning("QSoundEffect: Error decoding source %ls", qUtf16Printable(m_url.toString()));
 
     m_playing = false;
     setStatus(QSoundEffect::Error);

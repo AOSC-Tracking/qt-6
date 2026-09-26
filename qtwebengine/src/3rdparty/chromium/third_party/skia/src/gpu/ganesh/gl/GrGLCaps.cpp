@@ -118,6 +118,13 @@ static bool angle_backend_is_metal(GrGLANGLEBackend backend) {
     return backend == GrGLANGLEBackend::kMetal;
 }
 
+namespace {
+bool is_tiler_gpu(GrGLVendor vendor) {
+    return vendor == GrGLVendor::kARM         ||
+           vendor == GrGLVendor::kImagination ||
+           vendor == GrGLVendor::kQualcomm;
+}
+} // anonymous namespace
 void GrGLCaps::init(const GrContextOptions& contextOptions,
                     const GrGLContextInfo& ctxInfo,
                     const GrGLInterface* gli) {
@@ -221,10 +228,10 @@ void GrGLCaps::init(const GrContextOptions& contextOptions,
         }
     }
 
-    if (ctxInfo.vendor() == GrGLVendor::kARM         ||
-        ctxInfo.vendor() == GrGLVendor::kImagination ||
-        ctxInfo.vendor() == GrGLVendor::kQualcomm ) {
+    if (is_tiler_gpu(ctxInfo.vendor())) {
         fPreferFullscreenClears = true;
+        fDiscardStencilValuesAfterRenderPass = true;
+        fClearsAreFasterThanLoads = true;
     }
 
     if (GR_IS_GR_GL(standard)) {
@@ -4695,6 +4702,12 @@ void GrGLCaps::applyDriverCorrectnessWorkarounds(const GrGLContextInfo& ctxInfo,
         ctxInfo.driver()        == GrGLDriver::kImagination &&
         driverVersion <  GR_GL_DRIVER_VER(1, 16, 0)) {
         fShaderCaps->fShaderDerivativeSupport = false;
+    }
+
+    // b/532941869
+    if (ctxInfo.vendor() == GrGLVendor::kImagination ||
+        ctxInfo.driver() == GrGLDriver::kImagination) {
+        fDriverBugWorkarounds.ensure_previous_framebuffer_not_deleted = true;
     }
 
     if (ctxInfo.driver() == GrGLDriver::kFreedreno) {

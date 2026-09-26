@@ -985,6 +985,8 @@ public:
     void multiData(const QModelIndex &index, QModelRoleDataSpan roleDataSpan) const;
     void setAutoConnectPolicy();
 
+    void interfaceVersion(int &version) const;
+
     // bindings for overriding
 
     using InvalidateCaches = Method<&Self::invalidateCaches>;
@@ -1013,6 +1015,9 @@ public:
     // 6.11
     using MultiData = Method<&Self::multiData>;
     using SetAutoConnectPolicy = Method<&Self::setAutoConnectPolicy>;
+    
+    // 6.12
+    using InterfaceVersion = Method<&Self::interfaceVersion>;
 
     template <typename C>
     using MethodTemplates = std::tuple<
@@ -1039,7 +1044,8 @@ public:
         typename C::ItemData,
         typename C::RoleNames,
         typename C::MultiData,
-        typename C::SetAutoConnectPolicy
+        typename C::SetAutoConnectPolicy,
+        typename C::InterfaceVersion
     >;
 
     static Q_CORE_EXPORT QRangeModelImplBase *getImplementation(QRangeModel *model);
@@ -1258,6 +1264,11 @@ public:
 
     // static interface, called by QRangeModelImplBase
 
+    void interfaceVersion(int &versionNumber) const
+    {
+        versionNumber = QT_VERSION;
+    }
+
     void invalidateCaches() { m_data.invalidateCaches(); }
 
     // Not implemented
@@ -1413,6 +1424,11 @@ public:
             using wrapped_value_type = QRangeModelDetails::wrapped_t<value_type>;
 
             const auto readModelData = [&value](QModelRoleData &roleData){
+                if (!QRangeModelDetails::isValid(value)) {
+                    roleData.clearData();
+                    return true;
+                }
+
                 const int role = roleData.role();
                 if (role == Qt::RangeModelDataRole) {
                     // Qt QML support: "modelData" role returns the entire multi-role item.
@@ -2192,6 +2208,8 @@ public:
     using MultiData = Override<QRangeModelImplBase::MultiData, &Self::multiData>;
     using SetAutoConnectPolicy = Override<QRangeModelImplBase::SetAutoConnectPolicy,
                                           &Self::setAutoConnectPolicy>;
+
+    using InterfaceVersion = Override<QRangeModelImplBase::InterfaceVersion, &Self::interfaceVersion>;
 
 protected:
     ~QRangeModelImpl()

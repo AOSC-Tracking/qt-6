@@ -52,6 +52,9 @@ void XRWebGLSwapChain::ClearCurrentTexture() {
   }
 
   gl->Disable(GL_SCISSOR_TEST);
+  if (webgl2_) {
+    gl->Disable(GL_RASTERIZER_DISCARD);
+  }
 
   if (descriptor_.layers > 1) {
     for (uint32_t i = 0; i < descriptor_.layers; ++i) {
@@ -71,6 +74,7 @@ void XRWebGLSwapChain::ClearCurrentTexture() {
       static_cast<DrawingBuffer::Client*>(context());
 
   client->DrawingBufferClientRestoreScissorTest();
+  client->DrawingBufferClientRestoreRasterizerDiscard();
   client->DrawingBufferClientRestoreMaskAndClearValues();
   client->DrawingBufferClientRestoreFramebufferBinding();
 }
@@ -94,7 +98,7 @@ XRWebGLStaticSwapChain::XRWebGLStaticSwapChain(
     bool webgl2)
     : XRWebGLSwapChain(context, descriptor, webgl2) {}
 
-XRWebGLStaticSwapChain::~XRWebGLStaticSwapChain() {
+void XRWebGLStaticSwapChain::Dispose() {
   if (owned_texture_) {
     gpu::gles2::GLES2Interface* gl = context()->ContextGL();
     if (!gl) {

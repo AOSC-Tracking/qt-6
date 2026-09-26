@@ -291,8 +291,6 @@ class CONTENT_EXPORT NavigationRequest
       bool is_embedder_initiated_fenced_frame_navigation = false,
       bool is_container_initiated = false,
       bool has_rel_opener = false,
-      net::StorageAccessApiStatus storage_access_api_status =
-          net::StorageAccessApiStatus::kNone,
       std::optional<std::u16string> embedder_shared_storage_context =
           std::nullopt);
 
@@ -417,7 +415,7 @@ class CONTENT_EXPORT NavigationRequest
   void SetCorsExemptRequestHeader(const std::string& header_name,
                                   const std::string& header_value) override;
   void SetLCPPNavigationHint(
-      const blink::mojom::LCPCriticalPathPredictorNavigationTimeHint& hint)
+      blink::mojom::LCPCriticalPathPredictorNavigationTimeHintPtr hint)
       override;
   const blink::mojom::LCPCriticalPathPredictorNavigationTimeHintPtr&
   GetLCPPNavigationHint() override;
@@ -1260,6 +1258,7 @@ class CONTENT_EXPORT NavigationRequest
   // Initializes state which is passed from the old Document to the new Document
   // for a ViewTransition.
   void SetViewTransitionState(
+      const url::Origin& source_origin,
       std::unique_ptr<ScopedViewTransitionResources> resources,
       blink::ViewTransitionState view_transition_state);
 
@@ -1487,6 +1486,8 @@ class CONTENT_EXPORT NavigationRequest
   int64_t frame_entry_document_sequence_number() const {
     return frame_entry_document_sequence_number_;
   }
+
+  const GURL& original_url() const { return original_url_; }
 
   // Called when the browser process is about to process beforeunload handlers
   // for this navigation, including sending an IPC to the renderer process to
@@ -2434,6 +2435,12 @@ class CONTENT_EXPORT NavigationRequest
   // eventually be replaced with the navigation timeline metrics.
   bool ShouldRecordNavigationTimelineUkm() const;
 
+  // Given the known destination origin, this updates the view transition state
+  // and resources. Namely, it clears it if the view transition state and
+  // resources were generated from a different origin with the given origin.
+  // This is because we disallow cross origin view transitions.
+  void UpdateViewTransitionStateForDestinationOrigin(const url::Origin& origin);
+
   // Used for short-lived NavigationRequest created at DidCommit time for the
   // purpose of committing navigation that were not driven by the browser
   // process. This is used in only two cases:
@@ -3314,6 +3321,14 @@ class CONTENT_EXPORT NavigationRequest
   // committing, the resources are destroyed with this request.
   std::unique_ptr<ScopedViewTransitionResources> view_transition_resources_;
 
+  // An origin that generated the view transition state
+  // (`view_transition_resources_` and `commit_params_->view_transition_state`.
+  // This is used to ensure that at the time of commit, if the origin changed
+  // because this was a pre-render activation, we don't try and initiate a view
+  // transition since that can (unintentionally) leak view transition state
+  // across origins.
+  url::Origin view_transition_source_origin_;
+
   // If true, this means that this navigation request was initiated by an
   // animated transition.
   bool was_initiated_by_animated_transition_ = false;
@@ -3327,6 +3342,12 @@ class CONTENT_EXPORT NavigationRequest
 
   // The initial request method of the request, before any redirects.
   std::string request_method_;
+
+  // The original request URL for this navigation, before any redirects and
+  // after any mapping steps and HTTPS upgrades. Used for internal browser
+  // checks to avoid using sanitized versions sent to the renderer in
+  // `commit_params`.
+  GURL original_url_;
 
   // Set to true if `this` started as a same-document navigation but couldn't
   // commit, and was restarted as a cross-document navigation. See

@@ -1,6 +1,8 @@
 # Copyright (C) 2024 The Qt Company Ltd.
 # SPDX-License-Identifier: BSD-3-Clause
 
+__qt_internal_cmake_include_guard(GLOBAL GUARD_KEY "QtPublicSbomFileHelpers")
+
 # Handles addition of binary files SPDX entries for a given target.
 # Is multi-config aware.
 function(_qt_internal_sbom_handle_target_binary_files target)
@@ -52,12 +54,22 @@ function(_qt_internal_sbom_handle_target_binary_files target)
         THIRD_PARTY_LIBRARY
         THIRD_PARTY_LIBRARY_WITH_FILES
         THIRD_PARTY_SOURCES
+        # Some of the values have an _ENTITY_TYPE suffix so they don't clash with other
+        # cmake_parse_arguments keywords (e.g. FRAMEWORK, FILES, SOURCES) when the value is
+        # forwarded through the sbom helpers.
+        SOURCES_ENTITY_TYPE
         SBOM_PROJECT
         EXECUTABLE
         LIBRARY
+        OBJECT_LIBRARY_ENTITY_TYPE
+        FRAMEWORK_ENTITY_TYPE
         TRANSLATIONS
+        FILES_ENTITY_TYPE
         RESOURCES
+        ARCHIVES
+        INSTALLERS
         BUILD_TOOL
+        SYSTEM_BUILD_TOOL
         CUSTOM
         CUSTOM_NO_INFIX
     )
@@ -77,10 +89,18 @@ function(_qt_internal_sbom_handle_target_binary_files target)
         SYSTEM_LIBRARY
         THIRD_PARTY_LIBRARY
         THIRD_PARTY_SOURCES
+        SOURCES_ENTITY_TYPE
         SBOM_PROJECT
+        # this might be temporary. but for now we don't have auto installing for this type
+        OBJECT_LIBRARY_ENTITY_TYPE
+        # this might be temporary. but for now we don't have auto installing for this type
+        FRAMEWORK_ENTITY_TYPE
         TRANSLATIONS
         RESOURCES
-        BUILD_TOOL
+        FILES_ENTITY_TYPE
+        ARCHIVES
+        INSTALLERS
+        SYSTEM_BUILD_TOOL
         CUSTOM
         CUSTOM_NO_INFIX
     )
@@ -138,7 +158,9 @@ function(_qt_internal_sbom_handle_target_binary_files target)
 
     if(arg_SBOM_ENTITY_TYPE STREQUAL "QT_TOOL"
             OR arg_SBOM_ENTITY_TYPE STREQUAL "QT_APP"
-            OR arg_SBOM_ENTITY_TYPE STREQUAL "EXECUTABLE")
+            OR arg_SBOM_ENTITY_TYPE STREQUAL "EXECUTABLE"
+            OR arg_SBOM_ENTITY_TYPE STREQUAL "BUILD_TOOL"
+        )
 
         set(valid_executable_types
             "EXECUTABLE"
@@ -195,7 +217,10 @@ function(_qt_internal_sbom_handle_target_binary_files target)
                     # because no symbols are exported.
                     OPTIONAL
             )
-        elseif(target_type STREQUAL "SHARED_LIBRARY" OR target_type STREQUAL "STATIC_LIBRARY")
+        elseif(target_type STREQUAL "SHARED_LIBRARY"
+                OR target_type STREQUAL "STATIC_LIBRARY"
+                OR target_type STREQUAL "MODULE_LIBRARY"
+            )
             _qt_internal_sbom_handle_multi_config_target_binary_file(${target}
                 PATH_KIND "${library_path_kind}"
                 PATH_SUFFIX "${path_suffix}"

@@ -1,5 +1,6 @@
 // Copyright (C) 2019 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:critical reason:network-protocol
 
 #include "qwltexturesharingextension_p.h"
 
@@ -168,7 +169,7 @@ QWaylandTextureSharingExtension::~QWaylandTextureSharingExtension()
     //qDebug() << Q_FUNC_INFO;
     //dumpBufferInfo();
 
-    for (auto b : m_server_buffers)
+    for (auto b : std::as_const(m_server_buffers))
         delete b.buffer;
 
     if (s_self == this)
@@ -199,7 +200,7 @@ void QWaylandTextureSharingExtension::initialize()
 
     auto suffixes = QTextureFileReader::supportedFileFormats();
     suffixes.append(QImageReader::supportedImageFormats());
-    for (auto ext : std::as_const(suffixes))
+    for (const auto &ext : std::as_const(suffixes))
         m_image_suffixes << QLatin1Char('.') + QString::fromLatin1(ext);
 
     //qDebug() << "m_image_suffixes" << m_image_suffixes << "m_image_dirs" << m_image_dirs;
@@ -231,7 +232,7 @@ QString QWaylandTextureSharingExtension::getExistingFilePath(const QString &key)
     }
 
     for (auto dir : std::as_const(m_image_dirs)) {
-        for (auto ext : m_image_suffixes) {
+        for (const auto &ext : m_image_suffixes) {
             QString fp = dir + key + ext;
             //qDebug() << "trying" << fp;
             if (QFileInfo::exists(fp))

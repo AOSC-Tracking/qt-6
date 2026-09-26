@@ -112,6 +112,20 @@ public:
     QQuickWidget *m_quickWidget;
 };
 
+#if QT_CONFIG(accessibility)
+QAccessibleInterface *QQuickWidgetOffscreenWindow::accessibleRoot() const
+{
+    Q_D(const QQuickWidgetOffscreenWindow);
+    if (d->renderControl) {
+        auto *priv = static_cast<QQuickWidgetRenderControlPrivate *>(
+            QQuickRenderControlPrivate::get(d->renderControl)
+        );
+        return QAccessible::queryAccessibleInterface(priv->m_quickWidget);
+    }
+    return nullptr;
+}
+#endif // QT_CONFIG(accessibility)
+
 QQuickWidgetRenderControl::QQuickWidgetRenderControl(QQuickWidget *quickWidget)
     : QQuickRenderControl(*(new QQuickWidgetRenderControlPrivate(this, quickWidget)), nullptr)
 {
@@ -174,10 +188,8 @@ void QQuickWidgetPrivate::ensureBackingScene()
     Q_Q(QQuickWidget);
     if (!renderControl)
         renderControl = new QQuickWidgetRenderControl(q);
-    if (!offscreenWindow) {
+    if (!offscreenWindow)
         offscreenWindow = new QQuickWidgetOffscreenWindow(*new QQuickWidgetOffscreenWindowPrivate(), renderControl);
-        offscreenWindow->setProperty("_q_parentWidget", QVariant::fromValue(q));
-    }
 
     // Check if the Software Adaptation is being used
     auto sgRendererInterface = offscreenWindow->rendererInterface();
@@ -250,6 +262,17 @@ void QQuickWidgetPrivate::invalidateRenderControl()
     }
 
     renderControl->invalidate();
+}
+
+void QQuickWidgetPrivate::handleWindowAboutToChange()
+{
+    Q_Q(QQuickWidget);
+    if (rhi)
+        rhi->removeCleanupCallback(q);
+
+    invalidateRenderControl();
+    deviceLost = true;
+    rhi = nullptr;
 }
 
 void QQuickWidgetPrivate::handleWindowChange()
@@ -1102,8 +1125,17 @@ void QQuickWidgetPrivate::initializeWithRhi()
     // when reparenting, the rhi may suddenly be different
     if (rhi) {
         QRhi *backingStoreRhi = QWidgetPrivate::rhi();
-        if (backingStoreRhi && rhi != backingStoreRhi)
-            rhi = nullptr;
+        if (backingStoreRhi && rhi != backingStoreRhi) {
+            // Can get here not just when reparenting to a new top-level window,
+            // but also when switching over from the offscreen infrastructure.
+            // Do the same that the Window[AboutTo]ChangeInternal events would do.
+            if (rhi == offscreenRenderer.rhi()) {
+                handleWindowAboutToChange();
+                handleWindowChange();
+            } else {
+                rhi = nullptr;
+            }
+        }
     }
 
     // On hide-show we may invalidate() (when !isPersistentSceneGraph) but our
@@ -1826,11 +1858,7 @@ bool QQuickWidget::event(QEvent *e)
         }
 
     case QEvent::WindowAboutToChangeInternal:
-        if (d->rhi)
-            d->rhi->removeCleanupCallback(this);
-        d->invalidateRenderControl();
-        d->deviceLost = true;
-        d->rhi = nullptr;
+        d->handleWindowAboutToChange();
         break;
 
     case QEvent::WindowChangeInternal:

@@ -824,7 +824,8 @@ void HTMLElement::AttributeChanged(const AttributeModificationParams& params) {
   if (params.name == html_names::kDisabledAttr &&
       IsFormAssociatedCustomElement() &&
       params.old_value.IsNull() != params.new_value.IsNull()) {
-    EnsureElementInternals().DisabledAttributeChanged();
+    EnsureElementInternals().DisabledAttributeChanged(
+        DisabledChangedReason::kAttributeChanged);
     if (params.reason == AttributeModificationReason::kDirectly &&
         IsDisabledFormControl() && AdjustedFocusedElementInTreeScope() == this)
       blur();
@@ -3431,6 +3432,10 @@ bool HTMLElement::MatchesEnabledPseudoClass() const {
   return IsFormAssociatedCustomElement() && !const_cast<HTMLElement*>(this)
                                                  ->EnsureElementInternals()
                                                  .IsActuallyDisabled();
+}
+
+bool HTMLElement::MatchesDisabledPseudoClass() const {
+  return IsDisabledFormControl();
 }
 
 bool HTMLElement::MatchesValidityPseudoClasses() const {

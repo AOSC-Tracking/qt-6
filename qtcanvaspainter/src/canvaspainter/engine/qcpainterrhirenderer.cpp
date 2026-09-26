@@ -12,7 +12,7 @@
 #include "qcpainterrhirenderer_p.h"
 #include "qcanvaspainter_p.h"
 #include "qcanvascustombrush.h"
-#include "qcanvaspath.h"
+#include "qcanvaspath_p.h"
 #include "qcanvasoffscreencanvas_p.h"
 
 #include <math.h>
@@ -409,7 +409,7 @@ struct QCRhiCachedPath
 
 struct QCRhiCachedPathGroup
 {
-    QHash<QCanvasPath *, QCRhiCachedPath> cachedPaths;
+    QHash<uint, QCRhiCachedPath> cachedPaths;
     qsizetype totalSubpathCount = 0;
     qsizetype cachedVertexDataBytes = 0;
 
@@ -1428,7 +1428,7 @@ void QCPainterRhiRenderer::renderFill(const QCPaint &paint, const QCState &state
         updateVertUniforms(call, pti.pathTransform);
 
         QCRhiCachedPathGroup *cpg = &rhiCtx->cachedPathGroups[pti.pathGroup];
-        QCRhiCachedPath *cp = &cpg->cachedPaths[pti.canvasPath];
+        QCRhiCachedPath *cp = &cpg->cachedPaths[QCanvasPathPrivate::get(pti.canvasPath)->serialNumber];
         QCCachedPathFillProperties fillProps { state.antialias, int(ctx.renderHints) };
         QCRhiCachedPathFillData *cpf = &cp->fill[fillProps];
 
@@ -1610,7 +1610,7 @@ void QCPainterRhiRenderer::renderStroke(const QCPaint &paint, const QCState &sta
         updateVertUniforms(call, pti.pathTransform);
 
         QCRhiCachedPathGroup *cpg = &rhiCtx->cachedPathGroups[pti.pathGroup];
-        QCRhiCachedPath *cp = &cpg->cachedPaths[pti.canvasPath];
+        QCRhiCachedPath *cp = &cpg->cachedPaths[QCanvasPathPrivate::get(pti.canvasPath)->serialNumber];
         QCCachedPathStrokeProperties strokeProps { state.antialias, state.strokeWidth, state.lineCap, state.lineJoin, int(ctx.renderHints) };
         QCRhiCachedPathStrokeData *cps = &cp->stroke[strokeProps];
 
@@ -2719,7 +2719,7 @@ bool QCPainterRhiRenderer::isPathCachedForFill(QCanvasPath *path, int pathGroup,
 {
     auto it = rhiCtx->cachedPathGroups.constFind(pathGroup);
     if (it != rhiCtx->cachedPathGroups.cend()) {
-        auto pit = it->cachedPaths.constFind(path);
+        auto pit = it->cachedPaths.constFind(QCanvasPathPrivate::get(path)->serialNumber);
         if (pit != it->cachedPaths.cend())
             return pit->fill.contains(fillProperties);
     }
@@ -2730,7 +2730,7 @@ bool QCPainterRhiRenderer::isPathCachedForStroke(QCanvasPath *path, int pathGrou
 {
     auto it = rhiCtx->cachedPathGroups.constFind(pathGroup);
     if (it != rhiCtx->cachedPathGroups.cend()) {
-        auto pit = it->cachedPaths.constFind(path);
+        auto pit = it->cachedPaths.constFind(QCanvasPathPrivate::get(path)->serialNumber);
         if (pit != it->cachedPaths.cend())
             return pit->stroke.contains(strokeProperties);
     }

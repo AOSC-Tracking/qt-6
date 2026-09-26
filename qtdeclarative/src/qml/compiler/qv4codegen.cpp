@@ -229,7 +229,7 @@ void Codegen::generateFromModule(const QString &sourceCode, ESModule *node, Modu
 
     {
         Compiler::Context *moduleContext = _module->contextMap.value(node);
-        for (const auto &entry: moduleContext->exportEntries) {
+        for (const auto &entry: std::as_const(moduleContext->exportEntries)) {
             if (entry.moduleRequest.isEmpty()) {
                 // ### check against imported bound names
                 _module->localExportEntries << entry;
@@ -398,6 +398,7 @@ Codegen::Reference Codegen::unop(UnaryOperation op, const Reference &expr)
     case PreIncrement: {
         Reference e = expr.asLValue();
         e.loadInAccumulator();
+        e.isReadonly = true;
         Instruction::Increment inc = {};
         bytecodeGenerator->addInstruction(inc);
         if (exprAccept(nx))
@@ -424,6 +425,7 @@ Codegen::Reference Codegen::unop(UnaryOperation op, const Reference &expr)
     case PreDecrement: {
         Reference e = expr.asLValue();
         e.loadInAccumulator();
+        e.isReadonly = true;
         Instruction::Decrement dec = {};
         bytecodeGenerator->addInstruction(dec);
         if (exprAccept(nx))
@@ -952,6 +954,8 @@ bool Codegen::visit(ExportDeclaration *ast)
         exportedValue = popResult();
     } else if (ExpressionNode *expr = ast->variableStatementOrDeclaration->expressionCast()) {
         exportedValue = expression(expr);
+        if (hasError())
+            return false;
     }
 
     exportedValue.loadInAccumulator();
@@ -1325,18 +1329,21 @@ bool Codegen::visit(ArrayMemberExpression *ast)
 
     TailCallBlocker blockTailCalls(this);
     Reference base = expression(ast->base);
+    if (hasError())
+        return false;
 
     auto writeSkip = [&]() {
         base.loadInAccumulator();
         bytecodeGenerator->addInstruction(Instruction::CmpEqNull());
         auto jumpToUndefined = bytecodeGenerator->jumpTrue();
-        m_optionalChainsStates.top().jumpsToPatch.emplace_back(std::move(jumpToUndefined));
+        m_optionalChainsStates->top().jumpsToPatch.emplace_back(std::move(jumpToUndefined));
     };
 
-    if (hasError())
-        return false;
     if (base.isSuper()) {
-        Reference index = expression(ast->expression).storeOnStack();
+        auto e = expression(ast->expression);
+        if (hasError())
+            return false;
+        Reference index = e.storeOnStack();
         optionalChainFinalizer(Reference::fromSuperProperty(index), isTailOfChain);
         return false;
     }
@@ -1349,7 +1356,7 @@ bool Codegen::visit(ArrayMemberExpression *ast)
         if (arrayIndex == UINT_MAX) {
             auto ref = Reference::fromMember(base, s, ast->expression->firstSourceLocation(),
                                              ast->isOptional,
-                                             &m_optionalChainsStates.top().jumpsToPatch);
+                                             &m_optionalChainsStates->top().jumpsToPatch);
             setExprResult(ref);
             optionalChainFinalizer(ref, isTailOfChain);
             return false;
@@ -1488,6 +1495,11 @@ bool Codegen::visit(BinaryExpression *ast)
         iftrue.link();
 
         Reference right = expression(ast->right);
+        if (hasError()) {
+            jump_endif.link();
+            return false;
+        }
+
         right.loadInAccumulator();
         jump_endif.link();
         setExprResult(Reference::fromAccumulator(this));
@@ -2064,11 +2076,11 @@ bool Codegen::visit(CallExpression *ast)
     int thisObject = bytecodeGenerator->newRegister();
     int functionObject = bytecodeGenerator->newRegister();
 
-    if (ast->isOptional || m_optionalChainsStates.top().actuallyHasOptionals) {
+    if (ast->isOptional || m_optionalChainsStates->top().actuallyHasOptionals) {
         base.loadInAccumulator();
         bytecodeGenerator->addInstruction(Instruction::CmpEqNull());
         auto jumpToUndefined = bytecodeGenerator->jumpTrue();
-        m_optionalChainsStates.top().jumpsToPatch.emplace_back(std::move(jumpToUndefined));
+        m_optionalChainsStates->top().jumpsToPatch.emplace_back(std::move(jumpToUndefined));
     }
 
     auto calldata = pushArgs(ast->arguments);
@@ -2226,7 +2238,7 @@ Codegen::Arguments Codegen::pushArgs(ArgumentList *args)
     bool hasSpread = false;
     int argc = 0;
     for (ArgumentList *it = args; it; it = it->next) {
-        if (it->isSpreadElement) {
+        if (it->spreadToken.isValid()) {
             hasSpread = true;
             ++argc;
         }
@@ -2240,7 +2252,7 @@ Codegen::Arguments Codegen::pushArgs(ArgumentList *args)
 
     argc = 0;
     for (ArgumentList *it = args; it; it = it->next) {
-        if (it->isSpreadElement) {
+        if (it->spreadToken.isValid()) {
             Reference::fromConst(
                     this,
                     StaticValue::emptyValue().asReturnedValue()).storeOnStack(calldata + argc);
@@ -2336,7 +2348,7 @@ bool Codegen::visit(DeleteExpression *ast)
     if (hasError())
         return false;
 
-    const bool chainActuallyHasOptionals = m_optionalChainsStates.top().actuallyHasOptionals;
+    const bool chainActuallyHasOptionals = m_optionalChainsStates->top().actuallyHasOptionals;
     if (chainActuallyHasOptionals)
         Q_ASSERT(expr.type == Reference::Member || expr.type == Reference::Subscript);
 
@@ -2375,7 +2387,7 @@ bool Codegen::visit(DeleteExpression *ast)
             expr.loadInAccumulator();
             bytecodeGenerator->addInstruction(Instruction::CmpEqNull());
             auto jumpToUndefined = bytecodeGenerator->jumpTrue();
-            m_optionalChainsStates.top().jumpsToPatch.emplace_back(std::move(jumpToUndefined));
+            m_optionalChainsStates->top().jumpsToPatch.emplace_back(std::move(jumpToUndefined));
         }
 
         Instruction::LoadRuntimeString instr;
@@ -2400,7 +2412,7 @@ bool Codegen::visit(DeleteExpression *ast)
             expr.loadInAccumulator();
             bytecodeGenerator->addInstruction(Instruction::CmpEqNull());
             auto jumpToUndefined = bytecodeGenerator->jumpTrue();
-            m_optionalChainsStates.top().jumpsToPatch.emplace_back(std::move(jumpToUndefined));
+            m_optionalChainsStates->top().jumpsToPatch.emplace_back(std::move(jumpToUndefined));
         }
 
         Instruction::DeleteProperty del;
@@ -2453,26 +2465,26 @@ bool Codegen::traverseOptionalChain(Node *node)
                node->kind == Node::Kind_ArrayMemberExpression ||
                node->kind == Node::Kind_DeleteExpression;
     };
-    m_optionalChainsStates.emplace();
+    m_optionalChainsStates->emplace();
     while (isOptionalChainableNode(node)) {
         m_seenOptionalChainNodes.insert(node);
 
         switch (node->kind) {
         case Node::Kind_FieldMemberExpression: {
             auto *fme = AST::cast<FieldMemberExpression *>(node);
-            m_optionalChainsStates.top().actuallyHasOptionals |= fme->isOptional;
+            m_optionalChainsStates->top().actuallyHasOptionals |= fme->isOptional;
             node = fme->base;
             break;
         }
         case Node::Kind_CallExpression: {
             auto *ce = AST::cast<CallExpression *>(node);
-            m_optionalChainsStates.top().actuallyHasOptionals |= ce->isOptional;
+            m_optionalChainsStates->top().actuallyHasOptionals |= ce->isOptional;
             node = ce->base;
             break;
         }
         case Node::Kind_ArrayMemberExpression: {
             auto *ame = AST::cast<ArrayMemberExpression *>(node);
-            m_optionalChainsStates.top().actuallyHasOptionals |= ame->isOptional;
+            m_optionalChainsStates->top().actuallyHasOptionals |= ame->isOptional;
             node = ame->base;
             break;
         }
@@ -2490,13 +2502,13 @@ bool Codegen::traverseOptionalChain(Node *node)
 void Codegen::optionalChainFinalizer(const Reference &expressionResult, bool tailOfChain,
                                      bool isDeleteExpression)
 {
-    auto &chainState = m_optionalChainsStates.top();
+    auto &chainState = m_optionalChainsStates->top();
     if (!tailOfChain) {
         setExprResult(expressionResult);
         return;
     } else if (!chainState.actuallyHasOptionals) {
         setExprResult(expressionResult);
-        m_optionalChainsStates.pop();
+        m_optionalChainsStates->pop();
         return;
     }
 
@@ -2539,7 +2551,7 @@ void Codegen::optionalChainFinalizer(const Reference &expressionResult, bool tai
         ref.savedCallPropertyNameIndex = expressionResult.propertyNameIndex;
     }
     setExprResult(ref);
-    m_optionalChainsStates.pop();
+    m_optionalChainsStates->pop();
 }
 
 bool Codegen::visit(FieldMemberExpression *ast)
@@ -2585,7 +2597,7 @@ bool Codegen::visit(FieldMemberExpression *ast)
     }
 
     auto ref = Reference::fromMember(base, ast->name.toString(), ast->lastSourceLocation(),
-                                     ast->isOptional, &m_optionalChainsStates.top().jumpsToPatch);
+                                     ast->isOptional, &m_optionalChainsStates->top().jumpsToPatch);
 
     optionalChainFinalizer(ref, isTailOfChain);
     return false;
@@ -2602,7 +2614,10 @@ bool Codegen::visit(TaggedTemplate *ast)
         return false;
 
     RegisterScope scope(this);
-    return handleTaggedTemplate(expression(ast->base), ast);
+    auto base = expression(ast->base);
+    if (hasError())
+        return false;
+    return handleTaggedTemplate(std::move(base), ast);
 }
 
 bool Codegen::handleTaggedTemplate(Reference base, TaggedTemplate *ast)
@@ -2865,7 +2880,10 @@ bool Codegen::visit(NotExpression *ast)
         return false;
 
     TailCallBlocker blockTailCalls(this);
-    setExprResult(unop(Not, expression(ast->expression)));
+    auto e = expression(ast->expression);
+    if (hasError())
+        return false;
+    setExprResult(unop(Not, e));
     return false;
 }
 
@@ -3050,7 +3068,7 @@ bool Codegen::visit(PreDecrementExpression *ast)
     if (hasError())
         return false;
     if (!expr.isLValue()) {
-        throwReferenceError(ast->expression->lastSourceLocation(), QStringLiteral("Prefix ++ operator applied to value that is not a reference."));
+        throwReferenceError(ast->expression->lastSourceLocation(), QStringLiteral("Prefix -- operator applied to value that is not a reference."));
         return false;
     }
 
@@ -3183,7 +3201,11 @@ bool Codegen::visit(TildeExpression *ast)
         return false;
 
     TailCallBlocker blockTailCalls(this);
-    setExprResult(unop(Compl, expression(ast->expression)));
+    auto e = expression(ast->expression);
+    if (hasError())
+        return false;
+
+    setExprResult(unop(Compl, e));
     return false;
 }
 
@@ -3229,7 +3251,11 @@ bool Codegen::visit(UnaryMinusExpression *ast)
         return false;
 
     TailCallBlocker blockTailCalls(this);
-    setExprResult(unop(UMinus, expression(ast->expression)));
+    auto e = expression(ast->expression);
+    if (hasError())
+        return false;
+
+    setExprResult(unop(UMinus, e));
     return false;
 }
 
@@ -3239,7 +3265,11 @@ bool Codegen::visit(UnaryPlusExpression *ast)
         return false;
 
     TailCallBlocker blockTailCalls(this);
-    setExprResult(unop(UPlus, expression(ast->expression)));
+    auto e = expression(ast->expression);
+    if (hasError())
+        return false;
+
+    setExprResult(unop(UPlus, e));
     return false;
 }
 
@@ -3418,6 +3448,10 @@ int Codegen::defineFunction(const QString &name, AST::Node *ast, AST::FormalPara
     BytecodeGenerator::Label *savedReturnLabel = _returnLabel;
     _returnLabel = nullptr;
 
+    OptionalChainStates optionalChainStates;
+    OptionalChainStates *savedOptionalChainStates = m_optionalChainsStates;
+    m_optionalChainsStates = &optionalChainStates;
+
     bool savedFunctionEndsWithReturn = functionEndsWithReturn;
     functionEndsWithReturn = endsWithReturn(_module, body);
 
@@ -3485,7 +3519,9 @@ int Codegen::defineFunction(const QString &name, AST::Node *ast, AST::FormalPara
 
     statementList(body);
 
-    if (!hasError()) {
+    if (hasError()) {
+        bytecodeGenerator->setError(true);
+    } else {
         bytecodeGenerator->setLocation(ast->lastSourceLocation());
         _context->emitBlockFooter(this);
 
@@ -3521,6 +3557,7 @@ int Codegen::defineFunction(const QString &name, AST::Node *ast, AST::FormalPara
     qSwap(_returnAddress, returnAddress);
     qSwap(requiresReturnValue, _requiresReturnValue);
     qSwap(_inFormalParameterList, inFormalParameterList);
+    m_optionalChainsStates = savedOptionalChainStates;
     bytecodeGenerator = savedBytecodeGenerator;
     delete _returnLabel;
     _returnLabel = savedReturnLabel;
@@ -4598,6 +4635,7 @@ Codegen::Reference Codegen::Reference::storeRetainAccumulator() const
         // a store will
         auto tmp = Reference::fromStackSlot(codegen);
         tmp.storeAccumulator(); // this is safe, and won't destory the accumulator
+        tmp.isReadonly = isReadonly;
         storeAccumulator();
         return tmp;
     } else {

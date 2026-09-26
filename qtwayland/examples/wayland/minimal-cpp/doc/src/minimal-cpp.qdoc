@@ -15,7 +15,7 @@
   \l{Minimal QML}{Minimal QML example} implements more functionality with 30 lines of QML than this
   example does in 300+ lines.
 
-  \image minimal-cpp.jpg
+  \image minimal-cpp.jpg {Compositor window with multiple client surfaces}
 
   This example is split in two parts. The Wayland logic is contained in the \c Compositor class,
   and the user interface is in the \c Window class.

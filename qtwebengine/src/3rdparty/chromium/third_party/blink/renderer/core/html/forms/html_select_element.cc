@@ -395,7 +395,11 @@ void HTMLSelectElement::ParseAttribute(
       ChangeRendering();
       UpdateUserAgentShadowTree(*UserAgentShadowRoot());
       UpdateMutationObserver();
-      ResetToDefaultSelection();
+      // The selection can't change if there are no children; this is a
+      // common case during parsing.
+      if (hasChildren()) {
+        ResetToDefaultSelection();
+      }
       select_type_->UpdateTextStyleAndContent();
       select_type_->SaveListboxActiveSelection();
     }
@@ -427,6 +431,20 @@ void HTMLSelectElement::ParseAttribute(
     }
   } else {
     HTMLFormControlElementWithState::ParseAttribute(params);
+  }
+}
+
+
+void HTMLSelectElement::DisabledAttributeChanged(DisabledChangedReason reason) {
+  HTMLFormControlElementWithState::DisabledAttributeChanged(reason);
+  if (RuntimeEnabledFeatures::OptionDisablednessCheckAncestorsEnabled()) {
+    for (auto& item : GetListItems()) {
+      // This will unnecessarily call PseudoStateChanged on <hr> elements, but
+      // that is preferable to checking whether the item is an option or
+      // optgroup.
+      item->PseudoStateChanged(CSSSelector::kPseudoDisabled);
+      item->PseudoStateChanged(CSSSelector::kPseudoEnabled);
+    }
   }
 }
 
@@ -854,6 +872,12 @@ int HTMLSelectElement::SelectedListIndex() const {
 }
 
 void HTMLSelectElement::SetSuggestedOption(HTMLOptionElement* option) {
+  if (RuntimeEnabledFeatures::CanvasDrawElementEnabled() &&
+      IsInCanvasSubtree()) {
+    // Hide suggested values when under canvas, to prevent leaking this
+    // information to javascript.
+    option = nullptr;
+  }
   if (suggested_option_ == option)
     return;
   SetAutofillState(option ? WebAutofillState::kPreviewed
@@ -861,6 +885,16 @@ void HTMLSelectElement::SetSuggestedOption(HTMLOptionElement* option) {
   suggested_option_ = option;
 
   select_type_->DidSetSuggestedOption(option);
+}
+
+void HTMLSelectElement::DidChangeIsCanvasOrInCanvasSubtree() {
+  HTMLFormControlElementWithState::DidChangeIsCanvasOrInCanvasSubtree();
+  if (RuntimeEnabledFeatures::CanvasDrawElementEnabled() &&
+      IsInCanvasSubtree()) {
+    // Hide suggested values when under canvas, to prevent leaking this
+    // information to javascript.
+    SetSuggestedOption(nullptr);
+  }
 }
 
 void HTMLSelectElement::OptionSelectionStateChanged(HTMLOptionElement* option,

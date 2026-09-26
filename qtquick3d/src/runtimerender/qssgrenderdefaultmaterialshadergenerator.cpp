@@ -1363,7 +1363,8 @@ static void generateFragmentShader(QSSGStageGeneratorBase &fragmentShader,
 
     // Special case for depth pre-pass
     if (passRequirmentState.shouldDiscardNonOpaque()) {
-        fragmentShader << "    if ((qt_diffuseColor.a * qt_objectOpacity) < 1.0)\n";
+        // Epsilon guards against rasterizer precision causing opaque fragments to be discarded (QTBUG-140392).
+        fragmentShader << "    if ((qt_diffuseColor.a * qt_objectOpacity) < (1.0 - 1e-6))\n";
         fragmentShader << "        discard;\n";
     }
 
@@ -1941,6 +1942,12 @@ QSSGRhiShaderPipelinePtr QSSGMaterialShaderGenerator::generateMaterialRhiShader(
     // be unique for different sets of shaders in custom materials.
     materialInfoString = inShaderKeyPrefix;
     key.toString(materialInfoString, inProperties);
+
+    // Include defines in the cache key. Preamble/body are excluded because
+    // materialInfoString is also used as a GLSL shader-name comment, and their
+    // newlines would break that comment line.
+    for (const auto &def : shaderAugmentation.defines)
+        materialInfoString.append(def.name).append(';').append(def.value).append(';');
 
     // the call order is: beginVertex, beginFragment, endVertex, endFragment
     vertexPipeline.beginVertexGeneration(key, inFeatureSet, shaderLibraryManager);

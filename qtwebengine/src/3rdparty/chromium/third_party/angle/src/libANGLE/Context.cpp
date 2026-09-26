@@ -260,6 +260,11 @@ bool GetWebGLContext(const egl::AttributeMap &attribs)
     return (attribs.get(EGL_CONTEXT_WEBGL_COMPATIBILITY_ANGLE, EGL_FALSE) == EGL_TRUE);
 }
 
+bool GetHardenedContext(const egl::AttributeMap &attribs)
+{
+    return (attribs.get(EGL_CONTEXT_HARDENED_ANGLE, EGL_FALSE) == EGL_TRUE);
+}
+
 Version GetClientVersion(egl::Display *display, const egl::AttributeMap &attribs)
 {
     const Version requestedVersion(static_cast<uint8_t>(GetClientMajorVersion(attribs)),
@@ -704,6 +709,7 @@ Context::Context(egl::Display *display,
       mCurrentReadSurface(static_cast<egl::Surface *>(EGL_NO_SURFACE)),
       mDisplay(display),
       mWebGLContext(GetWebGLContext(attribs)),
+      mHardenedContext(GetHardenedContext(attribs)),
       mBufferAccessValidationEnabled(false),
       mExtensionsEnabled(GetExtensionsEnabled(attribs, mWebGLContext)),
       mMemoryProgramCache(memoryProgramCache),
@@ -1656,6 +1662,11 @@ void Context::bindImageTexture(GLuint unit,
                                GLenum format)
 {
     Texture *tex = mState.mTextureManager->getTexture(texture);
+    // For robust init, make sure the texture is initialized before storage writes.
+    if (tex != nullptr)
+    {
+        ANGLE_CONTEXT_TRY(tex->ensureInitialized(this));
+    }
     mState.setImageUnit(this, unit, tex, level, layered, layer, access, format);
     mImageObserverBindings[unit].bind(tex);
 }
@@ -3850,7 +3861,11 @@ void Context::beginTransformFeedback(PrimitiveMode primitiveMode)
     ASSERT(!transformFeedback->isPaused());
 
     // TODO: http://anglebug.com/42265705: Handle PPOs
-    ANGLE_CONTEXT_TRY(transformFeedback->begin(this, primitiveMode, mState.getProgram()));
+    // Since programs should override PPOs, no PPO is passed to the transform feedback if a program
+    // is active.
+    Program *program                 = mState.getProgram();
+    ProgramPipeline *programPipeline = program == nullptr ? mState.getProgramPipeline() : nullptr;
+    ANGLE_CONTEXT_TRY(transformFeedback->begin(this, primitiveMode, program, programPipeline));
     onActiveTransformFeedbackChange();
 }
 
@@ -4393,6 +4408,11 @@ void Context::initCaps()
     ANGLE_LIMIT_CAP(caps->maxViews, IMPLEMENTATION_ANGLE_MULTIVIEW_MAX_VIEWS);
 
     ANGLE_LIMIT_CAP(caps->maxDualSourceDrawBuffers, IMPLEMENTATION_MAX_DUAL_SOURCE_DRAW_BUFFERS);
+
+    // Disallow using UINT_MAX as an index. This would allow for a draw count of UINT_MAX + 1,
+    // overflowing a 32-bit integer.
+    constexpr GLint64 kMaxElementIndex = std::numeric_limits<GLuint>::max() - 1;
+    ANGLE_LIMIT_CAP(caps->maxElementIndex, kMaxElementIndex);
 
     // WebGL compatibility
     extensions->webglCompatibilityANGLE = mWebGLContext;
@@ -8027,7 +8047,7 @@ void Context::uniformBlockBinding(ShaderProgramID program,
 GLsync Context::fenceSync(GLenum condition, GLbitfield flags)
 {
     SyncID syncHandle;
-    if (!mState.mSyncManager->createSync(mImplementation.get(), &syncHandle))
+    if (!mState.mSyncManager->createSync(mImplementation.get(), this, &syncHandle))
     {
         handleExhaustionError(angle::EntryPoint::GLFenceSync);
         return nullptr;
@@ -9353,6 +9373,7 @@ void Context::onUniformBlockBindingUpdated(GLuint uniformBlockIndex)
 {
     mState.mDirtyBits.set(state::DIRTY_BIT_UNIFORM_BUFFER_BINDINGS);
     mState.mDirtyUniformBlocks.set(uniformBlockIndex);
+    mState.mUniformBufferBlocksDirtyTypeMask.set(BufferDirtyType::Binding);
     mStateCache.onUniformBufferStateChange(this);
 }
 

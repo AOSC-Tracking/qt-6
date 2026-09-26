@@ -57,9 +57,6 @@ depends                 += qtcore qtgui qtqml qtquick qtdoc
               ../../quick3d/quick3dscene2d \
               ../../quick3d/quick3dscene3d
 
-# Exclude private header files from the documentation build
-excludefiles += "*_p.h"
-
 # Add some private headers explicitly to avoid documentation warnings
 headers       = ../../core/transforms/matrix4x4_p.h \
                 ../../core/transforms/vector3d_p.h \
@@ -92,5 +89,10 @@ navigation.toctitles.inclusive = false
 # Allow no documentation warnings when testing in CI
 warninglimit = 0
 
-# Suppress a specific warning category
-spurious += "No output generated for .*"
+# Report warnings for images without alt text
+reportmissingalttextforimages = true
+
+# Suppress a specific warning categories
+spurious += \
+    "No output generated for .*" \
+    "No documentation for .*"

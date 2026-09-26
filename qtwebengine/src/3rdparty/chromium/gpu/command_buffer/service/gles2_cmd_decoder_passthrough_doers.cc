@@ -670,6 +670,7 @@ error::Error GLES2DecoderPassthroughImpl::DoBufferData(GLenum target,
                                                        GLenum usage) {
   CheckErrorCallbackState();
   api()->glBufferDataFn(target, size, data, usage);
+
   if (CheckErrorCallbackState()) {
     return error::kNoError;
   }
@@ -677,9 +678,6 @@ error::Error GLES2DecoderPassthroughImpl::DoBufferData(GLenum target,
   if (target == GL_ELEMENT_ARRAY_BUFFER) {
     LazilyUpdateCurrentlyBoundElementArrayBuffer();
   }
-
-  // Calling buffer data on a mapped buffer will implicitly unmap it
-  resources_->mapped_buffer_map.erase(bound_buffers_[target]);
 
   return error::kNoError;
 }
@@ -1008,7 +1006,6 @@ error::Error GLES2DecoderPassthroughImpl::DoDeleteBuffers(
       if (buffer_binding.second == client_id) {
         buffer_binding.second = 0;
       }
-      resources_->mapped_buffer_map.erase(client_id);
     }
 
     service_ids[ii] =
@@ -1319,61 +1316,6 @@ error::Error GLES2DecoderPassthroughImpl::DoFlush() {
   return ProcessQueries(false);
 }
 
-error::Error GLES2DecoderPassthroughImpl::DoFlushMappedBufferRange(
-    GLenum target,
-    GLintptr offset,
-    GLsizeiptr size) {
-  if (target == GL_ELEMENT_ARRAY_BUFFER) {
-    LazilyUpdateCurrentlyBoundElementArrayBuffer();
-  }
-
-  auto bound_buffers_iter = bound_buffers_.find(target);
-  if (bound_buffers_iter == bound_buffers_.end() ||
-      bound_buffers_iter->second == 0) {
-    InsertError(GL_INVALID_OPERATION, "No buffer bound to this target.");
-    return error::kNoError;
-  }
-
-  GLuint client_buffer = bound_buffers_iter->second;
-  auto mapped_buffer_info_iter =
-      resources_->mapped_buffer_map.find(client_buffer);
-  if (mapped_buffer_info_iter == resources_->mapped_buffer_map.end()) {
-    InsertError(GL_INVALID_OPERATION, "Buffer is not mapped.");
-    return error::kNoError;
-  }
-
-  const MappedBuffer& map_info = mapped_buffer_info_iter->second;
-
-  if (offset < 0) {
-    InsertError(GL_INVALID_VALUE, "Offset cannot be negative.");
-    return error::kNoError;
-  }
-
-  if (size < 0) {
-    InsertError(GL_INVALID_VALUE, "Size cannot be negative.");
-    return error::kNoError;
-  }
-
-  base::CheckedNumeric<size_t> range_start(offset);
-  base::CheckedNumeric<size_t> range_end = range_start + size;
-  if (!range_end.IsValid() || range_end.ValueOrDefault(0) > map_info.size) {
-    InsertError(GL_INVALID_OPERATION,
-                "Flush range is not within the original mapping size.");
-    return error::kNoError;
-  }
-
-  uint8_t* mem = GetSharedMemoryAs<uint8_t*>(
-      map_info.data_shm_id, map_info.data_shm_offset, map_info.size);
-  if (!mem) {
-    return error::kOutOfBounds;
-  }
-
-  memcpy(map_info.map_ptr + offset, mem + offset, size);
-  api()->glFlushMappedBufferRangeFn(target, offset, size);
-
-  return error::kNoError;
-}
-
 error::Error GLES2DecoderPassthroughImpl::DoFramebufferParameteri(GLenum target,
                                                                   GLenum pname,
                                                                   GLint param) {
@@ -1666,10 +1608,6 @@ error::Error GLES2DecoderPassthroughImpl::DoGetBufferParameteri64v(
   CheckErrorCallbackState();
   api()->glGetBufferParameteri64vRobustANGLEFn(target, pname, bufsize, length,
                                                params);
-  if (CheckErrorCallbackState()) {
-    return error::kNoError;
-  }
-  PatchGetBufferResults(target, pname, bufsize, length, params);
   return error::kNoError;
 }
 
@@ -1682,10 +1620,23 @@ error::Error GLES2DecoderPassthroughImpl::DoGetBufferParameteriv(
   CheckErrorCallbackState();
   api()->glGetBufferParameterivRobustANGLEFn(target, pname, bufsize, length,
                                              params);
-  if (CheckErrorCallbackState()) {
+  return error::kNoError;
+}
+
+error::Error GLES2DecoderPassthroughImpl::DoGetBufferSubDataCHROMIUM(
+    GLenum target,
+    GLintptr offset,
+    GLsizeiptr size,
+    void* data) {
+  void* map_ptr =
+      api()->glMapBufferRangeFn(target, offset, size, GL_MAP_READ_BIT);
+  if (!map_ptr) {
     return error::kNoError;
   }
-  PatchGetBufferResults(target, pname, bufsize, length, params);
+
+  UNSAFE_TODO(memcpy(data, map_ptr, static_cast<size_t>(size)));
+
+  api()->glUnmapBufferFn(target);
   return error::kNoError;
 }
 
@@ -4112,10 +4063,12 @@ error::Error GLES2DecoderPassthroughImpl::DoGenVertexArraysOES(
 error::Error GLES2DecoderPassthroughImpl::DoDeleteVertexArraysOES(
     GLsizei n,
     const volatile GLuint* arrays) {
-  return DeleteHelper(n, arrays, &vertex_array_id_map_,
-                      [this](GLsizei n, GLuint* arrays) {
-                        api()->glDeleteVertexArraysOESFn(n, arrays);
-                      });
+  error::Error err = DeleteHelper(n, arrays, &vertex_array_id_map_,
+                                  [this](GLsizei n, GLuint* arrays) {
+                                    api()->glDeleteVertexArraysOESFn(n, arrays);
+                                  });
+  bound_element_array_buffer_dirty_ = true;
+  return err;
 }
 
 error::Error GLES2DecoderPassthroughImpl::DoIsVertexArrayOES(GLuint array,
@@ -4139,121 +4092,6 @@ error::Error GLES2DecoderPassthroughImpl::DoGetMaxValueInBufferCHROMIUM(
     GLuint offset,
     uint32_t* result) {
   NOTIMPLEMENTED();
-  return error::kNoError;
-}
-
-error::Error GLES2DecoderPassthroughImpl::DoEnableFeatureCHROMIUM(
-    const char* feature) {
-  NOTIMPLEMENTED();
-  return error::kNoError;
-}
-
-error::Error GLES2DecoderPassthroughImpl::DoMapBufferRange(
-    GLenum target,
-    GLintptr offset,
-    GLsizeiptr size,
-    GLbitfield access,
-    void* ptr,
-    int32_t data_shm_id,
-    uint32_t data_shm_offset,
-    uint32_t* result) {
-  CheckErrorCallbackState();
-
-  GLbitfield filtered_access = access;
-
-  // Always filter out GL_MAP_UNSYNCHRONIZED_BIT to get rid of undefined
-  // behaviors.
-  filtered_access = (filtered_access & ~GL_MAP_UNSYNCHRONIZED_BIT);
-
-  if ((filtered_access & GL_MAP_INVALIDATE_BUFFER_BIT) != 0) {
-    // To be on the safe side, always map GL_MAP_INVALIDATE_BUFFER_BIT to
-    // GL_MAP_INVALIDATE_RANGE_BIT.
-    filtered_access = (filtered_access & ~GL_MAP_INVALIDATE_BUFFER_BIT);
-    filtered_access = (filtered_access | GL_MAP_INVALIDATE_RANGE_BIT);
-  }
-  if ((filtered_access & GL_MAP_INVALIDATE_RANGE_BIT) == 0) {
-    // If this user intends to use this buffer without invalidating the data, we
-    // need to also add GL_MAP_READ_BIT to preserve the original data when
-    // copying it to shared memory.
-    filtered_access = (filtered_access | GL_MAP_READ_BIT);
-  }
-
-  void* mapped_ptr =
-      api()->glMapBufferRangeFn(target, offset, size, filtered_access);
-  if (CheckErrorCallbackState() || mapped_ptr == nullptr) {
-    // Had an error while mapping, don't copy any data
-    *result = 0;
-    return error::kNoError;
-  }
-
-  if ((filtered_access & GL_MAP_INVALIDATE_RANGE_BIT) == 0) {
-    memcpy(ptr, mapped_ptr, size);
-  }
-
-  // Track the mapping of this buffer so that data can be synchronized when it
-  // is unmapped
-  DCHECK(bound_buffers_.find(target) != bound_buffers_.end());
-  if (target == GL_ELEMENT_ARRAY_BUFFER) {
-    LazilyUpdateCurrentlyBoundElementArrayBuffer();
-  }
-  GLuint client_buffer = bound_buffers_.at(target);
-
-  MappedBuffer mapped_buffer_info;
-  mapped_buffer_info.size = size;
-  mapped_buffer_info.original_access = access;
-  mapped_buffer_info.filtered_access = filtered_access;
-  mapped_buffer_info.map_ptr = static_cast<uint8_t*>(mapped_ptr);
-  mapped_buffer_info.data_shm_id = data_shm_id;
-  mapped_buffer_info.data_shm_offset = data_shm_offset;
-
-  DCHECK(resources_->mapped_buffer_map.find(client_buffer) ==
-         resources_->mapped_buffer_map.end());
-  resources_->mapped_buffer_map.insert(
-      std::make_pair(client_buffer, mapped_buffer_info));
-
-  *result = 1;
-  return error::kNoError;
-}
-
-error::Error GLES2DecoderPassthroughImpl::DoUnmapBuffer(GLenum target) {
-  if (target == GL_ELEMENT_ARRAY_BUFFER) {
-    LazilyUpdateCurrentlyBoundElementArrayBuffer();
-  }
-  auto bound_buffers_iter = bound_buffers_.find(target);
-  if (bound_buffers_iter == bound_buffers_.end()) {
-    InsertError(GL_INVALID_ENUM, "Invalid buffer target.");
-    return error::kNoError;
-  }
-
-  if (bound_buffers_iter->second == 0) {
-    InsertError(GL_INVALID_OPERATION, "No buffer bound to this target.");
-    return error::kNoError;
-  }
-
-  GLuint client_buffer = bound_buffers_iter->second;
-  auto mapped_buffer_info_iter =
-      resources_->mapped_buffer_map.find(client_buffer);
-  if (mapped_buffer_info_iter == resources_->mapped_buffer_map.end()) {
-    InsertError(GL_INVALID_OPERATION, "Buffer is not mapped.");
-    return error::kNoError;
-  }
-
-  const MappedBuffer& map_info = mapped_buffer_info_iter->second;
-  if ((map_info.filtered_access & GL_MAP_WRITE_BIT) != 0 &&
-      (map_info.filtered_access & GL_MAP_FLUSH_EXPLICIT_BIT) == 0) {
-    uint8_t* mem = GetSharedMemoryAs<uint8_t*>(
-        map_info.data_shm_id, map_info.data_shm_offset, map_info.size);
-    if (!mem) {
-      return error::kOutOfBounds;
-    }
-
-    memcpy(map_info.map_ptr, mem, map_info.size);
-  }
-
-  api()->glUnmapBufferFn(target);
-
-  resources_->mapped_buffer_map.erase(mapped_buffer_info_iter);
-
   return error::kNoError;
 }
 
@@ -4515,8 +4353,9 @@ GLES2DecoderPassthroughImpl::DoGetTransformFeedbackVaryingsCHROMIUM(
   api()->glGetProgramivFn(service_program, GL_TRANSFORM_FEEDBACK_VARYINGS,
                           &num_transform_feedback_varyings);
 
-  // Resize the data to fit the headers and info objects so that strings can be
-  // appended.
+  // Resize the data to fit the headers and info objects. Strings will be
+  // appended at the end of the buffer and info objects will point to the
+  // strings using their offset in the buffer.
   const base::CheckedNumeric<size_t> buffer_header_size(
       sizeof(TransformFeedbackVaryingsHeader));
   const base::CheckedNumeric<size_t> buffer_block_size(
@@ -4553,12 +4392,15 @@ GLES2DecoderPassthroughImpl::DoGetTransformFeedbackVaryingsCHROMIUM(
     varying_info.size = size;
     varying_info.type = type;
 
+    // Add the string at the end and make the info object point at it using its
+    // offset.
     DCHECK(length + 1 <= max_transform_feedback_varying_length);
-    varying_info.name_length = data->size();
+    varying_info.name_offset = data->size();
     varying_info.name_length = length + 1;
     AppendStringToBuffer(data, transform_feedback_varying_name_buf.data(),
                          length + 1);
 
+    // Put the header info in the previously reserved space in the buffer.
     InsertValueIntoBuffer(
         data, varying_info,
         (buffer_header_size +

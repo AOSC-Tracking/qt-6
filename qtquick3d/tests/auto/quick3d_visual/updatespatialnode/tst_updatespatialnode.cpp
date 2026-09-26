@@ -14,6 +14,7 @@ class tst_UpdateSpatialNode : public QQuick3DDataTest
 
 private slots:
     void initTestCase() override;
+    void cleanupTestCase() override;
     void updateResource();
 };
 
@@ -25,6 +26,13 @@ void tst_UpdateSpatialNode::initTestCase()
 extern TestData testData_ResourceObject;
 extern TestData testData_NodeObject;
 extern TestData testData_ExtensionObject;
+
+void tst_UpdateSpatialNode::cleanupTestCase()
+{
+    testData_ResourceObject.resetCounts();
+    testData_NodeObject.resetCounts();
+    testData_ExtensionObject.resetCounts();
+}
 
 void tst_UpdateSpatialNode::updateResource()
 {
@@ -40,9 +48,10 @@ void tst_UpdateSpatialNode::updateResource()
     QTRY_VERIFY(testData_ExtensionObject.callCount == testData_ExtensionObject.expectedCallCount);
 
     // Verify that the objects are destroyed (once). If this is more then one the test code is wrong.
-    QCOMPARE(testData_ResourceObject.destroyedCount, 1);
-    QCOMPARE(testData_NodeObject.destroyedCount, 1);
-    QCOMPARE(testData_ExtensionObject.destroyedCount, 1);
+    // Use QTRY_COMPARE because backend node deletion is processed asynchronously by the render thread.
+    QTRY_COMPARE(testData_ResourceObject.destroyedCount, 1);
+    QTRY_COMPARE(testData_NodeObject.destroyedCount, 1);
+    QTRY_COMPARE(testData_ExtensionObject.destroyedCount, 1);
 }
 
 QTEST_MAIN(tst_UpdateSpatialNode)

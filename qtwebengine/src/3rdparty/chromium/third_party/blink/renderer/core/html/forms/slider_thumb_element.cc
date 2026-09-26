@@ -53,7 +53,6 @@ namespace blink {
 SliderThumbElement::SliderThumbElement(Document& document)
     : HTMLDivElement(document), in_drag_mode_(false) {
   SetHasCustomStyleCallbacks();
-  setAttribute(html_names::kIdAttr, shadow_element_names::kIdSliderThumb);
 }
 
 void SliderThumbElement::SetPositionFromValue() {
@@ -166,7 +165,7 @@ void SliderThumbElement::StartDragging() {
   }
 }
 
-void SliderThumbElement::StopDragging() {
+void SliderThumbElement::StopDragging(EventDispatch event_dispatch) {
   if (!in_drag_mode_)
     return;
 
@@ -179,8 +178,9 @@ void SliderThumbElement::StopDragging() {
     GetLayoutObject()->SetNeedsLayoutAndFullPaintInvalidation(
         layout_invalidation_reason::kSliderValueChanged);
   }
-  if (HostInput())
+  if (HostInput() && event_dispatch == kEventDispatchAllowed) {
     HostInput()->DispatchFormControlChangeEvent();
+  }
 }
 
 void SliderThumbElement::DefaultEventHandler(Event& event) {

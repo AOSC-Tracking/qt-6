@@ -313,8 +313,8 @@ void RequestBatchHandler::processMessages(QJsonRpcProtocolPrivate *protocol,
         handler->handleRequest(request, [this, id](const QJsonRpcProtocol::Response &response) {
             m_finished.append(createResponse(id, response));
             bool found = false;
-            for (QJsonValueRef entry : m_finished) {
-                if (entry.toObject()[u"id"] == id) {
+            for (QJsonValueConstRef entry : std::as_const(m_finished)) {
+                if (entry.toObject().value(u"id") == id) {
                     found = true;
                     break;
                 }
@@ -396,7 +396,8 @@ void QJsonRpcProtocolPrivate::processMessage(const QJsonDocument &message,
         && m_messagePreprocessor(message, error,
                                  [message, this](const QJsonRpcProtocol::Response &r) {
                                      Q_ASSERT(message.object().contains(u"id"));
-                                     this->sendMessage(createResponse(message.object()[u"id"], r));
+                                     this->sendMessage(
+                                             createResponse(message.object().value(u"id"), r));
                                  })
                 != QJsonRpcProtocol::Processing::Continue) {
         return;

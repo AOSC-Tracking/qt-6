@@ -5,7 +5,8 @@
 #define THEME_H
 
 #include <QColor>
-#include "qcanvaslineargradient.h"
+
+#include <QCanvasLinearGradient>
 
 class Theme
 {
@@ -26,10 +27,10 @@ public:
     QCanvasLinearGradient gradient2() const;
 
 private:
-
     void initThemes();
 
-    struct ThemeVars {
+    struct ThemeVars
+    {
         QColor background1;
         QColor background2;
         QColor foreground1;

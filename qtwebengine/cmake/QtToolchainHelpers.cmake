@@ -350,6 +350,7 @@ macro(append_build_type_setup)
         list(APPEND gnArgArg blink_symbol_level=0 v8_symbol_level=0)
         if (MSVC AND NOT CLANG)
             # We need these to keep the PDB size below the limit on MSVC builds
+            list(APPEND gnArgArg device_symbol_level=0)
             list(APPEND gnArgArg webrtc_symbol_level=0)
             if (QT_FEATURE_webengine_rust_build)
                 list(APPEND gnArgArg rust_symbol_level=0)
@@ -447,6 +448,10 @@ macro(append_compiler_linker_sdk_setup)
                 android_ndk_api_level=${ANDROID_NATIVE_API_LEVEL}
                 clang_use_default_sample_profile=false
             )
+            if(CMAKE_HOST_APPLE)
+                get_darwin_sdk_version(macSdkVersion)
+                list(APPEND gnArgArg mac_sdk_min="${macSdkVersion}")
+            endif()
         endif()
     else()
         if(QT_FEATURE_use_lld_linker OR QT_FEATURE_webengine_rust_build)

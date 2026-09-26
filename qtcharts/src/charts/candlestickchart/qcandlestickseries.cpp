@@ -37,7 +37,8 @@ QT_BEGIN_NAMESPACE
 
     See the \l {Charts with Widgets Gallery} to learn how to create
     a candlestick chart.
-    \image examples_candlestickchart.png
+    \image examples_candlestickchart.png {Candlestick chart of daily stock
+           data with green rising and red falling candles over a month}
 
     \sa QCandlestickSet, QBarCategoryAxis, QDateTimeAxis, QValueAxis
 */
@@ -529,7 +530,7 @@ bool QCandlestickSeries::remove(const QList<QCandlestickSet *> &sets)
     if (success) {
         emit candlestickSetsRemoved(sets);
         emit countChanged();
-        foreach (QCandlestickSet *set, sets)
+        for (auto set : sets)
             delete set;
     }
 
@@ -606,7 +607,7 @@ void QCandlestickSeries::clear()
     if (success) {
         emit candlestickSetsRemoved(sets);
         emit countChanged();
-        foreach (QCandlestickSet *set, sets)
+        for (auto set : std::as_const(sets))
             delete set;
     }
 }
@@ -941,7 +942,7 @@ void QCandlestickSeriesPrivate::initializeDomain()
 
 void QCandlestickSeriesPrivate::initializeAxes()
 {
-    foreach (QAbstractAxis* axis, m_axes) {
+    for (auto axis : std::as_const(m_axes)) {
         if (axis->type() == QAbstractAxis::AxisTypeBarCategory) {
             if (axis->orientation() == Qt::Horizontal)
                 populateBarCategories(qobject_cast<QBarCategoryAxis *>(axis));
@@ -1038,14 +1039,14 @@ QAbstractAxis* QCandlestickSeriesPrivate::createDefaultAxis(Qt::Orientation orie
 
 bool QCandlestickSeriesPrivate::append(const QList<QCandlestickSet *> &sets)
 {
-    foreach (QCandlestickSet *set, sets) {
+    for (auto set : sets) {
         if ((set == 0) || m_sets.contains(set) || set->d_ptr->m_series)
             return false; // Fail if any of the sets is null or is already appended.
         if (sets.count(set) != 1)
             return false; // Also fail if the same set occurs more than once in the given list.
     }
 
-    foreach (QCandlestickSet *set, sets) {
+    for (auto set : sets) {
         m_sets.append(set);
         connect(set->d_func(), SIGNAL(updatedLayout()), this, SIGNAL(updatedLayout()));
         connect(set->d_func(), SIGNAL(updatedCandlestick()), this, SIGNAL(updatedCandlesticks()));
@@ -1060,14 +1061,14 @@ bool QCandlestickSeriesPrivate::remove(const QList<QCandlestickSet *> &sets)
     if (sets.size() == 0)
         return false;
 
-    foreach (QCandlestickSet *set, sets) {
+    for (auto set : sets) {
         if ((set == 0) || (!m_sets.contains(set)))
             return false; // Fail if any of the sets is null or is not in series.
         if (sets.count(set) != 1)
             return false; // Also fail if the same set occurs more than once in the given list.
     }
 
-    foreach (QCandlestickSet *set, sets) {
+    for (auto set : sets) {
         set->d_ptr->m_series = nullptr;
         m_sets.removeOne(set);
         disconnect(set->d_func(), SIGNAL(updatedLayout()), this, SIGNAL(updatedLayout()));

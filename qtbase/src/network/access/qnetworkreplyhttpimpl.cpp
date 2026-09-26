@@ -51,7 +51,7 @@ static QHash<QByteArray, QByteArray> parseHttpOptionHeader(QByteArrayView header
     // value-directive = token "=" (token | quoted-string)
     QHash<QByteArray, QByteArray> result;
 
-    int pos = 0;
+    qsizetype pos = 0;
     while (true) {
         // skip spaces
         pos = nextNonWhitespace(header, pos);
@@ -59,15 +59,15 @@ static QHash<QByteArray, QByteArray> parseHttpOptionHeader(QByteArrayView header
             return result;      // end of parsing
 
         // pos points to a non-whitespace
-        int comma = header.indexOf(',', pos);
-        int equal = header.indexOf('=', pos);
+        const qsizetype comma = header.indexOf(',', pos);
+        const qsizetype equal = header.indexOf('=', pos);
         if (comma == pos || equal == pos)
             // huh? Broken header.
             return result;
 
         // The key name is delimited by either a comma, an equal sign or the end
         // of the header, whichever comes first
-        int end = comma;
+        qsizetype end = comma;
         if (end == -1)
             end = header.size();
         if (equal != -1 && end > equal)
@@ -75,7 +75,7 @@ static QHash<QByteArray, QByteArray> parseHttpOptionHeader(QByteArrayView header
         const auto key = header.sliced(pos, end - pos).trimmed();
         pos = end + 1;
 
-        if (uint(equal) < uint(comma)) {
+        if (size_t(equal) < size_t(comma)) {
             // case: token "=" (token | quoted-string)
             // skip spaces
             pos = nextNonWhitespace(header, pos);
@@ -126,10 +126,10 @@ static QHash<QByteArray, QByteArray> parseHttpOptionHeader(QByteArrayView header
             result.insert(key.toByteArray().toLower(), value);
 
             // find the comma now:
-            comma = header.indexOf(',', pos);
-            if (comma == -1)
+            if (qsizetype comma = header.indexOf(',', pos); comma == -1)
                 return result;  // end of parsing
-            pos = comma + 1;
+            else
+                pos = comma + 1;
         } else {
             // case: token
             // key is already set
@@ -1343,9 +1343,13 @@ void QNetworkReplyHttpImplPrivate::onRedirected(const QUrl &redirectUrl, int htt
     }
 
     // If the original operation was a GET with a body and the status code is
-    // 308 then keep the message body
+    // 308 then keep the message body. The body must still be present though:
+    // a previous redirect (e.g. 301/302/303) has already dropped it, and once
+    // dropped it cannot be restored, so the headers must be dropped too to keep
+    // them in sync (QTBUG-133976).
     const bool getOperationKeepsBody = (operation == QNetworkAccessManager::GetOperation)
-                                    && httpStatus == 308;
+                                    && httpStatus == 308
+                                    && (outgoingData || outgoingDataBuffer);
 
     redirectRequest = createRedirectRequest(originalRequest, url, maxRedirectsRemaining);
     operation = getRedirectOperation(operation, httpStatus);
@@ -1399,7 +1403,12 @@ void QNetworkReplyHttpImplPrivate::followRedirect()
         managerPrivate->thread->disconnect();
 
     QMetaObject::invokeMethod(
-            q, [this]() { postRequest(redirectRequest); }, Qt::QueuedConnection);
+            q,
+            [this] {
+                postRequest(redirectRequest);
+                setupTransferTimeout();
+            },
+            Qt::QueuedConnection);
 }
 
 static constexpr QLatin1StringView locationHeader() noexcept { return "location"_L1; }

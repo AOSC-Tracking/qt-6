@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
 
 #include <private/qhighdpiscaling_p.h>
+#include <qpa/qplatformintegrationfactory_p.h>
 #include <qpa/qplatformscreen.h>
 #include <qpa/qplatformnativeinterface.h>
 
@@ -60,6 +61,7 @@ private slots:
     void setCursor_data();
     void setGlobalFactorEmits();
     void setScreenFactorEmits();
+    void moveWindowBetweenScreens();
 };
 
 /// Offscreen platform plugin test setup
@@ -154,6 +156,12 @@ QGuiApplication *tst_QHighDpi::createStandardOffscreenApp(const QJsonArray &scre
 
 void tst_QHighDpi::initTestCase()
 {
+    // Every test function creates a nested QGuiApplication on the offscreen
+    // platform, which aborts if the plugin is not available (e.g. static iOS
+    // builds that only link the ios plugin).
+    if (!QPlatformIntegrationFactory::keys().contains(QLatin1String("offscreen")))
+        QSKIP("This test requires the offscreen platform plugin");
+
     QDir::setCurrent(QDir::tempPath());
 }
 
@@ -886,6 +894,35 @@ void tst_QHighDpi::setScreenFactorEmits()
         QHighDpiScaling::setScreenFactor(screen, 2);
         QCOMPARE(spy.count(), 1);
     }
+}
+
+void tst_QHighDpi::moveWindowBetweenScreens()
+{
+    QList<qreal> dpiValues{ 96, 96 * 1.6, 96 * 1.4 };
+    QJsonArray arr = createStandardScreens(dpiValues);
+    qputenv("QT_SCALE_FACTOR_ROUNDING_POLICY", "Round");
+    std::unique_ptr<QGuiApplication> app(createStandardOffscreenApp(arr));
+
+    const auto screens = app->screens();
+    QCOMPARE(screens.size(), 3);
+    QRect r(screens[0]->geometry().center(), QSize(10, 10));
+    QWindow w;
+    w.create();
+    w.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&w));
+    w.setGeometry(r);
+    QCOMPARE(w.geometry(), r);
+    QCOMPARE(w.screen(), screens[0]);
+
+    r = QRect(screens[1]->geometry().center(), QSize(10, 10));
+    w.setGeometry(r);
+    QCOMPARE(w.geometry(), r);
+    QCOMPARE(w.screen(), screens[1]);
+
+    r = QRect(screens[2]->geometry().center(), QSize(10, 10));
+    w.setGeometry(r);
+    QCOMPARE(w.geometry(), r);
+    QCOMPARE(w.screen(), screens[2]);
 }
 
 #include "tst_qhighdpi.moc"

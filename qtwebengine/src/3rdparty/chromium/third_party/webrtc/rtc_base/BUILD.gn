@@ -360,16 +360,19 @@ rtc_library("platform_thread_types") {
   deps = [ ":checks" ]
 }
 
-rtc_source_set("refcount") {
+rtc_library("refcount") {
   visibility = [ "*" ]
   sources = [
     "ref_count.h",
     "ref_counted_object.h",
+    "ref_counter.cc",
     "ref_counter.h",
   ]
   deps = [
+    ":checks",
     "../api:ref_count",
     "../api:scoped_refptr",
+    "system:rtc_export",
   ]
 }
 
@@ -2119,6 +2122,7 @@ if (rtc_include_tests) {
         "network:received_packet",
         "synchronization:mutex",
         "task_utils:repeating_task",
+        "//testing/gtest",
         "third_party/sigslot",
         "//third_party/abseil-cpp/absl/base:core_headers",
         "//third_party/abseil-cpp/absl/memory",

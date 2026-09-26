@@ -35,14 +35,6 @@ namespace {{this}} {
 template <typename T>
 QString toStringValue(const QSet<T> &val);
 
-template <typename T>
-bool fromStringValue(const QList<QString> &inStr, QList<T> &val);
-
-template <typename T>
-bool fromStringValue(const QSet<QString> &inStr, QList<T> &val);
-
-template <typename T>
-bool fromStringValue(const QMap<QString, QString> &inStr, QMap<QString, T> &val);
 
 template <typename T>
 QJsonValue toJsonValue(const QList<T> &val);
@@ -137,51 +129,6 @@ QJsonValue toJsonValue(const QMap<QString, T> &val) {
 {{packageNameUpperCase}}_COMMON_EXPORT bool fromByteArray(const QByteArray &input, {{prefix}}Enum &value);
 {{packageNameUpperCase}}_COMMON_EXPORT bool fromByteArray(const QByteArray &input, {{prefix}}HttpFileElement &value);
 
-{{packageNameUpperCase}}_COMMON_EXPORT bool fromStringValue(const QString &inStr, QString &value);
-{{packageNameUpperCase}}_COMMON_EXPORT bool fromStringValue(const QString &inStr, QDateTime &value);
-{{packageNameUpperCase}}_COMMON_EXPORT bool fromStringValue(const QString &inStr, QByteArray &value);
-{{packageNameUpperCase}}_COMMON_EXPORT bool fromStringValue(const QString &inStr, QDate &value);
-{{packageNameUpperCase}}_COMMON_EXPORT bool fromStringValue(const QString &inStr, qint32 &value);
-{{packageNameUpperCase}}_COMMON_EXPORT bool fromStringValue(const QString &inStr, qint64 &value);
-{{packageNameUpperCase}}_COMMON_EXPORT bool fromStringValue(const QString &inStr, bool &value);
-{{packageNameUpperCase}}_COMMON_EXPORT bool fromStringValue(const QString &inStr, float &value);
-{{packageNameUpperCase}}_COMMON_EXPORT bool fromStringValue(const QString &inStr, double &value);
-{{packageNameUpperCase}}_COMMON_EXPORT bool fromStringValue(const QString &inStr, {{prefix}}Object &value);
-{{packageNameUpperCase}}_COMMON_EXPORT bool fromStringValue(const QString &inStr, {{prefix}}Enum &value);
-{{packageNameUpperCase}}_COMMON_EXPORT bool fromStringValue(const QString &inStr, {{prefix}}HttpFileElement &value);
-
-template <typename T>
-bool fromStringValue(const QList<QString> &inStr, QList<T> &val) {
-    bool ok = (inStr.size() > 0);
-    for (const auto &item : inStr) {
-        T itemVal;
-        ok &= fromStringValue(item, itemVal);
-        val.push_back(std::move(itemVal));
-    }
-    return ok;
-}
-
-template <typename T>
-bool fromStringValue(const QSet<QString> &inStr, QList<T> &val) {
-    bool ok = (inStr.size() > 0);
-    for (const auto &item : inStr) {
-        T itemVal;
-        ok &= fromStringValue(item, itemVal);
-        val.push_back(std::move(itemVal));
-    }
-    return ok;
-}
-
-template <typename T>
-bool fromStringValue(const QMap<QString, QString> &inStr, QMap<QString, T> &val) {
-    bool ok = (inStr.size() > 0);
-    for (const auto &[key, value] : inStr.asKeyValueRange()) {
-        T itemVal;
-        ok &= fromStringValue(value, itemVal);
-        val.insert(key, itemVal);
-    }
-    return ok;
-}
 
 {{packageNameUpperCase}}_COMMON_EXPORT bool fromJsonValue(QString &value, const QJsonValue &jval);
 {{packageNameUpperCase}}_COMMON_EXPORT bool fromJsonValue(QDateTime &value, const QJsonValue &jval);

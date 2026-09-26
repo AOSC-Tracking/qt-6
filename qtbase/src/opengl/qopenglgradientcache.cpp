@@ -103,7 +103,8 @@ GLuint QOpenGL2GradientCache::addCacheElement(quint64 hash_val, const QGradient 
     QOpenGLFunctions *funcs = QOpenGLContext::currentContext()->functions();
     if (cache.size() == maxCacheSize()) {
         int elem_to_remove = QRandomGenerator::global()->bounded(maxCacheSize());
-        quint64 key = cache.keys()[elem_to_remove];
+        const QList<quint64> keys = cache.keys();
+        quint64 key = keys[elem_to_remove];
 
         // need to call glDeleteTextures on each removed cache entry:
         QOpenGLGradientColorTableHash::const_iterator it = cache.constFind(key);
@@ -145,7 +146,7 @@ void QOpenGL2GradientCache::generateGradientColorTable(const QGradient& gradient
     qreal fpos = 1.5 * incr;
     colorTable[pos++] = qPremultiply(current_color);
 
-    while (fpos <= s.first().first) {
+    while (pos < size && fpos <= s.first().first) {
         colorTable[pos] = colorTable[pos - 1];
         pos++;
         fpos += incr;
@@ -198,7 +199,7 @@ void QOpenGL2GradientCache::generateGradientColorTable(const QGradient& gradient
     qreal fpos = 1.5 * incr;
     colorTable[pos++] = ARGB2RGBA(qPremultiply(current_color));
 
-    while (fpos <= s.first().first) {
+    while (pos < size && fpos <= s.first().first) {
         colorTable[pos] = colorTable[pos - 1];
         pos++;
         fpos += incr;

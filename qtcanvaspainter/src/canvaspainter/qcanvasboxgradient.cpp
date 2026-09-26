@@ -46,7 +46,6 @@ QT_BEGIN_NAMESPACE
     extra vertices and thus performs better.
 */
 
-#define G_D() auto *d = QCanvasGradientPrivate::get(this)
 #define DECONST(d) const_cast<QCanvasBoxGradientPrivate *>(d)
 
 class QCanvasBoxGradientPrivate : public QCanvasGradientPrivate
@@ -76,7 +75,7 @@ public:
 QCanvasBoxGradient::QCanvasBoxGradient()
     : QCanvasGradient(new QCanvasBoxGradientPrivate)
 {
-    G_D();
+    auto *d = QCanvasGradientPrivate::get(this);
     d->data.box.x = 0.0f;
     d->data.box.y = 0.0f;
     d->data.box.width = 100.0f;
@@ -97,7 +96,7 @@ QCanvasBoxGradient::QCanvasBoxGradient()
 QCanvasBoxGradient::QCanvasBoxGradient(float x, float y, float width, float height, float feather, float radius)
     : QCanvasGradient(new QCanvasBoxGradientPrivate)
 {
-    G_D();
+    auto *d = QCanvasGradientPrivate::get(this);
     d->data.box.x = x;
     d->data.box.y = y;
     d->data.box.width = width;
@@ -118,7 +117,7 @@ QCanvasBoxGradient::QCanvasBoxGradient(float x, float y, float width, float heig
 QCanvasBoxGradient::QCanvasBoxGradient(const QRectF &rect, float feather, float radius)
     : QCanvasGradient(new QCanvasBoxGradientPrivate)
 {
-    G_D();
+    auto *d = QCanvasGradientPrivate::get(this);
     d->data.box.x = float(rect.x());
     d->data.box.y = float(rect.y());
     d->data.box.width = float(rect.width());
@@ -138,7 +137,7 @@ QCanvasBoxGradient::~QCanvasBoxGradient()
 
 QRectF QCanvasBoxGradient::rect() const
 {
-    G_D();
+    auto *d = QCanvasGradientPrivate::get(this);
     return QRectF(d->data.box.x,
                   d->data.box.y,
                   d->data.box.width,
@@ -150,8 +149,8 @@ QRectF QCanvasBoxGradient::rect() const
 
 void QCanvasBoxGradient::setRect(float x, float y, float width, float height)
 {
-    G_D();
     detach();
+    auto *d = QCanvasGradientPrivate::get(this);
     d->data.box.x = x;
     d->data.box.y = y;
     d->data.box.width = width;
@@ -173,7 +172,7 @@ void QCanvasBoxGradient::setRect(float x, float y, float width, float height)
 
 float QCanvasBoxGradient::feather() const
 {
-    G_D();
+    auto *d = QCanvasGradientPrivate::get(this);
     return d->data.box.feather;
 }
 
@@ -183,8 +182,8 @@ float QCanvasBoxGradient::feather() const
 
 void QCanvasBoxGradient::setFeather(float feather)
 {
-    G_D();
     detach();
+    auto *d = QCanvasGradientPrivate::get(this);
     d->data.box.feather = feather;
     d->dirty |= QCanvasGradientPrivate::DirtyFlag::Values;
 }
@@ -196,7 +195,7 @@ void QCanvasBoxGradient::setFeather(float feather)
 
 float QCanvasBoxGradient::radius() const
 {
-    G_D();
+    auto *d = QCanvasGradientPrivate::get(this);
     return d->data.box.radius;
 }
 
@@ -208,8 +207,8 @@ float QCanvasBoxGradient::radius() const
 
 void QCanvasBoxGradient::setRadius(float radius)
 {
-    G_D();
     detach();
+    auto *d = QCanvasGradientPrivate::get(this);
     d->data.box.radius = radius;
     d->dirty |= QCanvasGradientPrivate::DirtyFlag::Values;
 }
@@ -276,7 +275,6 @@ void QCanvasBoxGradientPrivate::createBoxGradient(const QColor &iColor, const QC
     }
 }
 
-#undef G_D
 #undef DECONST
 
 QT_END_NAMESPACE

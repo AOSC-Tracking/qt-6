@@ -24,6 +24,9 @@
 #include <QtWaylandCompositor/QWaylandViewporter>
 #include <QtWaylandCompositor/QWaylandIdleInhibitManagerV1>
 #include <QtWaylandCompositor/QWaylandXdgOutputManagerV1>
+#if QT_CONFIG(draganddrop)
+#include <QtWaylandCompositor/QWaylandDrag>
+#endif
 #include <qwayland-xdg-shell.h>
 #include <qwayland-ivi-application.h>
 #include <QtWaylandCompositor/private/qwaylandoutput_p.h>
@@ -93,6 +96,11 @@ private slots:
     void idleInhibit();
 
     void xdgOutput();
+
+    void subsurfaceSelfParentIsRejected();
+#if QT_CONFIG(draganddrop)
+    void dragFocusClientDisconnectDoesNotCrash();
+#endif
 
 private:
     QTemporaryDir m_tmpRuntimeDir;
@@ -1792,6 +1800,72 @@ void tst_WaylandCompositor::xdgOutput()
     QTRY_COMPARE(xdgOutput->logicalPosition, QPoint(100, 100));
     QTRY_COMPARE(xdgOutput->logicalSize, QSize(1000, 1000));
 }
+
+void tst_WaylandCompositor::subsurfaceSelfParentIsRejected()
+{
+    TestCompositor compositor;
+    compositor.create();
+
+    MockClient client;
+    QTRY_VERIFY(client.subCompositor);
+
+    wl_surface *surface = client.createSurface();
+    QTRY_COMPARE(compositor.surfaces.size(), 1);
+
+    // Reject passing the surface itself as its parent
+    wl_subcompositor_get_subsurface(client.subCompositor, surface, surface);
+
+    QTRY_COMPARE(client.error, EPROTO);
+    QCOMPARE(client.protocolError.interface, &wl_subcompositor_interface);
+    QCOMPARE(static_cast<wl_subcompositor_error>(client.protocolError.code), WL_SUBCOMPOSITOR_ERROR_BAD_PARENT);
+}
+
+#if QT_CONFIG(draganddrop)
+void tst_WaylandCompositor::dragFocusClientDisconnectDoesNotCrash()
+{
+    TestCompositor compositor;
+    compositor.create();
+
+    MockClient origin;
+    QTRY_VERIFY(origin.dataDeviceManager);
+    QTRY_VERIFY(!origin.m_seats.isEmpty());
+    wl_seat *seat = origin.m_seats.first()->m_seat;
+
+    wl_surface *originSurface = origin.createSurface();
+    QTRY_COMPARE(compositor.surfaces.size(), 1);
+
+    wl_data_device *originDataDevice = wl_data_device_manager_get_data_device(origin.dataDeviceManager, seat);
+    wl_data_source *source = wl_data_device_manager_create_data_source(origin.dataDeviceManager);
+    wl_data_source_offer(source, "text/plain");
+    wl_data_device_start_drag(originDataDevice, source, originSurface, nullptr, 0);
+
+    {
+        // A second client whose surface will briefly hold drag focus, then
+        // disconnect while still holding it.
+        MockClient victim;
+        wl_surface *victimSurface = victim.createSurface();
+        Q_UNUSED(victimSurface);
+        wl_data_device_manager_get_data_device(victim.dataDeviceManager, seat);
+
+        QTRY_COMPARE(compositor.surfaces.size(), 2);
+        QWaylandSurface *victimWaylandSurface = compositor.surfaces.last();
+
+        // Give drag focus to the victim's surface, exactly as
+        // QWaylandQuickItemPrivate::handleDragUpdate() would in response to
+        // real pointer motion.
+        compositor.defaultSeat()->drag()->dragMove(victimWaylandSurface, QPointF());
+
+        // The victim disconnects here (falling out of scope), while still
+        // holding drag focus
+    }
+    QTRY_COMPARE(compositor.surfaces.size(), 1);
+
+    // Use after free would happen here
+    compositor.defaultSeat()->drag()->dragMove(compositor.surfaces.first(), QPointF());
+
+    QCOMPARE(origin.error, 0);
+}
+#endif // QT_CONFIG(draganddrop)
 
 #include <tst_compositor.moc>
 QTEST_MAIN(tst_WaylandCompositor);

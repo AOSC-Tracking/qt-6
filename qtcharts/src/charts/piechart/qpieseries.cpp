@@ -37,8 +37,10 @@ QT_BEGIN_NAMESPACE
     A full pie is 360 degrees, where 0 is at 12 a'clock.
 
     See the \l {Charts with Widgets Gallery} to learn how to use QPieSeries.
-    \image examples_piechart.png
-    \image examples_donutchart.png
+    \image examples_piechart.png {Pie chart with one slice exploded out and
+           labeled Joe}
+    \image examples_donutchart.png {Donut chart of lemon glaze nutrition with
+           protein, fat, other, and carbs slices, fat exploded out}
 
     \sa QPieSlice, QChart
 */
@@ -69,7 +71,8 @@ QT_BEGIN_NAMESPACE
     \snippet qmlchartsgallery/qml/PieChart.qml 1
 
     \beginfloatleft
-    \image examples_qmlchart1.png
+    \image examples_qmlchart1.png {Pie chart of top five car brand shares in
+           Finland with an Others slice taking about half}
     \endfloat
     \clearfloat
 
@@ -636,15 +639,14 @@ void QPieSeries::clear()
         return;
 
     QList<QPieSlice *> slices = d->m_slices;
-    foreach (QPieSlice *s, d->m_slices)
-        d->m_slices.removeOne(s);
+    d->m_slices.clear();
 
     d->updateDerivativeData();
 
     emit removed(slices);
     emit countChanged();
 
-    foreach (QPieSlice *s, slices)
+    for (auto s : std::as_const(slices))
         delete s;
 }
 
@@ -815,7 +817,7 @@ qreal QPieSeries::pieEndAngle() const
 void QPieSeries::setLabelsVisible(bool visible)
 {
     Q_D(QPieSeries);
-    foreach (QPieSlice *s, d->m_slices)
+    for (auto s : std::as_const(d->m_slices))
         s->setLabelVisible(visible);
 }
 
@@ -830,7 +832,7 @@ void QPieSeries::setLabelsVisible(bool visible)
 void QPieSeries::setLabelsPosition(QPieSlice::LabelPosition position)
 {
     Q_D(QPieSeries);
-    foreach (QPieSlice *s, d->m_slices)
+    for (auto s : std::as_const(d->m_slices))
         s->setLabelPosition(position);
 }
 
@@ -857,7 +859,7 @@ void QPieSeriesPrivate::updateDerivativeData()
 {
     // calculate sum of all slices
     qreal sum = 0;
-    foreach (QPieSlice *s, m_slices)
+    for (auto s : std::as_const(m_slices))
         sum += s->value();
 
     if (!qFuzzyCompare(m_sum, sum)) {
@@ -873,14 +875,13 @@ void QPieSeriesPrivate::updateDerivativeData()
     qreal sliceAngle = m_pieStartAngle;
     qreal pieSpan = m_pieEndAngle - m_pieStartAngle;
     QList<QPieSlice *> changed;
-    foreach (QPieSlice *s, m_slices) {
+    for (auto s : std::as_const(m_slices)) {
         QPieSlicePrivate *d = QPieSlicePrivate::fromSlice(s);
         d->setPercentage(s->value() / m_sum);
         d->setStartAngle(sliceAngle);
         d->setAngleSpan(pieSpan * s->percentage());
         sliceAngle += s->angleSpan();
     }
-
 
     emit calculatedDataChanged();
 }

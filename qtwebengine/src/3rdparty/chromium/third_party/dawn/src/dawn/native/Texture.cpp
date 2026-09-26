@@ -711,6 +711,30 @@ wgpu::TextureUsage AddInternalUsages(const DeviceBase* device,
     return internalUsage;
 }
 
+// Removes internal usages incompatible with the format/dimension before calling AddInternalUsages.
+wgpu::TextureUsage AdjustViewInternalUsages(const DeviceBase* device,
+                                            wgpu::TextureUsage usage,
+                                            const Format& format,
+                                            const wgpu::TextureViewDimension dimension,
+                                            uint32_t sampleCount,
+                                            uint32_t mipLevelCount,
+                                            uint32_t arrayLayerCount) {
+    wgpu::TextureUsage internalUsage = usage;
+
+    // Remove render attachment usage if the dimension is 1D
+    if (dimension == wgpu::TextureViewDimension::e1D) {
+        internalUsage &= ~wgpu::TextureUsage::RenderAttachment;
+    }
+
+    // Remove storage usage if neither read or write is supported.
+    if (!format.supportsReadOnlyStorageUsage && !format.supportsWriteOnlyStorageUsage) {
+        internalUsage &= ~wgpu::TextureUsage::StorageBinding;
+    }
+
+    return AddInternalUsages(device, internalUsage, format, sampleCount, mipLevelCount,
+                             arrayLayerCount);
+}
+
 }  // anonymous namespace
 
 MaybeError ValidateTextureDescriptor(
@@ -724,6 +748,19 @@ MaybeError ValidateTextureDescriptor(
             !device->HasFeature(Feature::DawnInternalUsages),
             "The internalUsageDesc is not empty while the dawn-internal-usages feature is not "
             "enabled");
+
+        // Disallow TransientAttachment because it is not an expansion of usages but instead an
+        // additional constraint and would need to have visible effects (for users of the API that
+        // don't have access to the internal usages). Use an allow-list to explicitly opt-in usages
+        // to be allowed as internal usages in the future.
+        constexpr wgpu::TextureUsage kAllowedInternalUsages =
+            wgpu::TextureUsage::CopySrc | wgpu::TextureUsage::CopyDst |
+            wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::StorageBinding |
+            wgpu::TextureUsage::RenderAttachment;
+        DAWN_INVALID_IF(!IsSubset(internalUsageDesc->internalUsage, kAllowedInternalUsages),
+                        "internalUsage contains %s which are not allowed as internal usages.",
+                        internalUsageDesc->internalUsage & ~kAllowedInternalUsages);
+
         usage |= internalUsageDesc->internalUsage;
     }
 
@@ -1570,13 +1607,14 @@ TextureViewBase::TextureViewBase(TextureBase* texture,
               {descriptor->baseMipLevel, descriptor->mipLevelCount}}),
       mUsage(RemoveInvalidViewUsages(GetTextureViewUsage(texture->GetUsage(), descriptor->usage),
                                      &mFormat.get())),
-      mInternalUsage(
-          AddInternalUsages(GetDevice(),
-                            GetTextureViewUsage(texture->GetInternalUsage(), descriptor->usage),
-                            *mFormat,
-                            texture->GetSampleCount(),
-                            texture->GetNumMipLevels(),
-                            texture->GetArrayLayers())) {
+      mInternalUsage(AdjustViewInternalUsages(
+          GetDevice(),
+          GetTextureViewUsage(texture->GetInternalUsage(), descriptor->usage),
+          *mFormat,
+          descriptor->dimension,
+          texture->GetSampleCount(),
+          texture->GetNumMipLevels(),
+          texture->GetArrayLayers())) {
     if (auto* swizzleDesc = descriptor.Get<TextureComponentSwizzleDescriptor>()) {
         auto swizzle = swizzleDesc->swizzle.WithTrivialFrontendDefaults();
         mSwizzleRed = swizzle.r;

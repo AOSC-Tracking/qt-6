@@ -251,6 +251,7 @@ int QV4::Compiler::JSUnitGenerator::registerTranslation(const QV4::CompiledData:
 
 QV4::CompiledData::Unit *QV4::Compiler::JSUnitGenerator::generateUnit(GeneratorOption option)
 {
+    Q_ALLOCA_INIT();
     const auto registerTypeStrings = [this](QQmlJS::AST::Type *type) {
         if (!type)
             return;
@@ -293,13 +294,13 @@ QV4::CompiledData::Unit *QV4::Compiler::JSUnitGenerator::generateUnit(GeneratorO
         std::for_each(module->starExportEntries.constBegin(), module->starExportEntries.constEnd(), registerExportEntry);
     }
     {
-        for (const auto &entry: module->importEntries) {
+        for (const auto &entry: std::as_const(module->importEntries)) {
             registerString(entry.moduleRequest);
             registerString(entry.importName);
             registerString(entry.localName);
         }
 
-        for (const QString &request: module->moduleRequests)
+        for (const QString &request: std::as_const(module->moduleRequests))
             registerString(request);
     }
 
@@ -398,7 +399,7 @@ QV4::CompiledData::Unit *QV4::Compiler::JSUnitGenerator::generateUnit(GeneratorO
 
     {
         CompiledData::ImportEntry *entryToWrite = reinterpret_cast<CompiledData::ImportEntry *>(dataPtr + unit->offsetToImportEntryTable);
-        for (const Compiler::ImportEntry &entry: module->importEntries) {
+        for (const Compiler::ImportEntry &entry: std::as_const(module->importEntries)) {
             entryToWrite->moduleRequest = getStringId(entry.moduleRequest);
             entryToWrite->importName = getStringId(entry.importName);
             entryToWrite->localName = getStringId(entry.localName);
@@ -409,7 +410,7 @@ QV4::CompiledData::Unit *QV4::Compiler::JSUnitGenerator::generateUnit(GeneratorO
 
     {
         quint32_le *moduleRequestEntryToWrite = reinterpret_cast<quint32_le *>(dataPtr + unit->offsetToModuleRequestTable);
-        for (const QString &moduleRequest: module->moduleRequests) {
+        for (const QString &moduleRequest: std::as_const(module->moduleRequests)) {
             *moduleRequestEntryToWrite = getStringId(moduleRequest);
             moduleRequestEntryToWrite++;
         }

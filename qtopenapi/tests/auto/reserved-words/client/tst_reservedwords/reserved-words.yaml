@@ -1,0 +1,137 @@
+# Copyright (C) 2026 The Qt Company Ltd.
+# SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+
+openapi: 3.1.1
+servers:
+  - url: 'http://127.0.0.1:10223/v1'
+info:
+  title: Reserved Words Test API
+  description: >
+    This specification is used to verify that Qt-specific and C++ reserved words
+    used as operation names, parameter names, and model property names are correctly
+    escaped in the generated code.
+  version: 1.0.0
+tags:
+  - name: qt
+    description: Qt reserved words
+  - name: mixed
+    description: Mixed C++ and Qt reserved words
+
+paths:
+  /username:
+    get:
+      tags: [qt]
+      summary: QOAIBaseApi method name as operation name
+      operationId: username
+      responses:
+        "200":
+          description: OK
+  /signals:
+    get:
+      tags: [qt]
+      summary: Qt reserved words as operation name and query parameters
+      operationId: signals
+      parameters:
+        - name: slots
+          in: query
+          schema:
+            type: string
+        - name: emit
+          in: query
+          schema:
+            type: boolean
+        - name: foreach
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+  /connect/{disconnect}:
+    post:
+      tags: [qt]
+      summary: QObject method names as operation name and path parameter
+      operationId: connect
+      parameters:
+        - name: disconnect
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: forever
+          in: query
+          schema:
+            type: boolean
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QObjectLike'
+      responses:
+        "200":
+          description: OK
+  /mixed/{class}:
+    put:
+      tags: [mixed]
+      summary: Mixed C++ and Qt reserved words as operation name and parameters
+      operationId: operator
+      parameters:
+        - name: class
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: template
+          in: query
+          schema:
+            type: string
+        - name: signals
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: OK
+components:
+  schemas:
+    QObjectLike:
+      description: >
+        A schema whose property names are Qt-specific and C++ reserved words.
+        All of them must be escaped in the generated code.
+      type: object
+      properties:
+        signals:
+          type: string
+        slots:
+          type: string
+        emit:
+          type: boolean
+        connect:
+          type: string
+        disconnect:
+          type: string
+        foreach:
+          type: string
+        forever:
+          type: boolean
+        class:
+          type: string
+        struct:
+          type: string
+      required:
+        - signals
+        - slots
+    QMetaEnum:
+      description: >
+        An enum whose values are Qt-specific and C++ reserved words.
+      type: string
+      enum:
+        - signals
+        - slots
+        - emit
+        - foreach
+        - forever
+        - int
+        - class
+        - "null"

@@ -1,6 +1,6 @@
 {{>licenseInfo}}
-#ifndef {{classname}}_H
-#define {{classname}}_H
+#ifndef {{#lambda.uppercase}}{{{classFilename}}}{{/lambda.uppercase}}_H
+#define {{#lambda.uppercase}}{{{classFilename}}}{{/lambda.uppercase}}_H
 
 #include "{{prefixLowerCase}}baseapi.h"
 #include "{{packageNameLowerCase}}exports.h"
@@ -49,4 +49,5 @@ Q_SIGNALS:{{#operations}}{{#operation}}
 {{#cppNamespaceDeclarations}}
 } // namespace {{this}}
 {{/cppNamespaceDeclarations}}
-#endif
+
+#endif // {{#lambda.uppercase}}{{{classFilename}}}{{/lambda.uppercase}}_H

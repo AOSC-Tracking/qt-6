@@ -323,6 +323,7 @@ struct Format
 
 const InternalFormat &GetSizedInternalFormatInfo(GLenum internalFormat);
 const InternalFormat &GetInternalFormatInfo(GLenum internalFormat, GLenum type);
+bool IsAngleInternalFormat(GLenum internalFormat);
 
 // Strip sizing information from an internal format.  Doesn't necessarily validate that the internal
 // format is valid.
@@ -564,6 +565,21 @@ ANGLE_INLINE bool IsBGRAFormat(const GLenum internalFormat)
         case GL_BGRX8_ANGLEX:
         case GL_BGR565_ANGLEX:
         case GL_BGR10_A2_ANGLEX:
+            return true;
+
+        default:
+            return false;
+    }
+}
+
+ANGLE_INLINE bool IsRGBXOrBGRXFormat(const GLenum internalFormat)
+{
+    switch (internalFormat)
+    {
+        case GL_RGBX8_ANGLE:
+        case GL_RGBX8_SRGB_ANGLEX:
+        case GL_BGRX8_ANGLEX:
+        case GL_BGRX8_SRGB_ANGLEX:
             return true;
 
         default:

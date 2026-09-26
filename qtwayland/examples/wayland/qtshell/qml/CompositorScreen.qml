@@ -54,9 +54,9 @@ WaylandOutput {
                     // Chrome displays a shell surface on the screen (See Chrome.qml)
                     Chrome {
                         shellSurface: modelData
-                        onClientDestroyed:
-                        {
-                            output.shellSurfaces.remove(index)
+                        onShellSurfaceChanged: {
+                            if (!shellSurface)
+                                output.shellSurfaces.remove(index)
                         }
                     }
                 }

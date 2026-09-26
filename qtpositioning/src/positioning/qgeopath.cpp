@@ -11,7 +11,11 @@
 #include "qwebmercator_p.h"
 
 #include "qdoublevector2d_p.h"
-#include "qdoublevector3d_p.h"
+
+#include <QtCore/qmutex.h>
+
+#include <mutex>
+
 QT_BEGIN_NAMESPACE
 
 QT_IMPL_METATYPE_EXTERN(QGeoPath)
@@ -340,6 +344,8 @@ QString QGeoPath::toString() const
  *
 *******************************************************************************/
 
+Q_CONSTINIT static QBasicMutex globalPathMutex;
+
 QGeoPathPrivateBase::QGeoPathPrivateBase()
     : QGeoShapePrivate(QGeoShape::PathType)
 {
@@ -349,6 +355,15 @@ QGeoPathPrivateBase::QGeoPathPrivateBase(const QList<QGeoCoordinate> &path)
     : QGeoPathPrivateBase()
 {
     setPath(path);
+}
+
+QGeoPathPrivateBase::QGeoPathPrivateBase(const QGeoPathPrivateBase &other)
+    : QGeoShapePrivate(other),
+      m_path(other.m_path)
+{
+    // Do not copy cached members: they would need mutex locked!
+    // m_dirty is set to true by default, so that it'll properly trigger
+    // re-evaluation when needed.
 }
 
 QGeoPathPrivateBase::~QGeoPathPrivateBase()
@@ -381,8 +396,7 @@ bool QGeoPathPrivateBase::operator==(const QGeoShapePrivate &other) const
 
 QGeoRectangle QGeoPathPrivateBase::boundingGeoRectangle() const
 {
-    if (m_bboxDirty)
-        const_cast<QGeoPathPrivateBase *>(this)->computeBoundingBox();
+    ensureBoundingBoxUpdated();
     return m_bbox;
 }
 
@@ -437,7 +451,6 @@ void QGeoPathPrivateBase::translate(double degreesLatitude, double degreesLongit
     // Need min/maxLati, so update bbox
     QList<double> deltaXs;
     double minX, maxX, minLati, maxLati;
-    m_bboxDirty = false;
     computeBBox(m_path, deltaXs, minX, maxX, minLati, maxLati, m_bbox);
 
     if (degreesLatitude > 0.0)
@@ -449,7 +462,8 @@ void QGeoPathPrivateBase::translate(double degreesLatitude, double degreesLongit
         p.setLongitude(QLocationUtils::wrapLong(p.longitude() + degreesLongitude));
     }
     m_bbox.translate(degreesLatitude, degreesLongitude);
-    m_leftBoundWrapped = QWebMercator::coordToMercator(m_bbox.topLeft()).x();
+
+    m_bboxDirty.store(false, std::memory_order_release);
 }
 
 void QGeoPathPrivateBase::setPath(const QList<QGeoCoordinate> &path)
@@ -506,20 +520,23 @@ void QGeoPathPrivateBase::removeCoordinate(qsizetype index)
     markDirty();
 }
 
-void QGeoPathPrivateBase::computeBoundingBox()
-{
-    QList<double> deltaXs;
-    double minX, maxX, minLati, maxLati;
-    m_bboxDirty = false;
-    computeBBox(m_path, deltaXs, minX, maxX, minLati, maxLati, m_bbox);
-    m_leftBoundWrapped = QWebMercator::coordToMercator(m_bbox.topLeft()).x();
-}
-
 void QGeoPathPrivateBase::markDirty()
 {
-    m_bboxDirty = true;
+    m_bboxDirty.store(true, std::memory_order_release);
 }
 
+void QGeoPathPrivateBase::ensureBoundingBoxUpdated() const
+{
+    if (m_bboxDirty.load(std::memory_order_acquire)) {
+        const std::scoped_lock lock(globalPathMutex);
+        if (m_bboxDirty.load(std::memory_order_acquire)) {
+            QList<double> deltaXs;
+            double minX, maxX, minLati, maxLati;
+            computeBBox(m_path, deltaXs, minX, maxX, minLati, maxLati, m_bbox);
+            m_bboxDirty.store(false, std::memory_order_release);
+        }
+    }
+}
 
 
 QGeoPathPrivate::QGeoPathPrivate()
@@ -569,8 +586,7 @@ bool QGeoPathPrivate::lineContains(const QGeoCoordinate &coordinate) const
     // possible, try that other wrap-position for it in a second pass.
 
     // Should be redundant now, unless other functions rely on this one's side-effect:
-    if (m_bboxDirty)
-        const_cast<QGeoPathPrivate &>(*this).computeBoundingBox();
+    ensureBoundingBoxUpdated();
 
     double lineRadius = qMax(width() * 0.5, 0.2); // minimum radius: 20cm
 
@@ -670,13 +686,20 @@ size_t QGeoPathPrivate::hash(size_t seed) const
 QGeoPathPrivateEager::QGeoPathPrivateEager()
 :   QGeoPathPrivate()
 {
-    m_bboxDirty = false; // never dirty on the eager version
+    m_bboxDirty.store(false, std::memory_order_relaxed); // never dirty on the eager version
 }
 
 QGeoPathPrivateEager::QGeoPathPrivateEager(const QList<QGeoCoordinate> &path, const qreal width)
 :   QGeoPathPrivate(path, width)
 {
-    m_bboxDirty = false; // never dirty on the eager version
+    m_bboxDirty.store(false, std::memory_order_relaxed); // never dirty on the eager version
+    markDirty(); // calculate the cached values
+}
+
+QGeoPathPrivateEager::QGeoPathPrivateEager(const QGeoPathPrivateEager &other)
+    : QGeoPathPrivate(other)
+{
+    m_bboxDirty.store(false, std::memory_order_relaxed); // never dirty on the eager version
     markDirty(); // calculate the cached values
 }
 
@@ -694,7 +717,6 @@ void QGeoPathPrivateEager::markDirty()
 {
     // do the calculations directly
     computeBBox(m_path, m_deltaXs, m_minX, m_maxX, m_minLati, m_maxLati, m_bbox);
-    m_leftBoundWrapped = QWebMercator::coordToMercator(m_bbox.topLeft()).x();
 }
 
 void QGeoPathPrivateEager::translate(double degreesLatitude, double degreesLongitude)
@@ -710,7 +732,6 @@ void QGeoPathPrivateEager::translate(double degreesLatitude, double degreesLongi
     m_bbox.translate(degreesLatitude, degreesLongitude);
     m_minLati += degreesLatitude;
     m_maxLati += degreesLatitude;
-    m_leftBoundWrapped = QWebMercator::coordToMercator(m_bbox.topLeft()).x();
 }
 
 void QGeoPathPrivateEager::addCoordinate(const QGeoCoordinate &coordinate)
@@ -722,15 +743,9 @@ void QGeoPathPrivateEager::addCoordinate(const QGeoCoordinate &coordinate)
     updateBoundingBox();
 }
 
-void QGeoPathPrivateEager::QGeoPathPrivateEager::computeBoundingBox()
-{
-    Q_UNREACHABLE();
-}
-
 void QGeoPathPrivateEager::QGeoPathPrivateEager::updateBoundingBox()
 {
     updateBBox(m_path, m_deltaXs, m_minX, m_maxX, m_minLati, m_maxLati, m_bbox);
-    m_leftBoundWrapped = QWebMercator::coordToMercator(m_bbox.topLeft()).x();
 }
 
 QGeoPathEager::QGeoPathEager() : QGeoPath()

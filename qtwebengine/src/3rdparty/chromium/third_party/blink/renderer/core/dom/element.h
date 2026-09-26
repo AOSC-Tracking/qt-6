@@ -594,6 +594,7 @@ class CORE_EXPORT Element : public ContainerNode, public Animatable {
   }
   void removeAttributeNS(const AtomicString& namespace_uri,
                          const AtomicString& local_name);
+  void RemoveAllAttributes();
 
   Attr* DetachAttribute(wtf_size_t index);
 
@@ -990,12 +991,14 @@ class CORE_EXPORT Element : public ContainerNode, public Animatable {
     SetElementFlag(ElementFlags::kStyleAffectedByEmpty);
   }
 
-  void SetIsCanvasOrInCanvasSubtree(bool value) {
-    SetElementFlag(ElementFlags::kIsCanvasOrInCanvasSubtree, value);
-  }
+  void SetIsCanvasOrInCanvasSubtree(bool);
   bool IsCanvasOrInCanvasSubtree() const {
     return HasElementFlag(ElementFlags::kIsCanvasOrInCanvasSubtree);
   }
+  // Called when `IsCanvasOrInCanvasSubtree()` has changed.
+  virtual void DidChangeIsCanvasOrInCanvasSubtree();
+  // Like `IsCanvasOrInCanvasSubtree()`, but excludes the outermost <canvas>.
+  bool IsInCanvasSubtree() const;
 
   bool IsDefined() const {
     // An element whose custom element state is "uncustomized" or "custom"
@@ -1366,6 +1369,7 @@ class CORE_EXPORT Element : public ContainerNode, public Animatable {
 
   virtual bool MatchesDefaultPseudoClass() const { return false; }
   virtual bool MatchesEnabledPseudoClass() const { return false; }
+  virtual bool MatchesDisabledPseudoClass() const { return false; }
   virtual bool MatchesReadOnlyPseudoClass() const { return false; }
   virtual bool MatchesReadWritePseudoClass() const { return false; }
   virtual bool MatchesValidityPseudoClasses() const { return false; }
@@ -2250,7 +2254,6 @@ class CORE_EXPORT Element : public ContainerNode, public Animatable {
   ElementRareDataVector& EnsureElementRareData();
 
   void RemoveAttrNodeList();
-  void DetachAllAttrNodesFromElement();
   void DetachAttrNodeFromElementWithValue(Attr*, const AtomicString& value);
   void DetachAttrNodeAtIndex(Attr*, wtf_size_t index);
 

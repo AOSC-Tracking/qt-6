@@ -62,24 +62,8 @@ PointRenderer::PointRenderer(QGraphsView *graph, bool clipPlotArea)
     m_shape.setParentItem(this);
     m_shape.setPreferredRendererType(QQuickShape::CurveRenderer);
 
-    const QString qmlData = QLatin1StringView(R"QML(
-        import QtQuick;
-
-        Rectangle {
-            property bool pointSelected
-            property color pointColor
-            property color pointBorderColor
-            property color pointSelectedColor
-            property real pointBorderWidth
-            color: pointSelected ? pointSelectedColor : pointColor
-            border.color: pointBorderColor
-            border.width: pointBorderWidth
-            width: %1
-            height: %1
-        }
-    )QML").arg(QString::number((int) defaultSize()));
     m_tempMarker = new QQmlComponent(qmlEngine(m_graph), this);
-    m_tempMarker->setData(qmlData.toUtf8(), QUrl());
+    m_tempMarker->loadUrl(QUrl(u"qrc:/graphs2d/delegates/PointMarker.qml"_s));
 
     m_tapHandler = new QQuickTapHandler(this);
     connect(m_tapHandler, &QQuickTapHandler::singleTapped,
@@ -629,11 +613,14 @@ void PointRenderer::handlePolish(QXYSeries *series)
     if (group->currentMarker) {
         qsizetype markerCount = group->markers.size();
         if (markerCount < pointCount) {
+            auto size = defaultSize();
             for (qsizetype i = markerCount; i < pointCount; ++i) {
                 QQuickItem *item = qobject_cast<QQuickItem *>(
-                    group->currentMarker->create(group->currentMarker->creationContext()));
+                    group->currentMarker->createWithInitialProperties({{"implicitWidth", size}, {"implicitHeight", size}},
+                        group->currentMarker->creationContext()));
                 item->setParent(this);
                 item->setParentItem(this);
+
                 QQuickDragHandler *handler = new QQuickDragHandler(item);
                 handler->setEnabled(series->isDraggable());
                 connect(series, &QXYSeries::draggableChanged, this, [handler, series]() {
@@ -724,29 +711,28 @@ void PointRenderer::handlePolish(QXYSeries *series)
 void PointRenderer::afterPolish(QList<QAbstractSeries *> &cleanupSeries)
 {
     Q_TRACE_SCOPE(QGraphs2DPointRendererAfterPolish, static_cast<int>(cleanupSeries.count()));
-    for (auto series : cleanupSeries) {
-        auto xySeries = qobject_cast<QXYSeries *>(series);
-        if (xySeries && m_groups.contains(xySeries)) {
-            auto group = m_groups.value(xySeries);
+    Q_UNUSED(cleanupSeries);
 
-            for (auto marker : std::as_const(group->markers))
-                marker->deleteLater();
-
-            if (group->shapePath) {
-                auto painterPath = group->painterPath;
-                painterPath.clear();
-                group->shapePath->setPath(painterPath);
-            }
-
-            delete group;
-            m_groups.remove(xySeries);
-        }
-    }
 }
 
 void PointRenderer::updateSeries(QXYSeries *series)
 {
     Q_UNUSED(series);
+}
+
+void PointRenderer::seriesAboutToBeRemoved(QAbstractSeries *series)
+{
+    if (auto *xySeries = qobject_cast<QXYSeries *>(series)) {
+        auto iter = m_groups.find(xySeries);
+
+        if (iter != m_groups.end()) {
+            for (auto marker : std::as_const((*iter)->markers))
+                marker->deleteLater();
+
+            delete *iter;
+            m_groups.erase(iter);
+        }
+    }
 }
 
 void PointRenderer::afterUpdate(QList<QAbstractSeries *> &cleanupSeries)

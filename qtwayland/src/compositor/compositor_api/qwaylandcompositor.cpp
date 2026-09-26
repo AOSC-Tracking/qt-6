@@ -1,6 +1,7 @@
 // Copyright (C) 2017 Pier Luigi Fiorini <pierluigi.fiorini@gmail.com>
 // Copyright (C) 2020 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:critical reason:network-protocol
 
 #include "qtwaylandcompositorglobal_p.h"
 #include "qwaylandcompositor.h"
@@ -192,7 +193,7 @@ void QWaylandCompositorPrivate::init()
 
     wl_display_init_shm(display);
 
-    for (QWaylandCompositor::ShmFormat format : shmFormats)
+    for (QWaylandCompositor::ShmFormat format : std::as_const(shmFormats))
         wl_display_add_shm_format(display, wl_shm_format(format));
 
     if (!socket_name.isEmpty()) {
@@ -343,6 +344,24 @@ void QWaylandCompositorPrivate::subcompositor_get_subsurface(wl_subcompositor::R
     Q_Q(QWaylandCompositor);
     QWaylandSurface *childSurface = QWaylandSurface::fromResource(surface);
     QWaylandSurface *parentSurface = QWaylandSurface::fromResource(parent);
+
+    QWaylandSurfacePrivate *childSurface_d = QWaylandSurfacePrivate::get(childSurface);
+    QWaylandSurfacePrivate *parentSurface_d = QWaylandSurfacePrivate::get(parentSurface);
+    Q_ASSERT(childSurface_d != nullptr && parentSurface_d != nullptr);
+
+    // Walk the requested parent's existing ancestor chain and reject if it already includes the
+    // child surface.
+    for (QWaylandSurfacePrivate *ancestor = parentSurface_d;
+         ancestor != nullptr;
+         ancestor = ancestor->parentSurface()) {
+        if (ancestor == childSurface_d) {
+            wl_resource_post_error(resource->handle,
+                                   WL_SUBCOMPOSITOR_ERROR_BAD_PARENT,
+                                   "surface cannot be made a transitive parent of itself");
+            return;
+        }
+    }
+
     QWaylandSurfacePrivate::get(childSurface)->initSubsurface(parentSurface, resource->client(), id, 1);
     QWaylandSurfacePrivate::get(parentSurface)->subsurfaceChildren.append(childSurface);
     emit q->subsurfaceChanged(childSurface, parentSurface);
@@ -409,7 +428,8 @@ void QWaylandCompositorPrivate::loadClientBufferIntegration()
     if (clientBufferIntegration.isEmpty())
         clientBufferIntegration = qgetenv("QT_WAYLAND_CLIENT_BUFFER_INTEGRATION");
 
-    for (auto b : clientBufferIntegration.split(';')) {
+    const QList<QByteArray> clientBufferIntegrations = clientBufferIntegration.split(';');
+    for (const auto &b : clientBufferIntegrations) {
         QString s = QString::fromLocal8Bit(b);
         if (keys.contains(s))
             targetKeys.append(s);
@@ -425,7 +445,7 @@ void QWaylandCompositorPrivate::loadClientBufferIntegration()
 
     QString hwIntegrationName;
 
-    for (auto targetKey : std::as_const(targetKeys)) {
+    for (const auto &targetKey : std::as_const(targetKeys)) {
         auto *integration = QtWayland::ClientBufferIntegrationFactory::create(targetKey, QStringList());
         if (integration) {
             integration->setCompositor(q);

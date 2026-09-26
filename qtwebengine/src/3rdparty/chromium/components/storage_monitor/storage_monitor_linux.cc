@@ -178,8 +178,7 @@ std::unique_ptr<MtabWatcherLinux> CreateMtabWatcherLinuxOnMtabWatcherTaskRunner(
 }
 
 StorageMonitor::EjectStatus EjectPathOnBlockingTaskRunner(
-    const base::FilePath& path,
-    const base::FilePath& device) {
+    const base::FilePath& path) {
   base::ScopedBlockingCall scoped_blocking_call(FROM_HERE,
                                                 base::BlockingType::MAY_BLOCK);
 
@@ -278,19 +277,28 @@ void StorageMonitorLinux::EjectDevice(
   DCHECK_NE(type, StorageInfo::MTP_OR_PTP);
 
   // Find the mount point for the given device ID.
-  base::FilePath path;
-  base::FilePath device;
+  base::FilePath mount_point;
   for (auto mount_info = mount_info_map_.begin();
        mount_info != mount_info_map_.end(); ++mount_info) {
     if (mount_info->second.storage_info.device_id() == device_id) {
-      path = mount_info->first;
-      device = mount_info->second.mount_device;
+      mount_point = mount_info->first;
+      const base::FilePath& mount_device = mount_info->second.mount_device;
+      auto priority_it = mount_priority_map_.find(mount_device);
+      CHECK(priority_it != mount_priority_map_.end());
+      ReferencedMountPoint& priority_mount_point = priority_it->second;
+      bool erased = priority_mount_point.erase(mount_point);
+      CHECK(erased);
+      if (priority_mount_point.empty()) {
+        mount_priority_map_.erase(priority_it);
+      }
+
+      // Do this at the end so `mount_device` is valid while accessed.
       mount_info_map_.erase(mount_info);
       break;
     }
   }
 
-  if (path.empty()) {
+  if (mount_point.empty()) {
     std::move(callback).Run(EJECT_NO_SUCH_DEVICE);
     return;
   }
@@ -299,7 +307,7 @@ void StorageMonitorLinux::EjectDevice(
 
   base::ThreadPool::PostTaskAndReplyWithResult(
       FROM_HERE, {base::MayBlock(), base::TaskPriority::BEST_EFFORT},
-      base::BindOnce(&EjectPathOnBlockingTaskRunner, path, device),
+      base::BindOnce(&EjectPathOnBlockingTaskRunner, mount_point),
       std::move(callback));
 }
 
@@ -327,9 +335,9 @@ void StorageMonitorLinux::UpdateMtab(const MountPointDeviceMap& new_mtab) {
       CHECK(priority != mount_priority_map_.end());
       ReferencedMountPoint::const_iterator has_priority =
           priority->second.find(mount_point);
+      CHECK(has_priority != priority->second.end());
       if (StorageInfo::IsRemovableDevice(
               old_iter->second.storage_info.device_id())) {
-        CHECK(has_priority != priority->second.end());
         if (has_priority->second) {
           receiver()->ProcessDetach(old_iter->second.storage_info.device_id());
         }
@@ -360,12 +368,17 @@ void StorageMonitorLinux::UpdateMtab(const MountPointDeviceMap& new_mtab) {
            multiple_mounted_devices_needing_reattachment.begin();
        it != multiple_mounted_devices_needing_reattachment.end();
        ++it) {
-    auto first_mount_point_info = mount_priority_map_.find(*it)->second.begin();
+    auto priority_it = mount_priority_map_.find(*it);
+    CHECK(priority_it != mount_priority_map_.end());
+    ReferencedMountPoint& priority_mount_point = priority_it->second;
+    CHECK(!priority_mount_point.empty());
+    auto first_mount_point_info = priority_mount_point.begin();
     const base::FilePath& mount_point = first_mount_point_info->first;
     first_mount_point_info->second = true;
 
-    const StorageInfo& mount_info =
-        mount_info_map_.find(mount_point)->second.storage_info;
+    auto mount_info_it = mount_info_map_.find(mount_point);
+    CHECK(mount_info_it != mount_info_map_.end());
+    const StorageInfo& mount_info = mount_info_it->second.storage_info;
     DCHECK(StorageInfo::IsRemovableDevice(mount_info.device_id()));
     receiver()->ProcessAttach(mount_info);
   }
@@ -422,10 +435,14 @@ void StorageMonitorLinux::HandleDeviceMountedMultipleTimes(
 
   auto priority = mount_priority_map_.find(mount_device);
   CHECK(priority != mount_priority_map_.end());
-  const base::FilePath& other_mount_point = priority->second.begin()->first;
+  ReferencedMountPoint& priority_mount_point = priority->second;
+  CHECK(!priority_mount_point.empty());
+  const base::FilePath& other_mount_point = priority_mount_point.begin()->first;
   priority->second[mount_point] = false;
-  mount_info_map_[mount_point] =
-      mount_info_map_.find(other_mount_point)->second;
+
+  auto mount_info_it = mount_info_map_.find(other_mount_point);
+  CHECK(mount_info_it != mount_info_map_.end());
+  mount_info_map_[mount_point] = mount_info_it->second;
 }
 
 void StorageMonitorLinux::AddNewMount(

@@ -3176,6 +3176,171 @@ TEST_P(GLES2DecoderManualInitTest, GenerateMipmapDepthTexture) {
   EXPECT_EQ(GL_INVALID_OPERATION, GetGLError());
 }
 
+class GLES2DecoderEnsurePrevFboWorkaroundTest
+    : public GLES2DecoderManualInitTest {
+ public:
+  GLES2DecoderEnsurePrevFboWorkaroundTest() = default;
+
+  void SetupMockGLBehaviors() override {
+    GLES2DecoderManualInitTest::SetupMockGLBehaviors();
+    if (enable_workaround_expectations_) {
+      EXPECT_CALL(*gl_, GenTextures(1, _))
+          .WillOnce(SetArgPointee<1>(kCompleteFboTextureId))
+          .RetiresOnSaturation();
+      EXPECT_CALL(*gl_, BindTexture(GL_TEXTURE_2D, kCompleteFboTextureId))
+          .Times(1)
+          .RetiresOnSaturation();
+      EXPECT_CALL(*gl_, TexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 1, 1, 0, GL_RGBA,
+                                   GL_UNSIGNED_BYTE, nullptr))
+          .Times(1)
+          .RetiresOnSaturation();
+      EXPECT_CALL(*gl_, GenFramebuffersEXT(1, _))
+          .WillOnce(SetArgPointee<1>(kCompleteFboId))
+          .RetiresOnSaturation();
+      EXPECT_CALL(*gl_, BindFramebufferEXT(GL_FRAMEBUFFER, kCompleteFboId))
+          .Times(3)
+          .RetiresOnSaturation();
+      EXPECT_CALL(*gl_, FramebufferTexture2DEXT(
+                            GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
+                            kCompleteFboTextureId, 0))
+          .Times(1)
+          .RetiresOnSaturation();
+      EXPECT_CALL(*gl_, CheckFramebufferStatusEXT(GL_FRAMEBUFFER))
+          .WillOnce(Return(GL_FRAMEBUFFER_COMPLETE))
+          .RetiresOnSaturation();
+      EXPECT_CALL(*gl_, DeleteTextures(1, Pointee(kCompleteFboTextureId)))
+          .Times(1)
+          .RetiresOnSaturation();
+    }
+  }
+
+ protected:
+  bool enable_workaround_expectations_ = false;
+  static constexpr GLuint kCompleteFboTextureId = 999;
+  static constexpr GLuint kCompleteFboId = 998;
+};
+
+// The test uses a depth texture to force GLES2DecoderImpl::ClearLevel to use
+// the ClearLevelUsingGL path, which is required to trigger the FBO restoration
+// workaround logic. For color textures, ClearLevel may fallback to the
+// TexSubImage2D clear path which does not use a temporary FBO.
+TEST_P(GLES2DecoderEnsurePrevFboWorkaroundTest, ClearLevelUsingGLOrder) {
+  enable_workaround_expectations_ = true;
+  gpu::GpuDriverBugWorkarounds workarounds;
+  workarounds.ensure_previous_framebuffer_not_deleted = true;
+  InitState init;
+  init.extensions = "GL_ANGLE_depth_texture";
+  init.gl_version = "OpenGL ES 2.0";
+  init.has_depth = true;
+  init.request_depth = true;
+  InitDecoderWithWorkarounds(init, workarounds);
+
+  // Set up texture
+  DoBindTexture(GL_TEXTURE_2D, client_texture_id_, kServiceTextureId);
+  DoTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT, 1, 1, 0,
+               GL_DEPTH_COMPONENT, GL_UNSIGNED_INT, 0, 0);
+
+  TextureRef* texture_ref =
+      group().texture_manager()->GetTexture(client_texture_id_);
+  ASSERT_TRUE(texture_ref != nullptr);
+  Texture* texture = texture_ref->texture();
+
+  // Expectations for ClearLevel
+  const GLuint kTempFboId = 777;
+  InSequence seq;
+
+  // 1. Gen temp FBO
+  EXPECT_CALL(*gl_, GenFramebuffersEXT(1, _))
+      .WillOnce(SetArgPointee<1>(kTempFboId))
+      .RetiresOnSaturation();
+
+  // 2. Bind temp FBO (wrapper triggers complete_fbo bind first)
+  EXPECT_CALL(*gl_, BindFramebufferEXT(GL_FRAMEBUFFER, kCompleteFboId))
+      .Times(1)
+      .RetiresOnSaturation();
+  EXPECT_CALL(*gl_, BindFramebufferEXT(GL_FRAMEBUFFER, kTempFboId))
+      .Times(1)
+      .RetiresOnSaturation();
+
+  // 3. Attach texture
+  EXPECT_CALL(*gl_,
+              FramebufferTexture2DEXT(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT,
+                                      GL_TEXTURE_2D, kServiceTextureId, 0))
+      .Times(1)
+      .RetiresOnSaturation();
+
+  // 4. Check status
+  EXPECT_CALL(*gl_, CheckFramebufferStatusEXT(GL_FRAMEBUFFER))
+      .WillOnce(Return(GL_FRAMEBUFFER_COMPLETE))
+      .RetiresOnSaturation();
+
+  // 5. Clear calls
+  if (GetParam()) {
+    EXPECT_CALL(*gl_, ColorMask(true, true, true, true))
+        .Times(1)
+        .RetiresOnSaturation();
+  }
+  EXPECT_CALL(*gl_, ClearColor(0.0f, 0.0f, 0.0f, 0.0f))
+      .Times(1)
+      .RetiresOnSaturation();
+  EXPECT_CALL(*gl_, ClearStencil(0)).Times(1).RetiresOnSaturation();
+  if (GetParam()) {
+    EXPECT_CALL(*gl_, StencilMaskSeparate(GL_FRONT, 0xFFFFFFFF))
+        .Times(1)
+        .RetiresOnSaturation();
+    EXPECT_CALL(*gl_, StencilMaskSeparate(GL_BACK, 0xFFFFFFFF))
+        .Times(1)
+        .RetiresOnSaturation();
+  }
+  EXPECT_CALL(*gl_, ClearDepth(1.0f)).Times(1).RetiresOnSaturation();
+  if (GetParam()) {
+    EXPECT_CALL(*gl_, DepthMask(true)).Times(1).RetiresOnSaturation();
+  }
+  EXPECT_CALL(*gl_, Enable(GL_SCISSOR_TEST)).Times(1).RetiresOnSaturation();
+  EXPECT_CALL(*gl_, Scissor(0, 0, 1, 1)).Times(1).RetiresOnSaturation();
+  EXPECT_CALL(*gl_, Clear(GL_DEPTH_BUFFER_BIT)).Times(1).RetiresOnSaturation();
+
+  // 6. Restore state
+  EXPECT_CALL(*gl_, ClearColor(0.0f, 0.0f, 0.0f, 0.0f))
+      .Times(1)
+      .RetiresOnSaturation();
+  EXPECT_CALL(*gl_, ClearStencil(0)).Times(1).RetiresOnSaturation();
+  EXPECT_CALL(*gl_, ClearDepth(1.0f)).Times(1).RetiresOnSaturation();
+  EXPECT_CALL(*gl_, Disable(GL_SCISSOR_TEST)).Times(1).RetiresOnSaturation();
+  EXPECT_CALL(*gl_,
+              Scissor(0, 0, 128, 64))  // 128x64 is the default backbuffer size
+      .Times(1)
+      .RetiresOnSaturation();
+
+  // 7. Restore FBO binding (CRITICAL: Must happen BEFORE delete)
+  // Wrapper triggers complete_fbo bind first
+  EXPECT_CALL(*gl_, BindFramebufferEXT(GL_FRAMEBUFFER, kCompleteFboId))
+      .Times(1)
+      .RetiresOnSaturation();
+  EXPECT_CALL(*gl_, BindFramebufferEXT(GL_FRAMEBUFFER, 0))
+      .Times(1)
+      .RetiresOnSaturation();
+
+  // 8. Delete temp FBO
+  EXPECT_CALL(*gl_, DeleteFramebuffersEXT(1, Pointee(kTempFboId)))
+      .Times(1)
+      .RetiresOnSaturation();
+
+  // Call ClearLevel
+  EXPECT_TRUE(decoder_->ClearLevel(texture, GL_TEXTURE_2D, 0,
+                                   GL_DEPTH_COMPONENT, GL_UNSIGNED_INT, 0, 0, 1,
+                                   1));
+
+  DoDeleteTexture(client_texture_id_, kServiceTextureId);
+}
+
+// The boolean parameter controls whether ignore_cached_state_for_test is
+// enabled in the base fixture GLES2DecoderTestBase. This forces GL state
+// restoration and helps test state-dirtying paths.
+INSTANTIATE_TEST_SUITE_P(Service,
+                         GLES2DecoderEnsurePrevFboWorkaroundTest,
+                         ::testing::Bool());
+
 TEST_P(GLES2DecoderManualInitTest, DrawWithGLImageExternal) {
   InitState init;
   init.extensions = "GL_OES_EGL_image_external";
@@ -3575,6 +3740,10 @@ class GLES2DecoderTexStorageFormatAndTypeTest
         *gl_, TexStorage2DEXT(GL_TEXTURE_2D, kLevels, format, kWidth, kHeight))
         .Times(1)
         .RetiresOnSaturation();
+    EXPECT_CALL(*gl_, GetError())
+        .WillOnce(Return(GL_NO_ERROR))
+        .WillOnce(Return(GL_NO_ERROR))
+        .RetiresOnSaturation();
     cmds::TexStorage2DEXT cmd;
     cmd.Init(GL_TEXTURE_2D, kLevels, format, kWidth, kHeight);
     EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
@@ -3636,6 +3805,10 @@ TEST_P(GLES3DecoderTest, TexStorage3DValidArgs) {
   DoBindTexture(GL_TEXTURE_3D, client_texture_id_, kServiceTextureId);
   EXPECT_CALL(*gl_, TexStorage3D(GL_TEXTURE_3D, 2, GL_RGB565, 4, 5, 6))
       .Times(1)
+      .RetiresOnSaturation();
+  EXPECT_CALL(*gl_, GetError())
+      .WillOnce(Return(GL_NO_ERROR))
+      .WillOnce(Return(GL_NO_ERROR))
       .RetiresOnSaturation();
   cmds::TexStorage3D cmd;
   cmd.Init(GL_TEXTURE_3D, 2, GL_RGB565, 4, 5, 6);
@@ -4136,6 +4309,10 @@ TEST_P(GLES3DecoderTest, ImmutableTextureBaseLevelMaxLevelClamping) {
                                    kHeight, kDepth))
         .Times(1)
         .RetiresOnSaturation();
+    EXPECT_CALL(*gl_, GetError())
+        .WillOnce(Return(GL_NO_ERROR))
+        .WillOnce(Return(GL_NO_ERROR))
+        .RetiresOnSaturation();
     cmds::TexStorage3D cmd;
     cmd.Init(kTarget, kLevels, kInternalFormat, kWidth, kHeight, kDepth);
     EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
@@ -4222,6 +4399,49 @@ TEST_P(GLES3DecoderTest, ClearRenderableLevelsWithOutOfRangeBaseLevel) {
   // The following call will trigger out-of-bounds access in asan build
   // without fixing the bug.
   manager->ClearRenderableLevels(GetDecoder(), texture_ref);
+}
+
+class GLES3DecoderNPOTImmutableTest : public GLES3DecoderManualInitTest {};
+
+INSTANTIATE_TEST_SUITE_P(Service,
+                         GLES3DecoderNPOTImmutableTest,
+                         ::testing::Bool());
+
+TEST_P(GLES3DecoderNPOTImmutableTest,
+       DontChangeBaseLevelForNPOTImmutableTextures) {
+  InitState init;
+  init.extensions = "GL_EXT_texture_storage ";
+  init.gl_version = "OpenGL ES 3.0";
+  init.context_type = CONTEXT_TYPE_OPENGLES3;
+  gpu::GpuDriverBugWorkarounds workarounds;
+  workarounds.dont_change_base_level_for_npot_immutable_textures = true;
+  InitDecoderWithWorkarounds(init, workarounds);
+
+  // Set up an NPOT immutable texture via TexStorage2D.
+  DoBindTexture(GL_TEXTURE_2D, client_texture_id_, kServiceTextureId);
+  EXPECT_CALL(*gl_, TexStorage2DEXT(GL_TEXTURE_2D, 1, GL_RGBA8, 5, 5))
+      .Times(1)
+      .RetiresOnSaturation();
+  EXPECT_CALL(*gl_, GetError())
+      .WillOnce(Return(GL_NO_ERROR))
+      .WillOnce(Return(GL_NO_ERROR))
+      .RetiresOnSaturation();
+  cmds::TexStorage2DEXT storage_cmd;
+  storage_cmd.Init(GL_TEXTURE_2D, 1, GL_RGBA8, 5, 5);
+  EXPECT_EQ(error::kNoError, ExecuteCmd(storage_cmd));
+
+  // Setting BASE_LEVEL to 0 (same value) should succeed.
+  cmds::TexParameteri same_param_cmd;
+  same_param_cmd.Init(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);
+  EXPECT_CALL(*gl_, TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0))
+      .Times(1)
+      .RetiresOnSaturation();
+  EXPECT_EQ(error::kNoError, ExecuteCmd(same_param_cmd));
+
+  // Changing BASE_LEVEL to 1 should lose context when workaround is enabled.
+  cmds::TexParameteri param_cmd;
+  param_cmd.Init(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 1);
+  EXPECT_EQ(error::kLostContext, ExecuteCmd(param_cmd));
 }
 
 // TODO(gman): Complete this test.

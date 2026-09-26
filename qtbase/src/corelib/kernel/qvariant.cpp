@@ -504,8 +504,6 @@ void QVariant::create(int type, const void *copy)
 }
 
 /*!
-    \fn QVariant::create(int type, const void *copy)
-
     \internal
     \overload
 */
@@ -1118,7 +1116,7 @@ void QVariant::clear()
 
 /*!
     \fn QVariant::Type QVariant::nameToType(const char *name)
-    \deprecated [6.0] Use \c QMetaType::fromName(name).id() instead
+    \deprecated [6.0] Use \c QMetaType::fromName(name).id() instead.
 
     Converts the string representation of the storage type given in \a
     name, to its enum representation.

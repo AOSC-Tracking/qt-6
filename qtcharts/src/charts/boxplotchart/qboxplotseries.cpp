@@ -33,7 +33,8 @@ QT_BEGIN_NAMESPACE
 
     See the \l {Charts with Widgets Gallery} to learn how to create a
     box-and-whiskers chart.
-    \image examples_boxplotchart.png
+    \image examples_boxplotchart.png {Box-and-whiskers chart comparing two
+           companies' monthly share deviation across 2012}
 
     \sa QBoxSet, QBarCategoryAxis
 */
@@ -252,7 +253,7 @@ void QBoxPlotSeries::clear()
     if (success) {
         emit boxsetsRemoved(sets);
         emit countChanged();
-        foreach (QBoxSet *set, sets)
+        for (auto set : std::as_const(sets))
             delete set;
     }
 }
@@ -393,7 +394,7 @@ void QBoxPlotSeriesPrivate::initializeDomain()
 
 void QBoxPlotSeriesPrivate::initializeAxes()
 {
-    foreach (QAbstractAxis* axis, m_axes) {
+    for (auto axis : std::as_const(m_axes)) {
         if (axis->type() == QAbstractAxis::AxisTypeBarCategory) {
             if (axis->orientation() == Qt::Horizontal)
                 populateCategories(qobject_cast<QBarCategoryAxis *>(axis));
@@ -448,7 +449,7 @@ void QBoxPlotSeriesPrivate::initializeGraphics(QGraphicsItem *parent)
 
         // Tries to find this series from the Chart's list of series and deduce the index
         int index = 0;
-        foreach (QAbstractSeries *s, serieses) {
+        for (auto s : std::as_const(serieses)) {
             if (s->type() == QAbstractSeries::SeriesTypeBoxPlot) {
                 if (q == static_cast<QBoxPlotSeries *>(s)) {
                     boxPlot->m_seriesIndex = index;
@@ -549,7 +550,7 @@ void QBoxPlotSeriesPrivate::handleSeriesChange(QAbstractSeries *series)
 
         // Tries to find this series from the Chart's list of series and deduce the index
         int index = 0;
-        foreach (QAbstractSeries *s, serieses) {
+        for (auto s : std::as_const(serieses)) {
             if (s->type() == QAbstractSeries::SeriesTypeBoxPlot) {
                 if (q == static_cast<QBoxPlotSeries *>(s)) {
                     boxPlot->m_seriesIndex = index;
@@ -667,7 +668,7 @@ qreal QBoxPlotSeriesPrivate::min()
 
     qreal min = m_boxSets.at(0)->at(0);
 
-    foreach (QBoxSet *set, m_boxSets) {
+    for (auto set : std::as_const(m_boxSets)) {
         for (int i = 0; i < 5; i++) {
             if (set->at(i) < min)
                 min = set->at(i);
@@ -684,7 +685,7 @@ qreal QBoxPlotSeriesPrivate::max()
 
     qreal max = m_boxSets.at(0)->at(0);
 
-    foreach (QBoxSet *set, m_boxSets) {
+    for (auto set : std::as_const(m_boxSets)) {
         for (int i = 0; i < 5; i++) {
             if (set->at(i) > max)
                 max = set->at(i);

@@ -19,6 +19,7 @@
 #include "qcanvaspainterfactory.h"
 #include "qcanvasrhipaintdriver.h"
 #include "qcanvasimagepattern.h"
+#include "qcanvaspath.h"
 
 #if QT_CONFIG(opengl)
 #include <QOffscreenSurface>
@@ -67,6 +68,8 @@ private slots:
     void canvasRenderMipMap();
     void canvasRenderHqStroking_data();
     void canvasRenderHqStroking();
+    void canvasRenderPathGroups_data();
+    void canvasRenderPathGroups();
 
 private:
     void setWindowType(QWindow *window, QRhi::Implementation impl);
@@ -854,6 +857,450 @@ void tst_CanvasRhiRendering::canvasRenderHqStroking()
         }
         // ca. 2068 green pixels, the rest is either black or red
         QCOMPARE_GT(greenCount, 2000);
+    }
+
+#ifdef FRAME_CAPTURE
+    endFrameCapture(m_cap.get());
+#endif
+}
+
+void tst_CanvasRhiRendering::canvasRenderPathGroups_data()
+{
+    rhiTestData();
+}
+
+static QCanvasPath makePathOne()
+{
+    QCanvasPath path(64, 128);
+    path.reserve(128);
+    path.reserve(64, 160);
+
+    path.moveTo(10.f, 10.f);
+    path.lineTo(100.f, 10.f);
+    path.lineTo(100.f, 80.f);
+    path.lineTo(10.f, 80.f);
+    path.closePath();
+
+    path.moveTo(QPointF(120.f, 10.f));
+    path.lineTo(QPointF(200.f, 10.f));
+    path.lineTo(QPointF(200.f, 80.f));
+    path.closePath();
+
+    path.moveTo(10.f, 120.f);
+    path.bezierCurveTo(10.f, 90.f, 80.f, 90.f, 80.f, 120.f);
+
+    path.moveTo(QPointF(100.f, 120.f));
+    path.bezierCurveTo(QPointF(100.f, 90.f), QPointF(180.f, 90.f), QPointF(180.f, 120.f));
+
+    path.moveTo(10.f, 160.f);
+    path.quadraticCurveTo(55.f, 130.f, 100.f, 160.f);
+
+    path.moveTo(QPointF(120.f, 160.f));
+    path.quadraticCurveTo(QPointF(165.f, 130.f), QPointF(210.f, 160.f));
+
+    path.moveTo(10.f, 200.f);
+    path.arcTo(10.f, 250.f, 70.f, 250.f, 35.f);
+
+    path.moveTo(QPointF(120.f, 200.f));
+    path.arcTo(QPointF(120.f, 250.f), QPointF(180.f, 250.f), 35.f);
+
+    path.moveTo(260.f, 225.f);
+    path.arc(230.f, 225.f, 30.f, 0.f, float(M_PI));
+    path.arc(330.f, 225.f, 30.f, 0.f, float(M_PI),
+             QCanvasPainter::PathWinding::CounterClockWise,
+             QCanvasPainter::PathConnection::NotConnected);
+    path.arc(QPointF(430.f, 225.f), 30.f, 0.f, 2.f * float(M_PI),
+             QCanvasPainter::PathWinding::ClockWise,
+             QCanvasPainter::PathConnection::NotConnected);
+
+    path.rect(10.f, 280.f, 80.f, 50.f);
+    path.rect(QRectF(110.f, 280.f, 80.f, 50.f));
+    path.roundRect(210.f, 280.f, 80.f, 50.f, 10.f);
+    path.roundRect(QRectF(310.f, 280.f, 80.f, 50.f), 10.f);
+    path.roundRect(10.f, 350.f, 80.f, 50.f, 5.f, 10.f, 15.f, 20.f);
+    path.roundRect(QRectF(110.f, 350.f, 80.f, 50.f), 5.f, 10.f, 15.f, 20.f);
+    path.ellipse(260.f, 375.f, 40.f, 22.f);
+    path.ellipse(QRectF(310.f, 353.f, 80.f, 44.f));
+
+    path.setPathWinding(QCanvasPainter::PathWinding::CounterClockWise);
+    path.circle(80.f, 460.f, 50.f);
+    path.beginHoleSubPath(); // ClockWise
+    path.circle(80.f, 460.f, 30.f);
+    path.beginSolidSubPath();  // CounterClockWise
+    path.circle(80.f, 460.f, 12.f);
+
+    return path;
+}
+
+static QCanvasPath makePathTwo()
+{
+    QCanvasPath path;
+    path.moveTo(50.f, 40.f);
+    path.lineTo(90.f, 20.f);
+    path.lineTo(80.f, 38.f);
+    path.lineTo(120.f, 38.f);
+    path.lineTo(120.f, 42.f);
+    path.lineTo(80.f, 42.f);
+    path.lineTo(90.f, 60.f);
+    path.closePath();
+
+    path.moveTo(QPointF(160.f, 20.f));
+    path.bezierCurveTo(QPointF(130.f, 20.f), QPointF(130.f, 60.f), QPointF(160.f, 60.f));
+    path.bezierCurveTo(QPointF(190.f, 60.f), QPointF(190.f, 20.f), QPointF(220.f, 20.f));
+
+    path.moveTo(240.f, 60.f);
+    path.quadraticCurveTo(270.f, 10.f, 300.f, 60.f);
+
+    path.moveTo(QPointF(320.f, 60.f));
+    path.lineTo(QPointF(320.f, 25.f));
+    path.arcTo(QPointF(320.f, 20.f), QPointF(325.f, 20.f), 5.f);
+    path.lineTo(QPointF(375.f, 20.f));
+    path.arcTo(QPointF(380.f, 20.f), QPointF(380.f, 25.f), 5.f);
+    path.lineTo(QPointF(380.f, 60.f));
+
+    path.arc(430.f, 40.f, 20.f, 0.f, 2.f * float(M_PI),
+            QCanvasPainter::PathWinding::ClockWise,
+            QCanvasPainter::PathConnection::NotConnected);
+
+    path.moveTo(510.f, 40.f);
+    path.arc(510.f, 40.f, 20.f, 0.4f, 2.f * float(M_PI) - 0.4f,
+            QCanvasPainter::PathWinding::ClockWise,
+            QCanvasPainter::PathConnection::Connected);
+    path.closePath();
+
+    path.setPathWinding(QCanvasPainter::PathWinding::CounterClockWise);
+    path.arc(QPointF(570.f, 40.f), 22.f, 0.f, 2.f * float(M_PI),
+            QCanvasPainter::PathWinding::CounterClockWise,
+            QCanvasPainter::PathConnection::NotConnected);
+    path.beginHoleSubPath();
+    path.circle(QPointF(570.f, 40.f), 10.f);
+    path.beginSolidSubPath();
+
+    path.rect(10.f, 100.f, 60.f, 40.f);
+    path.rect(QRectF(90.f, 100.f, 60.f, 40.f));
+
+    path.roundRect(170.f, 100.f, 60.f, 40.f, 8.f);
+    path.roundRect(QRectF(250.f, 100.f, 60.f, 40.f), 8.f);
+
+    path.roundRect(330.f, 100.f, 60.f, 40.f, 0.f, 12.f, 0.f, 12.f);
+    path.roundRect(QRectF(410.f, 100.f, 60.f, 40.f), 12.f, 0.f, 12.f, 0.f);
+
+    path.ellipse(510.f, 120.f, 35.f, 18.f);
+    path.ellipse(QRectF(555.f, 102.f, 50.f, 36.f));
+
+    path.circle(640.f, 120.f, 18.f);
+    path.circle(QPointF(680.f, 120.f), 18.f);
+
+    // star
+    {
+        const float cx = 60.f, cy = 220.f, r1 = 40.f, r2 = 18.f;
+        const int points = 5;
+        for (int i = 0; i < points; ++i) {
+            float outerAngle = float(i) * 2.f * float(M_PI) / points - float(M_PI_2);
+            float innerAngle = outerAngle + float(M_PI) / points;
+            QPointF outer(cx + r1 * std::cos(outerAngle), cy + r1 * std::sin(outerAngle));
+            QPointF inner(cx + r2 * std::cos(innerAngle), cy + r2 * std::sin(innerAngle));
+            if (i == 0)
+                path.moveTo(outer);
+            else
+                path.lineTo(outer);
+            path.lineTo(inner);
+        }
+        path.closePath();
+    }
+
+    // spiral
+    {
+        const float cx = 200.f, cy = 220.f;
+        float r = 5.f;
+        path.moveTo(cx + r, cy);
+        for (int i = 0; i < 6; ++i) {
+            float a0 = float(i) * float(M_PI_2);
+            float a1 = a0 + float(M_PI_2);
+            float r0 = r + float(i) * 6.f;
+            float r1 = r + float(i + 1) * 6.f;
+            float k = 0.5523f; // cubic bezier circle approximation constant
+            path.bezierCurveTo(
+                cx + r0 * std::cos(a0) - r0 * k * std::sin(a0),
+                cy + r0 * std::sin(a0) + r0 * k * std::cos(a0),
+                cx + r1 * std::cos(a1) + r1 * k * std::sin(a1),
+                cy + r1 * std::sin(a1) - r1 * k * std::cos(a1),
+                cx + r1 * std::cos(a1),
+                cy + r1 * std::sin(a1));
+        }
+    }
+
+    // heart
+    {
+        const float cx = 380.f, cy = 240.f, w = 35.f;
+        path.moveTo(cx, cy + w * 0.25f);
+        path.quadraticCurveTo(cx - w, cy - w * 0.5f, cx - w * 0.5f, cy - w);
+        path.quadraticCurveTo(cx,      cy - w * 0.8f, cx,             cy - w * 0.3f);
+        path.quadraticCurveTo(cx,      cy - w * 0.8f, cx + w * 0.5f, cy - w);
+        path.quadraticCurveTo(cx + w,  cy - w * 0.5f, cx,             cy + w * 0.25f);
+        path.closePath();
+    }
+
+    return path;
+}
+
+void tst_CanvasRhiRendering::canvasRenderPathGroups()
+{
+    QFETCH(QRhi::Implementation, impl);
+    QFETCH(QRhiInitParams *, initParams);
+
+    std::unique_ptr<QRhi> rhi(QRhi::create(impl, initParams, rhiCreateFlags));
+    if (!rhi)
+        QSKIP("Failed to create QRhi, skip");
+
+#ifdef FRAME_CAPTURE
+    configureFrameCapture(m_cap.get(), rhi.get());
+    startFrameCapture(m_cap.get(), rhi.get(), "canvasRenderPathGroups");
+#endif
+
+    std::unique_ptr<QCanvasPainterFactory> factory(new QCanvasPainterFactory);
+    QCanvasPainter *painter = factory->create(rhi.get());
+    QCanvasRhiPaintDriver *pd = factory->paintDriver();
+    QVERIFY(pd && painter);
+
+    QCanvasOffscreenCanvas canvas;
+    canvas = painter->createCanvas(QSize(RT_WIDTH, RT_HEIGHT));
+    QVERIFY(!canvas.isNull());
+    canvas.setFillColor(Qt::black);
+
+    QRhiCommandBuffer *cb;
+    rhi->beginOffscreenFrame(&cb);
+    pd->resetForNewFrame();
+    pd->beginPaint(canvas, cb);
+
+    QCanvasPath pathLeft = makePathOne();
+    QCanvasPath pathRight = makePathTwo();
+
+    int group = 123;
+
+    cb->debugMarkMsg("First frame: drawing path one and two with group 123");
+
+    auto draw = [&](float lineWidth1, float lineWidth2, float aa1, float aa2) {
+        painter->setAntialias(aa1);
+        painter->setFillStyle(Qt::green);
+        painter->fill(pathLeft, group);
+        painter->setStrokeStyle(Qt::red);
+        painter->setLineWidth(lineWidth1);
+        painter->stroke(pathLeft, group);
+
+        painter->translate(RT_WIDTH / 2 - 100, 0);
+        painter->setAntialias(aa2);
+        painter->fill(pathRight, group);
+        painter->setLineWidth(lineWidth2);
+        painter->stroke(pathRight, group);
+    };
+
+    draw(4, 4, 1, 1);
+
+    pd->endPaint();
+    rhi->endOffscreenFrame();
+
+    int redCount = 0;
+    int greenCount = 0;
+    auto updateColorCounts = [&](const QImage &image) {
+        redCount = 0;
+        greenCount = 0;
+        for (int y = 0; y < image.height(); ++y) {
+            for (int x = 0; x < image.width(); ++x) {
+                if (qGreen(image.pixel(x, y)) > 250)
+                    ++greenCount;
+                if (qRed(image.pixel(x, y)) > 250)
+                    ++redCount;
+            }
+        }
+    };
+
+    if (impl != QRhi::Null) {
+        QImage image = imageFromReadback(rhi.get(), canvas.texture());
+        updateColorCounts(image);
+        // 18910
+        QVERIFY(redCount > 18000);
+        QVERIFY(redCount < 20000);
+        // 70314
+        QVERIFY(greenCount > 70000);
+        QVERIFY(greenCount < 71000);
+    }
+
+    // Another frame, use the same path group. This should trigger full reuse of the path group vertex/index buffers.
+    rhi->beginOffscreenFrame(&cb);
+    pd->resetForNewFrame();
+    pd->beginPaint(canvas, cb);
+    cb->debugMarkMsg("Second frame: drawing path one and two again with group 123");
+    draw(4, 4, 1, 1);
+    pd->endPaint();
+    rhi->endOffscreenFrame();
+    // Leave verification to the third frame
+
+    rhi->beginOffscreenFrame(&cb);
+    pd->resetForNewFrame();
+    pd->beginPaint(canvas, cb);
+    cb->debugMarkMsg("Third frame: drawing path one and two again with group 123");
+    draw(4, 4, 1, 1);
+    pd->endPaint();
+    rhi->endOffscreenFrame();
+
+    if (impl != QRhi::Null) {
+        QImage image = imageFromReadback(rhi.get(), canvas.texture());
+        updateColorCounts(image);
+        // 18910
+        QVERIFY(redCount > 18000);
+        QVERIFY(redCount < 20000);
+        // 70314
+        QVERIFY(greenCount > 70000);
+        QVERIFY(greenCount < 71000);
+    }
+
+    // Now we rendered three frames with path group 123 and no change in the QCanvasPath or relevant states.
+    // Now change the stroke width for one of the two paths (but not for the other), which internally should
+    // generate another version of that path with the different stroke width.
+    rhi->beginOffscreenFrame(&cb);
+    pd->resetForNewFrame();
+    pd->beginPaint(canvas, cb);
+    cb->debugMarkMsg("Fourth frame: drawing path one with larger stroke width, path two is same as before, group is still 123");
+    draw(8, 4, 1, 1); // different stroke width for the left path!
+    pd->endPaint();
+    rhi->endOffscreenFrame();
+
+    if (impl != QRhi::Null) {
+        QImage image = imageFromReadback(rhi.get(), canvas.texture());
+        updateColorCounts(image);
+        // 34534
+        QVERIFY(redCount > 34000);
+        QVERIFY(redCount < 35000);
+        // 63392
+        QVERIFY(greenCount > 63000);
+        QVERIFY(greenCount < 64000);
+    }
+
+    // Fifth frame: like frame 4, but disable antialiasing.
+    rhi->beginOffscreenFrame(&cb);
+    pd->resetForNewFrame();
+    pd->beginPaint(canvas, cb);
+    cb->debugMarkMsg("Fifth frame: drawing like in fourth, but with AA disabled");
+    painter->setRenderHint(QCanvasPainter::RenderHint::Antialiasing, false);
+    draw(8, 4, 1, 1);
+    painter->setRenderHint(QCanvasPainter::RenderHint::Antialiasing, true);
+    pd->endPaint();
+    rhi->endOffscreenFrame();
+
+    if (impl != QRhi::Null) {
+        QImage image = imageFromReadback(rhi.get(), canvas.texture());
+        updateColorCounts(image);
+        // 45045
+        QVERIFY(redCount > 44000);
+        QVERIFY(redCount < 46000);
+        // 68868
+        QVERIFY(greenCount > 68000);
+        QVERIFY(greenCount < 70000);
+    }
+
+    // Sixth frame: like frame 4, but higher AA for the right path.
+    rhi->beginOffscreenFrame(&cb);
+    pd->resetForNewFrame();
+    pd->beginPaint(canvas, cb);
+    cb->debugMarkMsg("Sixth frame: drawing like in fourth, but AA increased for right path");
+    draw(8, 4, 1, 5);
+    pd->endPaint();
+    rhi->endOffscreenFrame();
+
+    if (impl != QRhi::Null) {
+        QImage image = imageFromReadback(rhi.get(), canvas.texture());
+        updateColorCounts(image);
+        // 25659
+        QVERIFY(redCount > 25000);
+        QVERIFY(redCount < 26000);
+        // 54775
+        QVERIFY(greenCount > 54000);
+        QVERIFY(greenCount < 55000);
+    }
+
+    // Seventh frame: clear() one of the paths and add some new elements to it.
+    pathRight.clear();
+    pathRight.moveTo(20, 20);
+    pathRight.lineTo(100, 180);
+    pathRight.lineTo(180, 20);
+    pathRight.closePath();
+    pathRight.moveTo(100, 40);
+    pathRight.lineTo(125, 90);
+    pathRight.lineTo(75, 90);
+    pathRight.closePath();
+
+    rhi->beginOffscreenFrame(&cb);
+    pd->resetForNewFrame();
+    pd->beginPaint(canvas, cb);
+    cb->debugMarkMsg("Seventh frame: drawing like in first, but the right path is now different");
+    draw(4, 4, 1, 1);
+    pd->endPaint();
+    rhi->endOffscreenFrame();
+
+    if (impl != QRhi::Null) {
+        QImage image = imageFromReadback(rhi.get(), canvas.texture());
+        updateColorCounts(image);
+        // 11715
+        QVERIFY(redCount > 11000);
+        QVERIFY(redCount < 12000);
+        // 54499
+        QVERIFY(greenCount > 54000);
+        QVERIFY(greenCount < 55000);
+    }
+
+    // Eighth frame: change the path group.
+    group = 124;
+
+    rhi->beginOffscreenFrame(&cb);
+    pd->resetForNewFrame();
+    pd->beginPaint(canvas, cb);
+    cb->debugMarkMsg("Eighth frame: drawing like in seventh, but the path group is different");
+    draw(4, 4, 1, 1);
+    pd->endPaint();
+    rhi->endOffscreenFrame();
+
+    if (impl != QRhi::Null) {
+        QImage image = imageFromReadback(rhi.get(), canvas.texture());
+        updateColorCounts(image);
+        // 11715
+        QVERIFY(redCount > 11000);
+        QVERIFY(redCount < 12000);
+        // 54499
+        QVERIFY(greenCount > 54000);
+        QVERIFY(greenCount < 55000);
+    }
+
+    // Ninth frame: Make a copy, pass in the same local variable (as in, &p is
+    // the same) for both paths to fill() and stroke() and see if it does not
+    // get confused.
+    rhi->beginOffscreenFrame(&cb);
+    pd->resetForNewFrame();
+    pd->beginPaint(canvas, cb);
+    cb->debugMarkMsg("Ninth frame: like the previous, but paths are copied");
+    QCanvasPath p = pathLeft;
+    painter->setAntialias(1.0f);
+    painter->setFillStyle(Qt::green);
+    painter->fill(p, group);
+    painter->setStrokeStyle(Qt::red);
+    painter->setLineWidth(4.0f);
+    painter->stroke(p, group);
+    p = pathRight;
+    painter->translate(RT_WIDTH / 2 - 100, 0);
+    painter->fill(p, group);
+    painter->stroke(p, group);
+    pd->endPaint();
+    rhi->endOffscreenFrame();
+
+    if (impl != QRhi::Null) {
+        QImage image = imageFromReadback(rhi.get(), canvas.texture());
+        updateColorCounts(image);
+        // 11715
+        QVERIFY(redCount > 11000);
+        QVERIFY(redCount < 12000);
+        // 54499
+        QVERIFY(greenCount > 54000);
+        QVERIFY(greenCount < 55000);
     }
 
 #ifdef FRAME_CAPTURE

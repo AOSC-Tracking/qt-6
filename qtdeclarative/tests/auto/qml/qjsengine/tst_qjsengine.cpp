@@ -284,6 +284,7 @@ private slots:
     void concatAfterUnshift();
     void sortSparseArray();
     void compileBrokenRegexp();
+    void deeplyNestedRegexpDoesNotCrash();
     void sortNonStringArray();
     void iterateInvalidProxy();
     void applyOnHugeArray();
@@ -356,6 +357,7 @@ private slots:
 
     void evalInGlobalContext();
     void truncateArrayData();
+    void rebuildInternalClassIndexOnResurrectedMember();
 
 public:
     Q_INVOKABLE QJSValue throwingCppMethod1();
@@ -5563,6 +5565,32 @@ void tst_QJSEngine::compileBrokenRegexp()
     QCOMPARE(value.toString(), "SyntaxError: Invalid flags supplied to RegExp constructor");
 }
 
+void tst_QJSEngine::deeplyNestedRegexpDoesNotCrash()
+{
+    // verify that we detect when a regular expression would run out of stack space
+    QString result;
+    bool isError = true;
+    std::unique_ptr<QThread> worker(QThread::create([&result, &isError]() {
+        QJSEngine engine;
+        const QJSValue value = engine.evaluate(
+            "(function() {"
+            "    var n = 50000;"
+            "    var src = '('.repeat(n) + 'a' + ')'.repeat(n);"
+            "    try { new RegExp(src); return 'compiled'; }"
+            "    catch (e) { return e instanceof SyntaxError ? 'SyntaxError' : String(e); }"
+            "})();"
+        );
+        isError = value.isError();
+        result = value.toString();
+    }));
+    worker->setStackSize(512 * 1024);
+    worker->start();
+    QVERIFY(worker->wait());
+
+    QVERIFY(!isError);
+    QCOMPARE(result, QLatin1String("SyntaxError"));
+}
+
 void tst_QJSEngine::tostringRecursionCheck()
 {
     QJSEngine engine;
@@ -6950,6 +6978,37 @@ void tst_QJSEngine::truncateArrayData()
     QCOMPARE(array.property("length").toInt(), 3);
     gc(*engine.handle());
     QCOMPARE(spy.count(), 1);
+}
+
+void tst_QJSEngine::rebuildInternalClassIndexOnResurrectedMember()
+{
+    // the tests depends on InternalClass::MaxRedundantTransitions being 255
+    // it tests that we correctly handle property indices when cleanInternalClass
+    // rebuilds the hierarchy
+    QJSEngine engine;
+    QJSValue result = engine.evaluate(QStringLiteral(R"(
+        (function() {
+            var o = {};
+            var COUNT = 256;
+            for (var i = 0; i < COUNT; i++)
+                o["k" + i] = i;
+
+            // Delete 254 distinct keys. Each delete adds one redundant
+            // transition, bringing the count to just below the rebuild
+            // threshold. Only the last two keys stay alive,
+            // so the rebuilt class is small enough to have no
+            // out-of-line member data at all.
+            for (var i = 0; i < 254; i++)
+                delete o["k" + i];
+
+            // Re-add a just-deleted, high-index key; triggers the rebuild
+            o["k253"] = 42;
+
+            return o["k253"] + "," + o["k254"] + "," + o["k255"];
+        })()
+    )")); // should not crash
+    QVERIFY2(!result.isError(), qPrintable(result.toString()));
+    QCOMPARE(result.toString(), QStringLiteral("42,254,255"));
 }
 
 QTEST_MAIN(tst_QJSEngine)

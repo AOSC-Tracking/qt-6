@@ -15,11 +15,12 @@
 // We mean it.
 //
 
-#include <QtCore/qlist.h>
-#include <QtCore/qobject.h>
 #include <QtMultimedia/private/qaudiodevice_p.h>
 #include <QtMultimedia/private/qcachedvalue_p.h>
 #include <QtMultimedia/private/qtmultimediaglobal_p.h>
+#include <QtCore/qlist.h>
+#include <QtCore/qobject.h>
+
 #include <memory>
 
 QT_BEGIN_NAMESPACE
@@ -53,6 +54,8 @@ public:
 
     void initVideoDevicesConnection();
     virtual QLatin1String backendName() const { return QLatin1String{ "null" }; }
+
+    virtual bool hasCallbackApi() const;
 
 protected:
     virtual QList<QAudioDevice> findAudioInputs() const { return {}; }

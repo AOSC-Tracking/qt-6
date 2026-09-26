@@ -4,14 +4,12 @@
 #ifndef INAPPTRANSACTION_H
 #define INAPPTRANSACTION_H
 
-#include <QtCore/qobject.h>
-#include <QtCore/qsharedpointer.h>
+#include <QObject>
+#include <QSharedPointer>
 #include <QDateTime>
-#include <QtQml/qqml.h>
+#include <qqml.h>
 
 #include "inappproduct.h"
-
-QT_BEGIN_NAMESPACE
 
 class InAppProduct;
 class InAppTransactionPrivate;

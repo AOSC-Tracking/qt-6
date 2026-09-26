@@ -1452,7 +1452,7 @@ void QLocale::setDefault(const QLocale &locale)
         return; // avoid crash on exit
     if (!defaultLocalePrivate.exists()) {
         // Force it to exist; see QTBUG-83016
-        QLocale ignoreme;
+        [[maybe_unused]] QLocale ignoreme;
         Q_ASSERT(defaultLocalePrivate.exists());
     }
 
@@ -3876,6 +3876,9 @@ QString QCalendarBackend::dateTimeToString(QStringView format, const QDateTime &
 
                 switch (repeat) {
                 case 4:
+                    // Years with more than four digits must have a sign:
+                    if (year > 9999)
+                        result.append(locale.positiveSign());
                     appendToResult(year, (year < 0) ? 5 : 4);
                     break;
                 case 2:

@@ -8,26 +8,47 @@
 #include <QtGui/qcolor.h>
 #include <QtGui/qtransform.h>
 
+#include <QtCore/qlatin1stringview.h>
 #include <QtCore/qloggingcategory.h>
-#include <QtCore/qglobalstatic.h>
-#include <QtCore/qhash.h>
+#include <QtCore/qstring.h>
+
+#include <optional>
 
 QT_BEGIN_NAMESPACE
 
+using namespace Qt::StringLiterals;
+
 Q_STATIC_LOGGING_CATEGORY(lcSvgAnimatedProperty, "qt.svg.animation.properties")
 
-typedef QHash<QString, QSvgAbstractAnimatedProperty::Type> AnimatableHashType;
-Q_GLOBAL_STATIC(AnimatableHashType, animatableProperties)
-
-static void initHash()
+static std::optional<QSvgAbstractAnimatedProperty::Type> name2type(const QString &name)
 {
-    animatableProperties->insert(QStringLiteral("fill"), QSvgAbstractAnimatedProperty::Color);
-    animatableProperties->insert(QStringLiteral("fill-opacity"), QSvgAbstractAnimatedProperty::Float);
-    animatableProperties->insert(QStringLiteral("stroke-opacity"), QSvgAbstractAnimatedProperty::Float);
-    animatableProperties->insert(QStringLiteral("stroke"), QSvgAbstractAnimatedProperty::Color);
-    animatableProperties->insert(QStringLiteral("opacity"), QSvgAbstractAnimatedProperty::Float);
-    animatableProperties->insert(QStringLiteral("transform"), QSvgAbstractAnimatedProperty::Transform);
-    animatableProperties->insert(QStringLiteral("offset-distance"), QSvgAbstractAnimatedProperty::Float);
+    // Perfect hashing:
+    //
+    //   the length of the string uniquely identifies the property name
+    //   (compiler guarantees, otherwise it would complain about duplicate case
+    //   labels):
+    constexpr auto hash = [](QStringView s) {
+        return s.size();
+    };
+
+    switch (hash(name)) {
+#define CASE(str, type) \
+    case hash(u"" #str): \
+        if (name == #str ## _L1) \
+            return QSvgAbstractAnimatedProperty:: type ; \
+        break; \
+    /* end */
+
+    CASE(fill, Color)
+    CASE(fill-opacity, Float)
+    CASE(stroke-opacity, Float)
+    CASE(stroke, Color)
+    CASE(opacity, Float)
+    CASE(transform, Transform)
+    CASE(offset-distance, Float)
+#undef CASE
+    };
+    return std::nullopt;
 }
 
 static qreal q_lerp(qreal a, qreal b, qreal t)
@@ -91,18 +112,16 @@ QVariant QSvgAbstractAnimatedProperty::interpolatedValue() const
 
 QSvgAbstractAnimatedProperty *QSvgAbstractAnimatedProperty::createAnimatedProperty(const QString &name)
 {
-    if (animatableProperties->isEmpty())
-        initHash();
+    const std::optional<Type> type = name2type(name);
 
-    if (!animatableProperties->contains(name)) {
+    if (!type) {
         qCDebug(lcSvgAnimatedProperty) << "Property : " << name << " is not animatable";
         return nullptr;
     }
 
-    QSvgAbstractAnimatedProperty::Type type = animatableProperties->value(name);
     QSvgAbstractAnimatedProperty *prop = nullptr;
 
-    switch (type) {
+    switch (*type) {
     case QSvgAbstractAnimatedProperty::Color:
         prop = new QSvgAnimatedPropertyColor(name);
         break;
@@ -122,6 +141,9 @@ QSvgAnimatedPropertyColor::QSvgAnimatedPropertyColor(const QString &name)
     : QSvgAbstractAnimatedProperty(name, QSvgAbstractAnimatedProperty::Color)
 {
 }
+
+QSvgAnimatedPropertyColor::~QSvgAnimatedPropertyColor()
+    = default;
 
 void QSvgAnimatedPropertyColor::setColors(const QList<QColor> &colors)
 {
@@ -156,6 +178,9 @@ QSvgAnimatedPropertyFloat::QSvgAnimatedPropertyFloat(const QString &name)
 {
 }
 
+QSvgAnimatedPropertyFloat::~QSvgAnimatedPropertyFloat()
+    = default;
+
 void QSvgAnimatedPropertyFloat::setValues(const QList<qreal> &values)
 {
     m_values = values;
@@ -189,6 +214,9 @@ QSvgAnimatedPropertyTransform::QSvgAnimatedPropertyTransform(const QString &name
 {
 
 }
+
+QSvgAnimatedPropertyTransform::~QSvgAnimatedPropertyTransform()
+    = default;
 
 void QSvgAnimatedPropertyTransform::setTransformCount(quint32 count)
 {

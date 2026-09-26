@@ -4,8 +4,9 @@
 #ifndef ECGGRAPH_H
 #define ECGGRAPH_H
 
-#include <QList>
 #include "theme.h"
+
+#include <QList>
 
 QT_FORWARD_DECLARE_CLASS(QCanvasPainter)
 class MainWindow;
@@ -57,7 +58,6 @@ private:
     bool m_defibrillator = false;
     float m_lineWidth = 2.0;
     QList<float> m_spo2Data;
-
 };
 
 #endif // ECGGRAPH_H

@@ -15,7 +15,8 @@
     the clients in a uniform grid, scaled to the same size. The other output is a normal
     desktop-style interactive compositor window.
 
-    \image multi-output.jpg
+    \image multi-output.jpg {Two compositor windows demonstrating multiple
+           outputs}
 
     For an introduction to the basic principles of creating a \l{Qt Wayland Compositor} with Qt,
     see the \l{Minimal QML}{Minimal QML example}.

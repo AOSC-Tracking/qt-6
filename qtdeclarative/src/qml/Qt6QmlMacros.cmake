@@ -1095,13 +1095,19 @@ Check https://doc.qt.io/qt-6/qt-cmake-policy-qtp0001.html for policy details."
         else()
             string(REPLACE "." "::" qmltc_namespace "${arg_URI}")
         endif()
+        set(qmltc_export_args "")
+        if(DEFINED arg_QMLTC_EXPORT_DIRECTIVE)
+            list(APPEND qmltc_export_args EXPORT_MACRO_NAME ${arg_QMLTC_EXPORT_DIRECTIVE})
+        endif()
+        if(DEFINED arg_QMLTC_EXPORT_FILE_NAME)
+            list(APPEND qmltc_export_args EXPORT_FILE_NAME ${arg_QMLTC_EXPORT_FILE_NAME})
+        endif()
         _qt_internal_target_enable_qmltc(${target}
             QML_FILES ${arg_QML_FILES}
             IMPORT_PATHS ${arg_IMPORT_PATH}
             NAMESPACE ${qmltc_namespace}
-            EXPORT_MACRO_NAME ${arg_QMLTC_EXPORT_DIRECTIVE}
-            EXPORT_FILE_NAME ${arg_QMLTC_EXPORT_FILE_NAME}
             MODULE ${arg_URI}
+            ${qmltc_export_args}
         )
     endif()
 
@@ -3838,15 +3844,36 @@ function(qt6_target_qml_sources target)
                 QT_QML_MODULE_RESOURCE_PATHS ${file_resource_path}
             )
 
-            file(RELATIVE_PATH file_relative ${CMAKE_CURRENT_SOURCE_DIR} ${file_absolute})
-            string(REGEX REPLACE "\\.(js|mjs|qml)$" "_\\1" compiled_file ${file_relative})
-            string(REGEX REPLACE "[$#?]+" "_" compiled_file ${compiled_file})
+            # Check what base path should be used for computing the relative path.
+            # Prefer the shortest relative path.
+            file(RELATIVE_PATH file_relative_to_source_dir
+                "${CMAKE_CURRENT_SOURCE_DIR}" "${file_absolute}")
+            string(LENGTH "${file_relative_to_source_dir}" relative_to_source_dir_length)
+
+            file(RELATIVE_PATH file_relative_to_binary_dir
+                "${CMAKE_CURRENT_BINARY_DIR}" "${file_absolute}")
+            string(LENGTH "${file_relative_to_binary_dir}" relative_to_binary_dir_length)
+
+            if(relative_to_source_dir_length LESS relative_to_binary_dir_length)
+                set(file_relative "${file_relative_to_source_dir}")
+            else()
+                set(file_relative "${file_relative_to_binary_dir}")
+            endif()
+
+            # Replace '..'s with underscores to avoid issues with paths especially on Windows.
+            string(REGEX REPLACE "\\.\\.[/\\\\]" "_" compiled_file "${file_relative}")
+
+            # Replace the dot in front of extensions with an underscore.
+            string(REGEX REPLACE "\\.(js|mjs|qml)$" "_\\1" compiled_file "${compiled_file}")
+
+            # Replace other problematic characters in paths.
+            string(REGEX REPLACE "[$#?/ ]+" "_" compiled_file "${compiled_file}")
 
             # The file name needs to be unique to work around an Integrity compiler issue.
             # Search for INTEGRITY_SYMBOL_UNIQUENESS in this file for details.
             set(compiled_file
                 "${CMAKE_CURRENT_BINARY_DIR}/.rcc/qmlcache/${target}_${compiled_file}.cpp")
-            get_filename_component(out_dir ${compiled_file} DIRECTORY)
+            get_filename_component(out_dir "${compiled_file}" DIRECTORY)
 
             if(CMAKE_GENERATOR STREQUAL "Ninja Multi-Config" AND CMAKE_VERSION VERSION_GREATER_EQUAL "3.20")
                 set(qmlcachegen_cmd "$<COMMAND_CONFIG:${qmlcachegen}>")

@@ -103,8 +103,8 @@ enum class Toggle {
     MetalUseCombinedDepthStencilFormatForStencil8,
     MetalUseBothDepthAndStencilAttachmentsForCombinedDepthStencilFormats,
     MetalKeepMultisubresourceDepthStencilTexturesInitialized,
-    VulkanPolyfillF32Negation,
-    VulkanPolyfillF32Abs,
+    VulkanPolyfillFloatNegation,
+    VulkanPolyfillFloatAbs,
     MetalFillEmptyOcclusionQueriesWithZero,
     UseBlitForBufferToDepthTextureCopy,
     UseBlitForBufferToStencilTextureCopy,
@@ -163,6 +163,8 @@ enum class Toggle {
     UseSpirv14,
     MetalUseArgumentBuffers,
     EnableShaderPrint,
+    CollapseSubgroupMinMax,
+    MetalFixU32DivMod,
 
     // Unresolved issues.
     NoWorkaroundSampleMaskBecomesZeroForAllButLastColorTarget,

@@ -54,6 +54,7 @@ static bool qt_pixmap_thread_test()
     }
     if (QGuiApplicationPrivate::instance()
         && !QThread::isMainThread()
+        && Q_LIKELY(QGuiApplicationPrivate::platformIntegration())
         && !QGuiApplicationPrivate::platformIntegration()->hasCapability(QPlatformIntegration::ThreadedPixmaps)) {
         qWarning("QPixmap: It is not safe to use pixmaps outside the GUI thread on this platform");
         return false;
@@ -999,7 +1000,7 @@ bool QPixmap::convertFromImage(const QImage &image, Qt::ImageConversionFlags fla
     transformation modes specified by \a aspectRatioMode and \a
     transformMode.
 
-    \image qimage-scaling.png
+    \image qimage-scaling.png {Three aspect ratio modes compared}
 
     \list
     \li If \a aspectRatioMode is Qt::IgnoreAspectRatio, the pixmap

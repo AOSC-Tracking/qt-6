@@ -41,6 +41,13 @@ BASE_FEATURE_PARAM(int,
                    "ad-auction-signals-max-size-bytes",
                    10000);
 
+// Controls whether JavaScript execution inside AudioWorkletProcessor::Process()
+// runs under strict IEEE-754 floating-point semantics (disabling FTZ/DAZ).
+// Enabled by default as a remote kill-switch.
+BASE_FEATURE(kAudioWorkletJSDenormalEnabler,
+             "AudioWorkletJSDenormalEnabler",
+             base::FEATURE_ENABLED_BY_DEFAULT);
+
 #if BUILDFLAG(IS_ANDROID)
 // If enabled, then use desktop page webprefs for Android devices that have
 // large displays, specifically tablets and desktops.
@@ -502,6 +509,10 @@ BASE_FEATURE(kContentCaptureConstantStreaming,
 // and renders the image as encoded.
 BASE_FEATURE(kCreateImageBitmapOrientationNone,
              "CreateImageBitmapOrientationNone",
+             base::FEATURE_DISABLED_BY_DEFAULT);
+
+BASE_FEATURE(kDataUrlWorkerOpaqueOrigin,
+             "DataUrlWorkerOpaqueOrigin",
              base::FEATURE_DISABLED_BY_DEFAULT);
 
 BASE_FEATURE(kDeferRendererTasksAfterInput,

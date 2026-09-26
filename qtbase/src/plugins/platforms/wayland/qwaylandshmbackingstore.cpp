@@ -50,12 +50,28 @@ extern void qt_scrollRectInImage(QImage &, const QRect &, const QPoint &);
 
 namespace QtWaylandClient {
 
+static int alignTo(int input, int alignment)
+{
+    Q_ASSERT(alignment > 0);
+    if (int remainder = input % alignment)
+        return input + (alignment - remainder);
+    else
+        return input;
+}
+
 QWaylandShmBuffer::QWaylandShmBuffer(QWaylandDisplay *display,
                                      const QSize &size, QImage::Format format, qreal scale, wl_event_queue *customEventQueue)
     : mDirtyRegion(QRect(QPoint(0, 0), size / scale))
 {
-    int stride = size.width() * 4;
-    int alloc = stride * size.height();
+    // This alignment of stride and size is done to improve performance of
+    // buffer accesses on the compositor side.
+    // Aligning the size of the shm pool to pages means the buffer can be
+    // imported as a udmabuf, and if the stride is additionally compatible with
+    // the GPU, that udmabuf can be used directly for rendering instead of needing
+    // to first copy to a GPU-accessible buffer.
+    // The 256 bytes stride alignment used here is what all common GPUs can read from.
+    const int stride = alignTo(size.width() * 4, 256);
+    const int alloc = alignTo(stride * size.height(), getpagesize());
     int fd = -1;
 
 #ifdef SYS_memfd_create
@@ -331,10 +347,26 @@ QWaylandShmBuffer *QWaylandShmBackingStore::getBuffer(const QSize &size, bool &b
     static const int MAX_AGE = 10 * MAX_BUFFERS;
     bufferWasRecreated = false;
 
-    // Prune buffers that have not been used in a while or with different size.
+    // Prune buffers that have not been used in a while. The front buffer must not be touched
+    // so its data can be copied to new buffers. The back buffer can be pruned but we don't
+    // do it because we will probably need it anyway if the front buffer is used by the compositor.
     for (auto i = mBuffers.size() - 1; i >= 0; --i) {
         QWaylandShmBuffer *buffer = mBuffers[i];
-        if (buffer->age() > MAX_AGE || buffer->size() != size) {
+        if (mBackBuffer == buffer)
+            continue;
+        if (mFrontBuffer == buffer)
+            continue;
+
+        if (buffer->age() > MAX_AGE) {
+            mBuffers.removeAt(i);
+            delete buffer;
+        }
+    }
+
+    // Prune buffers that have mismatching size.
+    for (auto i = mBuffers.size() - 1; i >= 0; --i) {
+        QWaylandShmBuffer *buffer = mBuffers[i];
+        if (buffer->size() != size) {
             mBuffers.removeAt(i);
             if (mBackBuffer == buffer)
                 mBackBuffer = nullptr;

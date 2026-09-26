@@ -1,6 +1,8 @@
 # Copyright (C) 2024 The Qt Company Ltd.
 # SPDX-License-Identifier: BSD-3-Clause
 
+__qt_internal_cmake_include_guard(GLOBAL GUARD_KEY "QtPublicSbomHelpers")
+
 # Starts repo sbom generation.
 # Should be called before any targets are added to the sbom.
 #
@@ -75,6 +77,12 @@ function(_qt_internal_sbom_begin_project)
                 "but it is not officially supported, and the SBOM might be incomplete.")
         endif()
     endif()
+
+    # Save the project binary dir right now. It will be used to place intermediate sbom files.
+    # The project binary dir might change if there are nested project() calls, but we want to
+    # continue writing intermediate sbom files to the same location until the end function is
+    # called.
+    set_property(GLOBAL PROPERTY _qt_internal_sbom_project_binary_dir "${PROJECT_BINARY_DIR}")
 
     # The ntia-conformance-checker insists that a SPDX document contain at least one
     # relationship that DESCRIBES a package, and that the package contains the string
@@ -435,6 +443,10 @@ function(_qt_internal_sbom_begin_project)
     set_property(GLOBAL PROPERTY _qt_internal_sbom_project_spdx_id
         "${repo_project_spdx_id}")
 
+    # Record every generated project. The full list is used in tests for various checks.
+    set_property(GLOBAL APPEND PROPERTY _qt_internal_sbom_generated_project_spdx_ids
+        "${repo_project_spdx_id}")
+
     _qt_internal_create_project_sbom_target()
 
     # Collect project licenses.
@@ -487,7 +499,7 @@ function(_qt_internal_sbom_begin_project)
     _qt_internal_sbom_setup_project_ops()
 
     if(NOT arg_NO_AUTO_ADD_BUILD_TOOLS)
-        _qt_internal_sbom_add_project_default_build_tools()
+        _qt_internal_sbom_add_project_default_system_build_tools()
     endif()
 endfunction()
 
@@ -853,10 +865,21 @@ function(_qt_internal_sbom_end_project)
         set_property(GLOBAL PROPERTY _qt_known_external_documents_${external_document}_target "")
     endforeach()
 
+    # Clean up the CycloneDX external document serial number properties as well.
+    get_cmake_property(known_external_documents_cydx _qt_known_external_documents_cydx)
+    set_property(GLOBAL PROPERTY _qt_known_external_documents_cydx "")
+    foreach(external_document IN LISTS known_external_documents_cydx)
+        set_property(GLOBAL PROPERTY _qt_known_external_documents_${external_document}_cydx "")
+        set_property(GLOBAL PROPERTY
+            _qt_known_external_documents_${external_document}_cydx_target "")
+    endforeach()
+
     set_property(GLOBAL PROPERTY _qt_internal_sbom_repo_begin_called FALSE)
     set_property(GLOBAL PROPERTY _qt_internal_sbom_repo_spdx_id_unique_suffix "")
     set_property(GLOBAL PROPERTY _qt_internal_sbom_external_document_search_paths "")
     set_property(GLOBAL PROPERTY _qt_internal_sbom_auto_search_external_documents_in_paths "")
+    set_property(GLOBAL PROPERTY _qt_sbom_verify_source_sbom_script "")
+    set_property(GLOBAL PROPERTY _qt_internal_sbom_project_binary_dir "")
 
     # Add configure-time dependency on project attribution files.
     get_property(attribution_files GLOBAL PROPERTY _qt_internal_project_attribution_files)
@@ -1015,6 +1038,7 @@ macro(_qt_internal_get_sbom_add_target_common_options opt_args single_args multi
         NO_DEFAULT_QT_COPYRIGHTS
         NO_DEFAULT_QT_PACKAGE_VERSION
         NO_DEFAULT_QT_SUPPLIER
+        NO_DEFAULT_PROJECT_CONTAINS_RELATIONSHIP
         SBOM_INCOMPLETE_3RD_PARTY_DEPENDENCIES
         IS_QT_3RD_PARTY_HEADER_MODULE
         IS_EXTERNAL_SBOM_ENTITY
@@ -1557,6 +1581,8 @@ function(_qt_internal_sbom_add_target target)
     _qt_internal_forward_function_args(
         FORWARD_PREFIX arg
         FORWARD_OUT_VAR relationship_args
+        FORWARD_OPTIONS
+            NO_DEFAULT_PROJECT_CONTAINS_RELATIONSHIP
         FORWARD_MULTI
             LIBRARIES
             PUBLIC_LIBRARIES
@@ -2624,6 +2650,45 @@ function(_qt_internal_sbom_get_current_project_spdx_id out_var)
     set(${out_var} "${spdx_id}" PARENT_SCOPE)
 endfunction()
 
+# Returns the relative path of the current project's sbom document for the given format.
+# Returns an empty string if not set.
+function(_qt_internal_sbom_get_current_project_document_path out_var)
+    set(opt_args "")
+    set(single_args FORMAT)
+    set(multi_args "")
+    cmake_parse_arguments(PARSE_ARGV 1 arg "${opt_args}" "${single_args}" "${multi_args}")
+    _qt_internal_validate_all_args_are_parsed(arg)
+
+    get_property(begin_called GLOBAL PROPERTY _qt_internal_sbom_repo_begin_called)
+    if(NOT begin_called)
+        set(${out_var} "" PARENT_SCOPE)
+        return()
+    endif()
+
+    if(arg_FORMAT STREQUAL "SPDX_V2_TAG_VALUE")
+        get_property(document_relative_path GLOBAL PROPERTY
+            _qt_internal_sbom_document_spdx_v2_tag_value_relative_path)
+    elseif(arg_FORMAT STREQUAL "SPDX_V2_JSON")
+        get_property(document_relative_path GLOBAL PROPERTY
+            _qt_internal_sbom_document_spdx_v2_json_relative_path)
+    elseif(arg_FORMAT STREQUAL "CYDX_V1_6_JSON")
+        get_property(document_relative_path GLOBAL PROPERTY
+            _qt_internal_sbom_document_cydx_v1_6_json_relative_path)
+    else()
+        message(FATAL_ERROR
+            "Unknown FORMAT '${arg_FORMAT}' passed to "
+            "_qt_internal_sbom_get_current_project_document_path. Expected one of "
+            "SPDX_V2_TAG_VALUE, SPDX_V2_JSON, CYDX_V1_6_JSON.")
+    endif()
+
+    # Get rid of -NOTFOUND.
+    if(NOT document_relative_path)
+        set(document_relative_path "")
+    endif()
+
+    set(${out_var} "${document_relative_path}" PARENT_SCOPE)
+endfunction()
+
 # Returns a package infix for a given target sbom type to be used in spdx package id generation.
 function(_qt_internal_sbom_get_package_infix type out_infix)
     if(type STREQUAL "QT_MODULE")
@@ -2654,20 +2719,34 @@ function(_qt_internal_sbom_get_package_infix type out_infix)
         set(package_infix "executable")
     elseif(type STREQUAL "LIBRARY")
         set(package_infix "library")
+    elseif(type STREQUAL "OBJECT_LIBRARY_ENTITY_TYPE")
+        set(package_infix "object-library")
+    elseif(type STREQUAL "FRAMEWORK_ENTITY_TYPE")
+        set(package_infix "framework")
     elseif(type STREQUAL "THIRD_PARTY_LIBRARY")
         set(package_infix "3rdparty-library")
     elseif(type STREQUAL "THIRD_PARTY_LIBRARY_WITH_FILES")
         set(package_infix "3rdparty-library-with-files")
     elseif(type STREQUAL "THIRD_PARTY_SOURCES")
         set(package_infix "3rdparty-sources")
+    elseif(type STREQUAL "SOURCES_ENTITY_TYPE")
+        set(package_infix "sources")
     elseif(type STREQUAL "SBOM_PROJECT")
         set(package_infix "sbom-project")
     elseif(type STREQUAL "TRANSLATIONS")
         set(package_infix "translations")
     elseif(type STREQUAL "RESOURCES")
         set(package_infix "resource")
+    elseif(type STREQUAL "FILES_ENTITY_TYPE")
+        set(package_infix "files")
+    elseif(type STREQUAL "ARCHIVES")
+        set(package_infix "archives")
+    elseif(type STREQUAL "INSTALLERS")
+        set(package_infix "installers")
     elseif(type STREQUAL "BUILD_TOOL")
         set(package_infix "build-tool")
+    elseif(type STREQUAL "SYSTEM_BUILD_TOOL")
+        set(package_infix "system-build-tool")
     elseif(type STREQUAL "CUSTOM")
         set(package_infix "custom")
     elseif(type STREQUAL "CUSTOM_NO_INFIX")
@@ -2709,11 +2788,17 @@ function(_qt_internal_sbom_get_package_purpose type out_purpose)
         set(package_purpose "APPLICATION")
     elseif(type STREQUAL "LIBRARY")
         set(package_purpose "LIBRARY")
+    elseif(type STREQUAL "OBJECT_LIBRARY_ENTITY_TYPE")
+        set(package_purpose "LIBRARY")
+    elseif(type STREQUAL "FRAMEWORK_ENTITY_TYPE")
+        set(package_purpose "FRAMEWORK")
     elseif(type STREQUAL "THIRD_PARTY_LIBRARY")
         set(package_purpose "LIBRARY")
     elseif(type STREQUAL "THIRD_PARTY_LIBRARY_WITH_FILES")
         set(package_purpose "LIBRARY")
     elseif(type STREQUAL "THIRD_PARTY_SOURCES")
+        set(package_purpose "LIBRARY")
+    elseif(type STREQUAL "SOURCES_ENTITY_TYPE")
         set(package_purpose "LIBRARY")
     elseif(type STREQUAL "SBOM_PROJECT")
         set(package_purpose "OTHER")
@@ -2721,7 +2806,15 @@ function(_qt_internal_sbom_get_package_purpose type out_purpose)
         set(package_purpose "OTHER")
     elseif(type STREQUAL "RESOURCES")
         set(package_purpose "OTHER")
+    elseif(type STREQUAL "FILES_ENTITY_TYPE")
+        set(package_purpose "FILE")
+    elseif(type STREQUAL "ARCHIVES")
+        set(package_purpose "ARCHIVE")
+    elseif(type STREQUAL "INSTALLERS")
+        set(package_purpose "INSTALL")
     elseif(type STREQUAL "BUILD_TOOL")
+        set(package_purpose "OTHER")
+    elseif(type STREQUAL "SYSTEM_BUILD_TOOL")
         set(package_purpose "OTHER")
     elseif(type STREQUAL "CUSTOM")
         set(package_purpose "OTHER")

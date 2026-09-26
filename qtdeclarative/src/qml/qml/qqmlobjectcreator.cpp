@@ -1187,8 +1187,8 @@ bool QQmlObjectCreator::setPropertyBinding(const QQmlPropertyData *bindingProper
             if (!QMetaObject::checkConnectArgs(signalMethod, method)) {
                 recordError(binding->valueLocation,
                             tr("Cannot connect mismatched signal/slot %1 vs %2")
-                            .arg(QString::fromUtf8(method.methodSignature()))
-                            .arg(QString::fromUtf8(signalMethod.methodSignature())));
+                                    .arg(QString::fromUtf8(method.methodSignature()),
+                                         QString::fromUtf8(signalMethod.methodSignature())));
                 return false;
             }
 
@@ -1517,6 +1517,32 @@ QObject *QQmlObjectCreator::createInstance(int index, QObject *parent, bool isCo
     return ok ? instance : nullptr;
 }
 
+/*!
+ * \internal
+ * Create a single object at \a objectIndex within an already-existing \a existingContext.
+ * Unlike create(), this does not allocate a new context — the object is registered as an
+ * OrdinaryObject in \a existingContext.
+ */
+QObject *QQmlObjectCreator::createObjectInContext(
+        int objectIndex, QObject *parent,
+        const QQmlRefPointer<QQmlContextData> &existingContext)
+{
+    Q_ASSERT(phase == Startup);
+    phase = CreatingObjects;
+
+    context = existingContext;
+    if (!sharedState->rootContext)
+        sharedState->rootContext = context;
+
+    QV4::Scope scope(v4);
+    if (topLevelCreator)
+        sharedState->allJavaScriptObjects = ObjectInCreationGCAnchorList(scope);
+
+    QObject *rv = createInstance(objectIndex, parent, /*isContextObject=*/false);
+    phase = ObjectsCreated;
+    return rv;
+}
+
 bool QQmlObjectCreator::finalize(QQmlInstantiationInterrupt &interrupt)
 {
     Q_ASSERT(phase == ObjectsCreated || phase == Finalizing);
@@ -1620,7 +1646,7 @@ bool QQmlObjectCreator::finalize(QQmlInstantiationInterrupt &interrupt)
         }
     }
 
-    for (QQmlFinalizerHook *hook: sharedState->finalizeHooks) {
+    for (QQmlFinalizerHook *hook: std::as_const(sharedState->finalizeHooks)) {
         hook->componentFinalized();
         if (watcher.hasRecursed())
             return false;
@@ -1826,16 +1852,22 @@ bool QQmlObjectCreator::populateInstance(int index, QObject *instance, QObject *
     qSwap(_vmeMetaObject, vmeMetaObject);
 
     _ddata->compilationUnit = compilationUnit;
-    if (_compiledObject->hasFlag(QV4::CompiledData::Object::HasDeferredBindings))
+
+    // When we are called to apply a deferred binding, we complete deferral here rather than
+    // initiate it: the deferred bindings are applied right away via ApplyAll below. Registering
+    // additional deferred data would make no sense.
+    const bool applyingDeferred =
+            binding && binding->hasFlag(QV4::CompiledData::Binding::IsDeferredBinding);
+    if (!applyingDeferred
+        && _compiledObject->hasFlag(QV4::CompiledData::Object::HasDeferredBindings)) {
         _ddata->deferData(_compiledObjectIndex, compilationUnit, context, m_inlineComponentName);
+    }
 
     registerPostHocRequiredProperties(binding);
 
     if (_compiledObject->nFunctions > 0)
         setupFunctions();
-    setupBindings((binding && binding->hasFlag(QV4::CompiledData::Binding::IsDeferredBinding))
-                  ? BindingMode::ApplyAll
-                  : BindingMode::ApplyImmediate);
+    setupBindings(applyingDeferred ? BindingMode::ApplyAll : BindingMode::ApplyImmediate);
 
     for (int aliasIndex = 0; aliasIndex != _compiledObject->aliasCount(); ++aliasIndex) {
         // Ensure aliasChanged() signals are connected during object creation.

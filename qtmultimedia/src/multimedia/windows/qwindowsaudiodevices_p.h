@@ -16,7 +16,6 @@
 //
 
 #include <QtMultimedia/qaudiodevice.h>
-#include <QtMultimedia/private/qcominitializer_p.h>
 #include <QtMultimedia/private/qplatformaudiodevices_p.h>
 #include <QtMultimedia/private/qwindowsmediafoundation_p.h>
 
@@ -49,6 +48,7 @@ public:
     using QPlatformAudioDevices::onAudioOutputsChanged;
 
     QLatin1String backendName() const override { return QLatin1String{ "WASAPI" }; }
+    bool hasCallbackApi() const override { return true; }
 
 protected:
     QList<QAudioDevice> findAudioInputs() const override;
@@ -58,8 +58,7 @@ private:
     void scheduleAudioInputsChanged();
     void scheduleAudioOutputsChanged();
 
-    QComInitializer m_comInitializer;
-    QMFRuntimeInit m_wmfRuntime{ QWindowsMediaFoundation::instance() };
+    QMFRuntimeInit m_wmfRuntime;
     QList<QAudioDevice> availableDevices(QAudioDevice::Mode mode) const;
 
     ComPtr<IMMDeviceEnumerator> m_deviceEnumerator;

@@ -1,5 +1,6 @@
 // Copyright (C) 2017 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:critical reason:network-protocol
 
 #include "qwaylandpointer.h"
 #include "qwaylandpointer_p.h"
@@ -25,7 +26,8 @@ uint QWaylandPointerPrivate::sendButton(Qt::MouseButton button, uint32_t state)
     wl_client *client = q->mouseFocus()->surface()->waylandClient();
     uint32_t time = compositor()->currentTimeMsecs();
     uint32_t serial = compositor()->nextSerial();
-    for (auto resource : resourceMap().values(client))
+    const auto resources = resourceMap().values(client);
+    for (auto resource : resources)
         send_button(resource->handle, serial, time, q->toWaylandButton(button), state);
     return serial;
 }
@@ -36,7 +38,8 @@ void QWaylandPointerPrivate::sendMotion()
     uint32_t time = compositor()->currentTimeMsecs();
     wl_fixed_t x = wl_fixed_from_double(localPosition.x());
     wl_fixed_t y = wl_fixed_from_double(localPosition.y());
-    for (auto resource : resourceMap().values(enteredSurface->waylandClient()))
+    const auto resources = resourceMap().values(enteredSurface->waylandClient());
+    for (auto resource : resources)
         wl_pointer_send_motion(resource->handle, time, x, y);
 }
 
@@ -51,7 +54,8 @@ void QWaylandPointerPrivate::sendEnter(QWaylandSurface *surface)
 
     wl_fixed_t x = wl_fixed_from_double(localPosition.x());
     wl_fixed_t y = wl_fixed_from_double(localPosition.y());
-    for (auto resource : resourceMap().values(surface->waylandClient()))
+    const auto resources = resourceMap().values(surface->waylandClient());
+    for (auto resource : resources)
         send_enter(resource->handle, enterSerial, surface->resource(), x, y);
 
     enteredSurface = surface;
@@ -62,7 +66,8 @@ void QWaylandPointerPrivate::sendLeave()
 {
     Q_ASSERT(enteredSurface);
     uint32_t serial = compositor()->nextSerial();
-    for (auto resource : resourceMap().values(enteredSurface->waylandClient()))
+    const auto resources = resourceMap().values(enteredSurface->waylandClient());
+    for (auto resource : resources)
         send_leave(resource->handle, serial, enteredSurface->resource());
     localPosition = QPointF();
     enteredSurfaceDestroyListener.reset();
@@ -243,7 +248,8 @@ void QWaylandPointer::sendMouseWheelEvent(Qt::Orientation orientation, int delta
     uint32_t axis = orientation == Qt::Horizontal ? WL_POINTER_AXIS_HORIZONTAL_SCROLL
                                                   : WL_POINTER_AXIS_VERTICAL_SCROLL;
 
-    for (auto resource : d->resourceMap().values(d->enteredSurface->waylandClient()))
+    const auto resources = d->resourceMap().values(d->enteredSurface->waylandClient());
+    for (auto resource : resources)
         d->send_axis(resource->handle, time, axis, wl_fixed_from_int(-delta / 12));
 }
 

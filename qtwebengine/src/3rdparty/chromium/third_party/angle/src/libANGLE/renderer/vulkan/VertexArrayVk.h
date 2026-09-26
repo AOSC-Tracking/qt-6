@@ -46,6 +46,8 @@ ANGLE_INLINE bool operator<(const AttributeRange &a, const AttributeRange &b)
 class VertexArrayVk : public VertexArrayImpl
 {
   public:
+    using VertexArrayGeneration = UniqueSerial;
+
     VertexArrayVk(ContextVk *contextVk,
                   const gl::VertexArrayState &state,
                   const gl::VertexArrayBuffers &vertexArrayBuffers);
@@ -69,9 +71,12 @@ class VertexArrayVk : public VertexArrayImpl
     angle::Result updateStreamedAttribs(const gl::Context *context,
                                         GLint firstVertex,
                                         GLsizei vertexOrIndexCount,
+                                        GLsizei baseInstance,
                                         GLsizei instanceCount,
                                         gl::DrawElementsType indexTypeOrInvalid,
                                         const void *indices);
+
+    void resetInactiveStreamedAttribs(const gl::Context *context);
 
     angle::Result handleLineLoop(ContextVk *contextVk,
                                  GLint firstVertex,
@@ -160,6 +165,15 @@ class VertexArrayVk : public VertexArrayImpl
         return mStreamingVertexAttribsMask;
     }
 
+    // skip dependency add just getter
+    gl::AttributesMask getCurrentEnabledAttribsMask() const { return mCurrentEnabledAttributesMask; }
+
+    VertexArrayGeneration getDefaultAttribsGeneration() const { return mDefaultAttribsGeneration; }
+    void setDefaultAttribsGeneration(VertexArrayGeneration generation)
+    {
+        mDefaultAttribsGeneration = generation;
+    }
+
   private:
     gl::AttributesMask mergeClientAttribsRange(
         vk::Renderer *renderer,
@@ -185,11 +199,20 @@ class VertexArrayVk : public VertexArrayImpl
                                          const angle::Format &dstFormat,
                                          const VertexCopyFunction vertexLoadFunction);
 
-    angle::Result syncDirtyAttrib(ContextVk *contextVk,
-                                  const gl::VertexAttribute &attrib,
-                                  const gl::VertexBinding &binding,
-                                  size_t attribIndex,
-                                  bool bufferOnly);
+    angle::Result syncDirtyEnabledAttrib(ContextVk *contextVk,
+                                         const gl::VertexAttribute &attrib,
+                                         const gl::VertexBinding &binding,
+                                         size_t attribIndex,
+                                         bool bufferOnly);
+
+    angle::Result syncDirtyDisabledAttrib(ContextVk *contextVk,
+                                          const gl::VertexAttribute &attrib,
+                                          size_t attribIndex);
+
+    angle::Result syncNeedsConversionAttrib(ContextVk *contextVk,
+                                            const gl::VertexAttribute &attrib,
+                                            const gl::VertexBinding &binding,
+                                            size_t attribIndex);
 
     gl::AttribArray<VkBuffer> mCurrentArrayBufferHandles;
     gl::AttribArray<VkDeviceSize> mCurrentArrayBufferOffsets;
@@ -202,7 +225,6 @@ class VertexArrayVk : public VertexArrayImpl
     gl::AttribArray<angle::FormatID> mCurrentArrayBufferFormats;
     gl::AttribArray<GLuint> mCurrentArrayBufferStrides;
     gl::AttribArray<GLuint> mCurrentArrayBufferDivisors;
-    gl::AttributesMask mCurrentArrayBufferCompressed;
     vk::BufferHelper *mCurrentElementArrayBuffer;
 
     // Cached element array buffers for improving performance.
@@ -217,8 +239,16 @@ class VertexArrayVk : public VertexArrayImpl
     Optional<size_t> mLineLoopBufferLastIndex;
     bool mDirtyLineLoopTranslation;
 
+    gl::BufferBindingMask mDivisorExceedMaxSupportedValueBindingMask;
+
+    gl::AttributesMask mCurrentEnabledAttributesMask;
+    gl::AttributesMask mCurrentArrayBufferCompressed;
     // Track client and/or emulated attribs that we have to stream their buffer contents
     gl::AttributesMask mStreamingVertexAttribsMask;
+    gl::AttributesMask mNeedsConversionAttribMask;
+
+    // Tracks if default vertex attribute buffers have been invalidated.
+    VertexArrayGeneration mDefaultAttribsGeneration;
 
     // The attrib/binding dirty bits that requires graphics pipeline update
     gl::VertexArray::DirtyBindingBits mBindingDirtyBitsRequiresPipelineUpdate;

@@ -18,6 +18,7 @@
 #include <QtFFmpegMediaPluginImpl/private/qffmpegcodec_p.h>
 #include <QtFFmpegMediaPluginImpl/private/qffmpegavaudioformat_p.h>
 #include <QtMultimedia/qvideoframeformat.h>
+#include <QtMultimedia/private/qmultimedia_ranges_p.h>
 
 #include <qstring.h>
 #include <optional>
@@ -36,6 +37,8 @@ QT_BEGIN_NAMESPACE
 
 namespace QFFmpeg
 {
+
+namespace ranges = QtMultimediaPrivate::ranges;
 
 inline std::optional<qint64> mul(qint64 a, AVRational b)
 {
@@ -130,48 +133,40 @@ struct AVDictionaryHolder
     }
 };
 
-template<typename FunctionType, FunctionType F>
+template <auto F>
 struct AVDeleter
 {
-    template <typename T, std::invoke_result_t<FunctionType, T **> * = nullptr>
+    template <typename T>
     void operator()(T *object) const
     {
-        if (object)
-            F(&object);
-    }
+        using FunctionType = decltype(F);
 
-    template <typename T, std::invoke_result_t<FunctionType, T *> * = nullptr>
-    void operator()(T *object) const
-    {
-        F(object);
+        static_assert(std::is_invocable_v<FunctionType, T *>
+                              || std::is_invocable_v<FunctionType, T **>,
+                      "F must be invocable with either T* or T**");
+
+        if constexpr (std::is_invocable_v<FunctionType, T **>) {
+            if (object)
+                F(&object);
+        } else
+            F(object);
     }
 };
 
-using AVFrameUPtr = std::unique_ptr<AVFrame, AVDeleter<decltype(&av_frame_free), &av_frame_free>>;
+using AVFrameUPtr = std::unique_ptr<AVFrame, AVDeleter<av_frame_free>>;
 
 inline AVFrameUPtr makeAVFrame()
 {
     return AVFrameUPtr(av_frame_alloc());
 }
 
-using AVPacketUPtr =
-        std::unique_ptr<AVPacket, AVDeleter<decltype(&av_packet_free), &av_packet_free>>;
-
-using AVCodecContextUPtr =
-        std::unique_ptr<AVCodecContext,
-                        AVDeleter<decltype(&avcodec_free_context), &avcodec_free_context>>;
-
-using AVBufferUPtr =
-        std::unique_ptr<AVBufferRef, AVDeleter<decltype(&av_buffer_unref), &av_buffer_unref>>;
-
-using AVHWFramesConstraintsUPtr = std::unique_ptr<
-        AVHWFramesConstraints,
-        AVDeleter<decltype(&av_hwframe_constraints_free), &av_hwframe_constraints_free>>;
-
-using SwrContextUPtr = std::unique_ptr<SwrContext, AVDeleter<decltype(&swr_free), &swr_free>>;
-
-using SwsContextUPtr =
-        std::unique_ptr<SwsContext, AVDeleter<decltype(&sws_freeContext), &sws_freeContext>>;
+using AVPacketUPtr = std::unique_ptr<AVPacket, AVDeleter<av_packet_free>>;
+using AVCodecContextUPtr = std::unique_ptr<AVCodecContext, AVDeleter<avcodec_free_context>>;
+using AVBufferUPtr = std::unique_ptr<AVBufferRef, AVDeleter<av_buffer_unref>>;
+using AVHWFramesConstraintsUPtr =
+        std::unique_ptr<AVHWFramesConstraints, AVDeleter<av_hwframe_constraints_free>>;
+using SwrContextUPtr = std::unique_ptr<SwrContext, AVDeleter<swr_free>>;
+using SwsContextUPtr = std::unique_ptr<SwsContext, AVDeleter<sws_freeContext>>;
 
 bool isAVFormatSupported(const Codec &codec, PixelOrSampleFormat format);
 
@@ -179,7 +174,7 @@ bool isAVFormatSupported(const Codec &codec, PixelOrSampleFormat format);
 template <typename Value>
 bool hasValue(QSpan<const Value> range, Value value)
 {
-    return std::find(range.begin(), range.end(), value) != range.end();
+    return ranges::contains(range, value);
 }
 
 // Search for the first element in the range that satisfies the predicate
@@ -189,7 +184,7 @@ bool hasValue(QSpan<const Value> range, Value value)
 template <typename Value, typename Predicate>
 std::optional<Value> findIf(QSpan<const Value> range, const Predicate &predicate)
 {
-    const auto value = std::find_if(range.begin(), range.end(), predicate);
+    const auto value = ranges::find_if(range, predicate);
     if (value == range.end())
         return {};
     return *value;

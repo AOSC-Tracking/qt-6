@@ -20,7 +20,13 @@
 #include <qscopedvaluerollback.h>
 #include <QtGui/qimageiohandler.h>
 
+#include <QtCore/qlatin1stringview.h>
+#include <QtCore/qstringview.h>
+#include <QtCore/private/qoffsetstringarray_p.h>
+
 QT_BEGIN_NAMESPACE
+
+using namespace Qt::StringLiterals;
 
 QSvgG::QSvgG(QSvgNode *parent)
     : QSvgStructureNode(parent)
@@ -28,9 +34,8 @@ QSvgG::QSvgG(QSvgNode *parent)
 
 }
 
-QSvgStructureNode::~QSvgStructureNode()
-{
-}
+QSvgG::~QSvgG()
+    = default;
 
 void QSvgG::drawCommand(QPainter *p, QSvgExtraStates &states)
 {
@@ -61,11 +66,8 @@ QSvgStructureNode::QSvgStructureNode(QSvgNode *parent)
 
 }
 
-QSvgNode * QSvgStructureNode::scopeNode(const QString &id) const
-{
-    QSvgDocument *doc = document();
-    return doc ? doc->namedNode(id) : 0;
-}
+QSvgStructureNode::~QSvgStructureNode()
+    = default;
 
 void QSvgStructureNode::addChild(std::unique_ptr<QSvgNode> child, const QString &id)
 {
@@ -82,6 +84,9 @@ QSvgDefs::QSvgDefs(QSvgNode *parent)
     : QSvgStructureNode(parent)
 {
 }
+
+QSvgDefs::~QSvgDefs()
+    = default;
 
 bool QSvgDefs::shouldDrawNode(QPainter *, QSvgExtraStates &) const
 {
@@ -104,6 +109,9 @@ QSvgSymbolLike::QSvgSymbolLike(QSvgNode *parent, QRectF bounds, QRectF viewBox, 
 {
 
 }
+
+QSvgSymbolLike::~QSvgSymbolLike()
+    = default;
 
 QRectF QSvgSymbolLike::decoratedInternalBounds(QPainter *p, QSvgExtraStates &states) const
 {
@@ -197,6 +205,9 @@ QSvgSymbol::QSvgSymbol(QSvgNode *parent, QRectF bounds, QRectF viewBox, QPointF 
 {
 }
 
+QSvgSymbol::~QSvgSymbol()
+    = default;
+
 void QSvgSymbol::drawCommand(QPainter *p, QSvgExtraStates &states)
 {
     if (!states.inUse) //Symbol is only drawn when within a use node.
@@ -238,6 +249,9 @@ QSvgMarker::QSvgMarker(QSvgNode *parent, QRectF bounds, QRectF viewBox, QPointF 
     appendStyleProperty(strokeProp, QStringLiteral(""));
 }
 
+QSvgMarker::~QSvgMarker()
+    = default;
+
 QSvgFilterContainer::QSvgFilterContainer(QSvgNode *parent, const QSvgRectF &bounds,
                                          QtSvg::UnitTypes filterUnits, QtSvg::UnitTypes primitiveUnits)
     : QSvgStructureNode(parent)
@@ -248,6 +262,9 @@ QSvgFilterContainer::QSvgFilterContainer(QSvgNode *parent, const QSvgRectF &boun
 {
 
 }
+
+QSvgFilterContainer::~QSvgFilterContainer()
+    = default;
 
 bool QSvgFilterContainer::shouldDrawNode(QPainter *, QSvgExtraStates &) const
 {
@@ -499,7 +516,7 @@ QImage QSvgFilterContainer::applyFilter(const QImage &buffer, QPainter *p, const
         proxyAlpha.setOffset(proxy.offset());
         if (proxyAlpha.isNull())
             return buffer;
-        buffers[QStringLiteral("SourceAlpha")] = proxyAlpha;
+        buffers[QStringLiteral("SourceAlpha")] = std::move(proxyAlpha);
     }
 
     QImage result;
@@ -537,32 +554,44 @@ QSvgNode::Type QSvgFilterContainer::type() const
 }
 
 
-inline static bool isSupportedSvgFeature(const QString &str)
+inline static bool isSupportedSvgFeature(QStringView str)
 {
-    static const QStringList wordList = {
-        QStringLiteral("http://www.w3.org/Graphics/SVG/feature/1.2/#Text"),
-        QStringLiteral("http://www.w3.org/Graphics/SVG/feature/1.2/#Shape"),
-        QStringLiteral("http://www.w3.org/Graphics/SVG/feature/1.2/#SVG"),
-        QStringLiteral("http://www.w3.org/Graphics/SVG/feature/1.2/#Structure"),
-        QStringLiteral("http://www.w3.org/Graphics/SVG/feature/1.2/#SolidColor"),
-        QStringLiteral("http://www.w3.org/Graphics/SVG/feature/1.2/#Hyperlinking"),
-        QStringLiteral("http://www.w3.org/Graphics/SVG/feature/1.2/#CoreAttribute"),
-        QStringLiteral("http://www.w3.org/Graphics/SVG/feature/1.2/#XlinkAttribute"),
-        QStringLiteral("http://www.w3.org/Graphics/SVG/feature/1.2/#SVG-static"),
-        QStringLiteral("http://www.w3.org/Graphics/SVG/feature/1.2/#OpacityAttribute"),
-        QStringLiteral("http://www.w3.org/Graphics/SVG/feature/1.2/#Gradient"),
-        QStringLiteral("http://www.w3.org/Graphics/SVG/feature/1.2/#Font"),
-        QStringLiteral("http://www.w3.org/Graphics/SVG/feature/1.2/#Image"),
-        QStringLiteral("http://www.w3.org/Graphics/SVG/feature/1.2/#ConditionalProcessing"),
-        QStringLiteral("http://www.w3.org/Graphics/SVG/feature/1.2/#Extensibility"),
-        QStringLiteral("http://www.w3.org/Graphics/SVG/feature/1.2/#GraphicsAttribute"),
-        QStringLiteral("http://www.w3.org/Graphics/SVG/feature/1.2/#Prefetch"),
-        QStringLiteral("http://www.w3.org/Graphics/SVG/feature/1.2/#PaintAttribute"),
-        QStringLiteral("http://www.w3.org/Graphics/SVG/feature/1.2/#ConditionalProcessingAttribute"),
-        QStringLiteral("http://www.w3.org/Graphics/SVG/feature/1.2/#ExternalResourcesRequiredAttribute")
-    };
+    constexpr auto prefix_1_2 = "http://www.w3.org/Graphics/SVG/feature/1.2/#"_L1;
+    if (str.startsWith(prefix_1_2)) {
+        const auto suffix = str.sliced(prefix_1_2.size());
 
-    return wordList.contains(str);
+        constexpr auto features = qOffsetStringArray(
+            "Text",
+            "Shape",
+            "SVG",
+            "Structure",
+            "SolidColor",
+            "Hyperlinking",
+            "CoreAttribute",
+            "XlinkAttribute",
+            "SVG-static",
+            "OpacityAttribute",
+            "Gradient",
+            "Font",
+            "Image",
+            "ConditionalProcessing",
+            "Extensibility",
+            "GraphicsAttribute",
+            "Prefetch",
+            "PaintAttribute",
+            "ConditionalProcessingAttribute",
+            "ExternalResourcesRequiredAttribute"
+        );
+
+        // This is
+        //    return features.contains(suffix);
+        // but QOffsetStringArray does't support heterogeneous contains()
+        for (int i = 0; i < features.count(); ++i)
+            if (suffix == QLatin1StringView{features.at(i)})
+                return true;
+    } // 1.2
+
+    return false;
 }
 
 static inline bool isSupportedSvgExtension(const QString &)
@@ -577,10 +606,11 @@ QSvgSwitch::QSvgSwitch(QSvgNode *parent)
     init();
 }
 
+QSvgSwitch::~QSvgSwitch()
+    = default;
+
 QSvgNode *QSvgSwitch::childToRender() const
 {
-    auto itr = m_renderers.begin();
-
     for (const auto &node : renderers()) {
         if (node->isVisible() && (node->displayMode() != QSvgNode::NoneMode)) {
             const QStringList &features  = node->requiredFeatures();
@@ -630,8 +660,6 @@ QSvgNode *QSvgSwitch::childToRender() const
             if (okToRender)
                 return node.get();
         }
-
-        ++itr;
     }
 
     return nullptr;
@@ -690,6 +718,46 @@ QSvgNode* QSvgStructureNode::previousSiblingNode(QSvgNode *n) const
     return prev;
 }
 
+void QSvgStructureNode::releaseDescendants()
+{
+    // This function will release the descendants of a QSvgStructureNode from bottom to top.
+    // Destructors are never called recursively in this case and stack overflow will not
+    // happen in deeply nested trees.
+    // This function does not allocate any memory at the cost of sacrificing some performance to
+    // make it safe to be called from a destructor.
+    QSvgNode *currentParent = this;
+    while (currentParent) {
+        switch (currentParent->type()) {
+        case QSvgNode::Doc:
+        case QSvgNode::Defs:
+        case QSvgNode::Group:
+        case QSvgNode::Mask:
+        case QSvgNode::Pattern:
+        case QSvgNode::Symbol:
+        case QSvgNode::Switch:
+        case QSvgNode::Filter:
+        {
+            QSvgStructureNode *currentParentSN = static_cast<QSvgStructureNode *>(currentParent);
+            if (currentParentSN->m_renderers.empty()) {
+                currentParent = currentParent->parent();
+                if (currentParent)
+                    static_cast<QSvgStructureNode *>(currentParent)->m_renderers.pop_front();
+            } else {
+                Q_ASSERT(currentParentSN->m_renderers.front().get()->parent() == currentParent);
+                currentParent = currentParentSN->m_renderers.front().get();
+            }
+        }
+            break;
+        default:
+            currentParent = currentParent->parent();
+            if (currentParent)
+                static_cast<QSvgStructureNode *>(currentParent)->m_renderers.pop_front();
+            break;
+        }
+    }
+    Q_ASSERT(this->m_renderers.empty());
+}
+
 QSvgMask::QSvgMask(QSvgNode *parent, QSvgRectF bounds,
                    QtSvg::UnitTypes contentUnits)
     : QSvgStructureNode(parent)
@@ -697,6 +765,9 @@ QSvgMask::QSvgMask(QSvgNode *parent, QSvgRectF bounds,
     , m_contentUnits(contentUnits)
 {
 }
+
+QSvgMask::~QSvgMask()
+    = default;
 
 bool QSvgMask::shouldDrawNode(QPainter *, QSvgExtraStates &) const
 {
@@ -811,6 +882,9 @@ QSvgPattern::QSvgPattern(QSvgNode *parent, QSvgRectF bounds, QRectF viewBox,
 {
 
 }
+
+QSvgPattern::~QSvgPattern()
+    = default;
 
 bool QSvgPattern::shouldDrawNode(QPainter *, QSvgExtraStates &) const
 {

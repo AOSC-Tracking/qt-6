@@ -1,11 +1,12 @@
 // Copyright (C) 2017 The Qt Company Ltd.
 // Copyright (C) 2017 Pier Luigi Fiorini <pierluigi.fiorini@gmail.com>
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:critical reason:network-protocol
 
 #ifndef QWAYLANDQTWINDOWMANAGER_P_H
 #define QWAYLANDQTWINDOWMANAGER_P_H
 
-#include <QtCore/QMap>
+#include <QtCore/QHash>
 
 #include <QtWaylandCompositor/QWaylandQtWindowManager>
 #include <QtWaylandCompositor/private/qwaylandcompositorextension_p.h>
@@ -39,7 +40,7 @@ protected:
 
 private:
     bool showIsFullScreen = false;
-    QMap<Resource*, QString> urls;
+    QHash<Resource*, QString> urls;
 };
 
 QT_END_NAMESPACE

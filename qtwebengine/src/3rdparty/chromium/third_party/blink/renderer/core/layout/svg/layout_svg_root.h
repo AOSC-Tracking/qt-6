@@ -148,6 +148,8 @@ class CORE_EXPORT LayoutSVGRoot final : public LayoutReplaced {
     return false;
   }
 
+  PhysicalRect VisualOverflowRectIncludingFilters() const override;
+
   void PaintReplaced(const PaintInfo&,
                      const PhysicalOffset& paint_offset) const override;
 
@@ -179,7 +181,7 @@ class CORE_EXPORT LayoutSVGRoot final : public LayoutReplaced {
   bool HitTestChildren(HitTestResult&,
                        const HitTestLocation& location_in_container,
                        const PhysicalOffset& accumulated_offset,
-                       HitTestPhase) override;
+                       HitTestPhase) const override;
   bool IsInSelfHitTestingPhase(HitTestPhase) const final;
 
   void MapLocalToAncestor(const LayoutBoxModelObject* ancestor,

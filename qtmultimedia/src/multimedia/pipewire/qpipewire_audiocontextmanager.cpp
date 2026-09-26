@@ -3,11 +3,10 @@
 
 #include "qpipewire_audiocontextmanager_p.h"
 
-#include "qpipewire_audiostream_p.h"
-#include "qpipewire_instance_p.h"
-#include "qpipewire_propertydict_p.h"
-#include "qpipewire_support_p.h"
-
+#include <QtMultimedia/private/qpipewire_audiostream_p.h>
+#include <QtMultimedia/private/qpipewire_instance_p.h>
+#include <QtMultimedia/private/qpipewire_propertydict_p.h>
+#include <QtMultimedia/private/qpipewire_support_p.h>
 #include <QtCore/qapplicationstatic.h>
 #include <QtCore/qcoreapplication.h>
 #include <QtCore/qdebug.h>
@@ -183,8 +182,9 @@ void QAudioContextManager::stopEventLoop()
 
 void QAudioContextManager::prepareContext()
 {
+    auto applicaionName = qApp->applicationName().toUtf8();
     PwPropertiesHandle props = makeProperties({
-            { PW_KEY_APP_NAME, qApp->applicationName().toUtf8().data() },
+            { PW_KEY_APP_NAME, applicaionName.data() },
     });
 
     Q_ASSERT(m_eventLoop);
@@ -314,7 +314,7 @@ void QAudioContextManager::stopListenDefaultMetadataObject()
     if (!m_defaultMetadataObject)
         return;
 
-    withEventLoopLock([&] {
+    runWithEventLoopLock([&] {
         spa_hook_remove(&m_defaultMetadataObjectListener);
         m_defaultMetadataObject.reset();
     });
@@ -421,8 +421,10 @@ void QAudioContextManager::stopActiveStreams()
 {
     auto streams = std::exchange(m_activeStreams, {});
 
-    for (const auto &stream : streams)
+    for (const auto &stream : streams) {
+        stream->disconnectStream();
         stream->resetStream();
+    }
 }
 
 void QAudioContextManager::startDeviceMonitor()
@@ -454,7 +456,9 @@ void QAudioContextManager::stopDeviceMonitor()
     if (!m_registry)
         return;
 
-    withEventLoopLock([&] {
+    runWithEventLoopLock([&] {
+        m_deviceMonitor->clearAllObservers();
+
         spa_hook_remove(&m_registryListener);
         m_registry.reset();
     });

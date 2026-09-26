@@ -46,8 +46,8 @@ function(qt_internal_add_benchmark target)
         ${exec_args}
     )
 
-    # Benchmarks on iOS must be app bundles.
-    if(IOS)
+    # Benchmarks on non-macOS Apple OSes must be app bundles.
+    if(APPLE AND NOT MACOS)
         set_target_properties(${target} PROPERTIES MACOSX_BUNDLE TRUE)
     endif()
 
@@ -584,8 +584,8 @@ function(qt_internal_add_test name)
             endif()
         endif()
 
-        # Tests on iOS must be app bundles.
-        if(IOS)
+        # Tests on non-macOS Apple OSes must be app bundles.
+        if(APPLE AND NOT MACOS)
             set_target_properties(${name} PROPERTIES MACOSX_BUNDLE TRUE)
         endif()
 
@@ -658,7 +658,7 @@ function(qt_internal_add_test name)
                 set_property(TARGET ${name} APPEND PROPERTY QT_ANDROID_EXTRA_LIBS
                     "${OPENSSL_ROOT_DIR}/${CMAKE_ANDROID_ARCH_ABI}/libcrypto_3.so"
                     "${OPENSSL_ROOT_DIR}/${CMAKE_ANDROID_ARCH_ABI}/libssl_3.so")
-            elseif(QT_USE_VCPKG AND DEFINED ENV{VCPKG_ROOT})
+            elseif(QT_USE_VCPKG AND DEFINED ENV{VCPKG_ROOT} AND EXISTS "$ENV{VCPKG_ROOT}")
                 message(STATUS "Looking for OpenSSL in $ENV{VCPKG_ROOT}")
                 if (CMAKE_ANDROID_ARCH_ABI MATCHES "arm64-v8a")
                     set(coin_vcpkg_target_triplet "arm64-android-dynamic")

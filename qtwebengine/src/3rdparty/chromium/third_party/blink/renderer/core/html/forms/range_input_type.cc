@@ -60,6 +60,7 @@
 #include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
 #include "third_party/blink/renderer/platform/instrumentation/use_counter.h"
+#include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 #include "third_party/blink/renderer/platform/text/platform_locale.h"
 #include "third_party/blink/renderer/platform/text/text_direction.h"
 #include "third_party/blink/renderer/platform/wtf/math_extras.h"
@@ -277,7 +278,10 @@ void RangeInputType::CreateShadowSubtree() {
   track->SetShadowPseudoId(shadow_element_names::kPseudoSliderTrack);
   track->setAttribute(html_names::kIdAttr,
                       shadow_element_names::kIdSliderTrack);
-  track->AppendChild(MakeGarbageCollected<SliderThumbElement>(document));
+  auto* thumb = MakeGarbageCollected<SliderThumbElement>(document);
+  thumb->setAttribute(html_names::kIdAttr,
+                      shadow_element_names::kIdSliderThumb);
+  track->AppendChild(thumb);
   auto* container = MakeGarbageCollected<SliderContainerElement>(document);
   container->AppendChild(track);
   GetElement().UserAgentShadowRoot()->AppendChild(container);
@@ -379,12 +383,21 @@ String RangeInputType::RangeInvalidText(const Decimal& minimum,
                                  LocalizeValue(Serialize(maximum)));
 }
 
-void RangeInputType::DisabledAttributeChanged() {
+void RangeInputType::DisabledAttributeChanged(DisabledChangedReason reason) {
   if (!HasCreatedShadowSubtree()) {
     return;
   }
-  if (GetElement().IsDisabledFormControl())
-    GetSliderThumbElement()->StopDragging();
+  if (GetElement().IsDisabledFormControl()) {
+    bool avoid_dispatch =
+        RuntimeEnabledFeatures::
+            DisableFormControlChangeEventDuringMutationEnabled() &&
+        (GetElement().GetDocument().StatePreservingAtomicMoveInProgress() ||
+         reason == DisabledChangedReason::kFieldsetChildrenChanged);
+    SliderThumbElement::EventDispatch dispatch =
+        avoid_dispatch ? SliderThumbElement::kEventDispatchDisallowed
+                       : SliderThumbElement::kEventDispatchAllowed;
+    GetSliderThumbElement()->StopDragging(dispatch);
+  }
 }
 
 bool RangeInputType::ShouldRespectListAttribute() {

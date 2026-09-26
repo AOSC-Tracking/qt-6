@@ -54,7 +54,7 @@ static bool isforceInputHandlingSet()
 struct ViewportTransformHelper : public QQuickDeliveryAgent::Transform
 {
     static void removeAll() {
-        for (auto o : owners) {
+        for (const auto &o : std::as_const(owners)) {
             if (!o.isNull())
                 o->setSceneTransform(nullptr);
         }
@@ -360,7 +360,7 @@ QQmlListProperty<QObject> QQuick3DViewport::data()
 
     \note It is strongly recommended to set this property explicitly rather than relying on
     automatic camera selection. When multiple cameras are present in the scene, automatic
-    selection does not guarantee which camera will be chosen. When \l{Node::layer}{layers}
+    selection does not guarantee which camera will be chosen. When \l{Node::}{layers}
     are used, explicitly specifying the camera also avoids unnecessary re-evaluation of
     scene nodes.
 
@@ -441,7 +441,7 @@ QQuick3DNode *QQuick3DViewport::scene() const
     \note When sharing scenes between multiple View3D items the imported scene should
     be imported in whole, that is, importing a subtree of a scene is not supported.
     If multiple View3Ds need to show different parts of the same shared scene,
-    consider using \l {Node::layer}{layers} instead.
+    consider using \l {Node::}{layers} instead.
 
     \note This property can only be set once, and subsequent changes will have
     no effect.
@@ -718,6 +718,7 @@ void QQuick3DViewport::itemChange(QQuickItem::ItemChange change, const QQuickIte
             m_renderStats->setWindow(value.window);
         }
     } else if (change == ItemVisibleHasChanged && isVisible()) {
+        m_visibilityChanged = true;
         update();
     }
 }
@@ -1380,7 +1381,7 @@ QList<QQuick3DObject *> QQuick3DViewport::pickInRect(const QPointF &start, const
     QList<QQuick3DObject *> ret;
     if (QQuick3DSceneRenderer *renderer = getRenderer()) {
         auto nodes = renderer->syncPickInFrustum(frustum);
-        for (auto node : nodes) {
+        for (const auto *node : std::as_const(nodes)) {
             if (QQuick3DObject *m = findFrontendNode(node))
                 ret.append(m);
         }
@@ -1925,9 +1926,9 @@ bool QQuick3DViewport::forwardEventToSubscenes(QPointerEvent *event,
     originalScenePositions.resize(event->pointCount());
     for (int pointIndex = 0; pointIndex < event->pointCount(); ++pointIndex)
         originalScenePositions[pointIndex] = event->point(pointIndex).scenePosition();
-    for (auto subscene : visitedSubscenes) {
+    for (const auto &subscene : visitedSubscenes) {
         QQuickItem *subsceneRoot = subscene.first;
-        auto &subsceneInfo = subscene.second;
+        const auto &subsceneInfo = subscene.second;
         Q_ASSERT(subsceneInfo.eventPointScenePositions.size() == event->pointCount());
         auto da = QQuickItemPrivate::get(subsceneRoot)->deliveryAgent();
         for (int pointIndex = 0; pointIndex < event->pointCount(); ++pointIndex) {
@@ -2220,7 +2221,7 @@ QQuick3DSceneManager *QQuick3DViewport::findChildSceneManager(QQuick3DObject *in
         return manager;
 
     auto children = QQuick3DObjectPrivate::get(inObject)->childItems;
-    for (auto child : children) {
+    for (auto *child : std::as_const(children)) {
         if (auto m = QQuick3DObjectPrivate::get(child)->sceneManager) {
             manager = m;
             break;
@@ -2355,8 +2356,9 @@ void QQuick3DViewport::updateSceneManagerForImportScene()
 
     \value View3D.DisableInternalPasses Disables Qt Quick 3D's internal rendering passes.
     When this mode is set, the application is responsible for producing and presenting the final frame.
-    Typically, this involves implementing custom \l {User passes} and presenting the result to the
-    viewport using \l {SimpleQuadRenderer} or a custom \l {QQuick3DRenderExtension}{render extension}.
+    Typically, this involves implementing custom \l {User-Defined Render Passes in Qt Quick 3D}
+    {user passes} and presenting the result to the viewport using \l {SimpleQuadRenderer} or a
+    custom \l {QQuick3DRenderExtension}{render extension}.
 */
 
 QQuick3DViewport::RenderOverrides QQuick3DViewport::renderOverrides() const

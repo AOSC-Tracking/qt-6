@@ -530,9 +530,10 @@ MaybeError EncodeIndirectDrawValidationCommands(DeviceBase* device,
 
             Pass* currentPass = passes.empty() ? nullptr : &passes.back();
             if (currentPass &&
-                reinterpret_cast<uintptr_t>(currentPass->inputIndirectBuffer.get()) ==
-                    config.inputIndirectBufferPtr &&
-                currentPass->drawType == config.drawType) {
+                IndirectDrawMetadata::IndexedIndirectConfig{
+                    reinterpret_cast<uintptr_t>(currentPass->inputIndirectBuffer.get()),
+                    bool(currentPass->flags & kDuplicateBaseVertexInstance),
+                    currentPass->drawType} == config) {
                 uint64_t nextBatchDataOffset =
                     Align(currentPass->batchDataSize, minStorageBufferOffsetAlignment);
                 uint64_t newPassBatchDataSize = nextBatchDataOffset + newBatch.dataSize;
@@ -673,8 +674,9 @@ MaybeError EncodeIndirectDrawValidationCommands(DeviceBase* device,
                 indirectDraw->indexOffsetAsNumElements = draw.indexBufferOffsetInElements;
                 indirectDraw++;
 
-                draw.cmd->indirectBuffer = outputParamsBuffer.GetBuffer();
-                draw.cmd->indirectOffset = outputParamsOffset;
+                // Save the args that point to the validated values in the indirectDrawMetadata.
+                indirectDrawMetadata->SetValidatedIndirectDrawArgs(
+                    draw, outputParamsBuffer.GetBuffer(), outputParamsOffset);
                 if (pass.flags & kIndexedDraw) {
                     outputParamsOffset += kDrawIndexedIndirectSize;
                 } else {
@@ -877,6 +879,10 @@ MaybeError EncodeIndirectDrawValidationCommands(DeviceBase* device,
             // Update the draw command to use the validated indirect buffer.
             // The drawCountBuffer doesn't need to be updated because if it exceeds the
             // maxDrawCount it will be clamped to maxDrawCount.
+            // TODO(crbug.com/495489174): This will suffer from the same problem with render bundles
+            // as we saw with regular draw{Indexed}Indirect calls. The same fix, storing the
+            // validated buffer and offset in the ValidatedIndirectDraw array and looking it up when
+            // the native call is made in the CommandBuffer backends.
             cmd->indirectBuffer = outputParamsBuffer.GetBuffer();
             cmd->indirectOffset = outputOffset;
 

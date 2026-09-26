@@ -295,7 +295,6 @@ QDataStream &operator>>(QDataStream &s, QCanvasGradient &g)
 
 #endif // QT_NO_DATASTREAM
 
-#define G_D() auto *d = QCanvasGradientPrivate::get(this)
 
 /*!
     Returns the type of gradient.
@@ -303,7 +302,7 @@ QDataStream &operator>>(QDataStream &s, QCanvasGradient &g)
 
 QCanvasBrush::BrushType QCanvasGradient::type() const
 {
-    G_D();
+    auto *d = QCanvasGradientPrivate::get(this);
     return d->type;
 }
 
@@ -316,7 +315,7 @@ QCanvasBrush::BrushType QCanvasGradient::type() const
 
 QColor QCanvasGradient::startColor() const
 {
-    G_D();
+    auto *d = QCanvasGradientPrivate::get(this);
     if (d->gradientStops.isEmpty())
         return QColor(255, 255, 255);
     return d->gradientStops.constFirst().color;
@@ -341,7 +340,7 @@ void QCanvasGradient::setStartColor(const QColor &color)
 
 QColor QCanvasGradient::endColor() const
 {
-    G_D();
+    auto *d = QCanvasGradientPrivate::get(this);
 
     if (d->gradientStops.isEmpty())
         return QColor(0, 0, 0, 0);
@@ -367,9 +366,7 @@ void QCanvasGradient::setEndColor(const QColor &color)
 
 void QCanvasGradient::setColorAt(float position, const QColor &color)
 {
-    G_D();
-
-    if (Q_UNLIKELY(d->gradientStops.size() >= QCPAINTER_GRADIENT_MAX_STOPS)) {
+    if (Q_UNLIKELY(QCanvasGradientPrivate::get(this)->gradientStops.size() >= QCPAINTER_GRADIENT_MAX_STOPS)) {
         qWarning("QCanvasGradient::setColorAt: The maximum amount of color stops is: %d",
                  QCPAINTER_GRADIENT_MAX_STOPS);
         return;
@@ -377,6 +374,7 @@ void QCanvasGradient::setColorAt(float position, const QColor &color)
 
     position = qBound(0.0f, position, 1.0f);
     detach();
+    auto *d = QCanvasGradientPrivate::get(this);
     auto &stops = d->gradientStops;
     // Add or replace stop in the correct index so that stops remains sorted.
     qsizetype index = 0;
@@ -408,8 +406,8 @@ void QCanvasGradient::setColorAt(float position, const QColor &color)
 
 void QCanvasGradient::setStops(const QCanvasGradientStops &stops)
 {
-    G_D();
     detach();
+    auto *d = QCanvasGradientPrivate::get(this);
     d->gradientStops = stops;
     d->dirty |= QCanvasGradientPrivate::DirtyFlag::Stops;
 }
@@ -421,7 +419,7 @@ void QCanvasGradient::setStops(const QCanvasGradientStops &stops)
 */
 QCanvasGradientStops QCanvasGradient::stops() const
 {
-    G_D();
+    auto *d = QCanvasGradientPrivate::get(this);
     return d->gradientStops;
 }
 
@@ -553,6 +551,5 @@ void QCanvasGradientPrivate::updateGradientTexture(QCanvasPainter *painter)
     }
 }
 
-#undef G_D
 
 QT_END_NAMESPACE

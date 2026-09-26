@@ -13,7 +13,8 @@
  * Multi-screen is a desktop-style Wayland compositor example for multiple
  * screens.
  *
- * \image multi-screen.jpg
+ * \image multi-screen.jpg {Multiple compositor windows combined into a
+ *        unified display}
  *
  * For an introduction to the basic principles of creating a \l{Qt Wayland Compositor} with Qt,
  * see the \l{Minimal QML}{Minimal QML example}.

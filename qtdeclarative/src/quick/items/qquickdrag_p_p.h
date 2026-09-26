@@ -49,6 +49,7 @@ public:
         , active(false)
         , listening(false)
         , inEvent(false)
+        , executingNativeDrag(false)
         , dragRestarted(false)
         , itemMoved(false)
         , eventQueued(false)
@@ -66,7 +67,7 @@ public:
     void deliverLeaveEvent();
     void deliverEvent(QQuickWindow *window, QEvent *event);
     void start(Qt::DropActions supportedActions);
-    Qt::DropAction startDrag(Qt::DropActions supportedActions);
+    Qt::DropAction startDrag(Qt::DropActions supportedActions, QPixmap pixmap = {});
     void setTarget(QQuickItem *item);
     QMimeData *createMimeData() const;
     void loadPixmap();
@@ -83,6 +84,7 @@ public:
     bool active : 1;
     bool listening : 1;
     bool inEvent : 1;
+    bool executingNativeDrag : 1;
     bool dragRestarted : 1;
     bool itemMoved : 1;
     bool eventQueued : 1;

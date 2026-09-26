@@ -45,6 +45,10 @@ QSvgDocument::QSvgDocument(QtSvg::Options options, QtSvg::AnimatorType type)
 
 QSvgDocument::~QSvgDocument()
 {
+    // Only do that when AssumeTrustedSource is set to false. Otherwise, all nodes
+    // will be deleted by recursive calls of destructors.
+    if (!m_states.trustedSource)
+        releaseDescendants();
 }
 
 static bool hasSvgHeader(const QByteArray &buf)
@@ -276,7 +280,7 @@ void QSvgDocument::draw(QPainter *p, const QRectF &bounds)
 void QSvgDocument::draw(QPainter *p, const QString &id,
                             const QRectF &bounds)
 {
-    QSvgNode *node = scopeNode(id);
+    QSvgNode *node = namedNode(id);
 
     if (!node) {
         qCDebug(lcSvgHandler, "Couldn't find node %s. Skipping rendering.", qPrintable(id));
@@ -363,7 +367,7 @@ QtSvg::Options QSvgDocument::options() const
 
 void QSvgDocument::addSvgFont(QSvgFont *font)
 {
-    m_fonts.insert(font->familyName(), font);
+    m_fonts.emplace(font->familyName(), font);
 }
 
 QSvgFont * QSvgDocument::svgFont(const QString &family) const
@@ -384,7 +388,7 @@ QSvgNode *QSvgDocument::namedNode(const QString &id) const
 void QSvgDocument::addNamedStyle(const QString &id, QSvgPaintStyleProperty *style)
 {
     if (!m_namedStyles.contains(id))
-        m_namedStyles.insert(id, style);
+        m_namedStyles.emplace(id, style);
     else
         qCWarning(lcSvgHandler) << "Duplicate unique style id:" << id;
 }
@@ -486,7 +490,7 @@ void QSvgDocument::mapSourceToTarget(QPainter *p, const QRectF &targetRect, cons
 
 QRectF QSvgDocument::boundsOnElement(const QString &id) const
 {
-    const QSvgNode *node = scopeNode(id);
+    const QSvgNode *node = namedNode(id);
     if (!node)
         node = this;
     return node->bounds();
@@ -494,14 +498,12 @@ QRectF QSvgDocument::boundsOnElement(const QString &id) const
 
 bool QSvgDocument::elementExists(const QString &id) const
 {
-    QSvgNode *node = scopeNode(id);
-
-    return (node!=0);
+    return bool(namedNode(id));
 }
 
 QTransform QSvgDocument::transformForElement(const QString &id) const
 {
-    QSvgNode *node = scopeNode(id);
+    QSvgNode *node = namedNode(id);
 
     if (!node) {
         qCDebug(lcSvgHandler, "Couldn't find node %s. Skipping rendering.", qPrintable(id));

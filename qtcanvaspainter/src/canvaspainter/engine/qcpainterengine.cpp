@@ -192,7 +192,7 @@ void QCPainterEngine::reset()
     ctx.commandsCount = 0;
     ctx.commandsDataCount = 0;
     ctx.currentPath = nullptr;
-    ctx.preparedPath = nullptr;
+    ctx.preparedPathSerial = 0;
     ctx.renderHints = QCanvasPainter::RenderHint::Antialiasing;
 }
 
@@ -295,7 +295,7 @@ QTransform QCPainterEngine::currentTransform() const
 
 void QCPainterEngine::transform(const QTransform &transform)
 {
-    state.transform *= transform;
+    state.transform = transform * state.transform;
 }
 
 void QCPainterEngine::setTransform(const QTransform &transform)
@@ -410,7 +410,7 @@ void QCPainterEngine::beginPath()
     ctx.pathsCount = 0;
     ctx.pointsCount = 0;
     ctx.currentPath = nullptr;
-    ctx.preparedPath = nullptr;
+    ctx.preparedPathSerial = 0;
     ctx.verticesCount = 0;
 }
 
@@ -914,16 +914,16 @@ void QCPainterEngine::fill(const QCanvasPath &path, int pathGroup)
         // So data needs to be prepared again if state transformation has changed.
 
         const QCanvasPathPrivate *pathd = QCanvasPathPrivate::get(&path);
-        if (ctx.preparedPath != &path
+        if (ctx.preparedPathSerial != pathd->serialNumber
             || ctx.preparedPathTransform != state.transform
-            || ctx.preparedPathCommandsCount != pathd->commandsCount
-            || ctx.preparedPathIterations != pathd->pathIterations)
+            || ctx.preparedPathIterations != pathd->pathIterations
+            || ctx.preparedPathCommandsCount != pathd->commandsCount)
         {
             preparePainterPath(path);
-            ctx.preparedPath = &path;
             ctx.preparedPathTransform = state.transform;
             ctx.preparedPathCommandsCount = pathd->commandsCount;
             ctx.preparedPathIterations = pathd->pathIterations;
+            ctx.preparedPathSerial = pathd->serialNumber;
         }
 
         fill();
@@ -953,16 +953,16 @@ void QCPainterEngine::stroke(const QCanvasPath &path, int pathGroup)
         // So data needs to be prepared again if state transformation has changed.
 
         const QCanvasPathPrivate *pathd = QCanvasPathPrivate::get(&path);
-        if (ctx.preparedPath != &path
+        if (ctx.preparedPathSerial != pathd->serialNumber
             || ctx.preparedPathTransform != state.transform
-            || ctx.preparedPathCommandsCount != pathd->commandsCount
-            || ctx.preparedPathIterations != pathd->pathIterations)
+            || ctx.preparedPathIterations != pathd->pathIterations
+            || ctx.preparedPathCommandsCount != pathd->commandsCount)
         {
             preparePainterPath(path);
-            ctx.preparedPath = &path;
             ctx.preparedPathTransform = state.transform;
             ctx.preparedPathCommandsCount = pathd->commandsCount;
             ctx.preparedPathIterations = pathd->pathIterations;
+            ctx.preparedPathSerial = pathd->serialNumber;
         }
 
         stroke();
@@ -1208,10 +1208,10 @@ void QCPainterEngine::setMiterLimit(float limit)
 void QCPainterEngine::removePathGroup(int pathGroup)
 {
     // Remove from engine side
-    erase_if(ctx.cachedStrokePaths, [pathGroup](const QHash<QCanvasPath *, QCCachedPath>::iterator it) {
+    erase_if(ctx.cachedStrokePaths, [pathGroup](const QHash<uint, QCCachedPath>::iterator it) {
         return it->pathGroup == pathGroup;
     });
-    erase_if(ctx.cachedFillPaths, [pathGroup](const QHash<QCanvasPath *, QCCachedPath>::iterator it) {
+    erase_if(ctx.cachedFillPaths, [pathGroup](const QHash<uint, QCCachedPath>::iterator it) {
         return it->pathGroup == pathGroup;
     });
     // Remove from renderer side
@@ -2207,7 +2207,7 @@ bool QCPainterEngine::fillCachedPathUpdateRequired(QCanvasPath *path, int pathGr
 {
     Q_ASSERT(pathGroup != -1);
     QCanvasPathPrivate *pathd = QCanvasPathPrivate::get(path);
-    QCCachedPath &cp = ctx.cachedFillPaths[path];
+    QCCachedPath &cp = ctx.cachedFillPaths[pathd->serialNumber];
     QCCachedPathFillProperties fillProps { state.antialias, int(ctx.renderHints) };
     bool updateRequired = false;
     if (pathGroup != cp.pathGroup
@@ -2231,7 +2231,7 @@ bool QCPainterEngine::strokeCachedPathUpdateRequired(QCanvasPath *path, int path
 {
     Q_ASSERT(pathGroup != -1);
     QCanvasPathPrivate *pathd = QCanvasPathPrivate::get(path);
-    QCCachedPath &cp = ctx.cachedStrokePaths[path];
+    QCCachedPath &cp = ctx.cachedStrokePaths[pathd->serialNumber];
     QCCachedPathStrokeProperties strokeProps { state.antialias, state.strokeWidth, state.lineCap, state.lineJoin, int(ctx.renderHints) };
     bool updateRequired = false;
     if (pathGroup != cp.pathGroup

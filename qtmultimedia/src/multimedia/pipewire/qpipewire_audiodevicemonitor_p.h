@@ -15,15 +15,14 @@
 // We mean it.
 //
 
-#include "qpipewire_async_support_p.h"
-#include "qpipewire_propertydict_p.h"
-#include "qpipewire_registry_support_p.h"
-#include "qpipewire_spa_pod_support_p.h"
-
-#include <QtCore/qfuture.h>
-#include <QtCore/qchronotimer.h>
-#include <QtCore/qreadwritelock.h>
+#include <QtMultimedia/private/qpipewire_async_support_p.h>
+#include <QtMultimedia/private/qpipewire_propertydict_p.h>
+#include <QtMultimedia/private/qpipewire_registry_support_p.h>
+#include <QtMultimedia/private/qpipewire_spa_pod_support_p.h>
 #include <QtMultimedia/qaudiodevice.h>
+#include <QtCore/qchronotimer.h>
+#include <QtCore/qfuture.h>
+#include <QtCore/qreadwritelock.h>
 
 #include <list>
 #include <vector>
@@ -85,6 +84,7 @@ public:
 
     [[nodiscard]] bool registerObserver(SharedObjectRemoveObserver);
     void unregisterObserver(const SharedObjectRemoveObserver &);
+    void clearAllObservers();
 
     // Obtaining device lists
     struct DeviceLists

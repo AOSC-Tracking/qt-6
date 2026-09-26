@@ -50,9 +50,9 @@ sdkApiLevelAutomotiveMax="android-34"
 androidAutomotiveMaxUrl="$basePath/${sdkApiLevelAutomotiveMax}_automotive.tar.gz"
 androidAutomotiveMaxSha="2cc5dae4fd0bdefb188a3b84019d0d1e65501519"
 # Android Automotive min SDK level image
-sdkApiLevelAutomotiveMin="android-29"
+sdkApiLevelAutomotiveMin="android-31"
 androidAutomotiveMinUrl="$basePath/${sdkApiLevelAutomotiveMin}_automotive.tar.gz"
-androidAutomotiveMinSha="e6092585c00f87eb3b20a2eb7fdf6add42342d2f"
+androidAutomotiveMinSha="0b6498e0c0022c40b8bb2b275f704e6a298c04a3"
 
 toolsTargetFile="/tmp/$toolsFile"
 toolsSourceFile="$basePath/$toolsFile"
@@ -78,17 +78,24 @@ function InstallNdk() {
     ndkTargetFile="/tmp/$ndkFile"
     ndkSourceFile="$basePath/$ndkFile"
 
+    ndkTargetDir="$targetFolder/$ndkVersion"
+    sudo mkdir -p "$ndkTargetDir"
+
     DownloadURL "$ndkSourceFile" "$ndkSourceFile" "$ndkSha1" "$ndkTargetFile"
-    echo "Unzipping Android NDK to '$targetFolder'"
+    echo "Unzipping Android NDK to '$ndkTargetDir'"
     # Get the package base directory name as string
     zipBase=$(sudo zipinfo -1 "$ndkTargetFile" 2>/dev/null | awk '!seen {sub("/.*",""); print; seen=1}')
-    sudo unzip -q "$ndkTargetFile" -d "$targetFolder"
+    sudo unzip -q "$ndkTargetFile" -d "$ndkTargetDir"
     rm "$ndkTargetFile"
-    androidNdkRoot="${targetFolder}/${zipBase}"
+    androidNdkRoot="${ndkTargetDir}/${zipBase}"
 }
 
 InstallNdk $ndkVersionLatest $ndkSha1Latest
 SetEnvVar "ANDROID_NDK_ROOT_LATEST" "$androidNdkRoot"
+
+# To be used by vcpkg
+SetEnvVar "ANDROID_NDK_HOME" "$androidNdkRoot"
+export ANDROID_NDK_HOME="$androidNdkRoot"
 
 if [ "$ndkVersionPreview" != "$ndkVersionLatest" ]; then
     InstallNdk $ndkVersionPreview $ndkSha1Preview
@@ -104,10 +111,6 @@ if [ "$ndkVersionNightly2" != "$ndkVersionLatest" ]; then
     InstallNdk $ndkVersionNightly2 $ndkSha1Nightly2
     SetEnvVar "ANDROID_NDK_ROOT_NIGHTLY2" "$androidNdkRoot"
 fi
-
-# To be used by vcpkg
-SetEnvVar "ANDROID_NDK_HOME" "$targetFolder/android-ndk-$ndkVersionLatest"
-export ANDROID_NDK_HOME="$targetFolder/android-ndk-$ndkVersionLatest"
 
 echo "Changing ownership of Android files."
 if uname -a |grep -q "el7"; then
@@ -239,7 +242,7 @@ echo "Install minimum supported SDK level image for Android Automotive $sdkApiLe
 DownloadURL "$androidAutomotiveMinUrl" "$androidAutomotiveMinUrl" "$androidAutomotiveMinSha" \
     "/tmp/${sdkApiLevelAutomotiveMin}_automotive.tar.gz"
 sudo tar -xzf "/tmp/${sdkApiLevelAutomotiveMin}_automotive.tar.gz" -C $sdkTargetFolder/system-images
-echo "no" | ./avdmanager create avd -n automotive_emulator_x86_64_api_29 -c 2048M -f \
+echo "no" | ./avdmanager create avd -n automotive_emulator_x86_64_api_31 -c 2048M -f \
     -k "system-images;${sdkApiLevelAutomotiveMin};android-automotive;x86_64"
 
 # Purely informative, show the list of avd devices

@@ -4,10 +4,10 @@
 #ifndef PAINTERWINDOW_H
 #define PAINTERWINDOW_H
 
-#include <QWindow>
 #include <QColor>
+#include <QWindow>
 #if QT_CONFIG(opengl)
-#include <QOffscreenSurface>
+#  include <QOffscreenSurface>
 #endif
 #include <rhi/qrhi.h>
 
@@ -24,7 +24,7 @@ public:
     QColor fillColor() const;
     void setFillColor(const QColor &color);
 
-    protected:
+protected:
     virtual void paint(QCanvasPainter *painter);
     virtual void cleanup();
 
@@ -39,7 +39,7 @@ private:
     void resizeSwapChain();
     void render();
 
-    QColor m_fillColor = {0, 0, 0, 0};
+    QColor m_fillColor = { 0, 0, 0, 0 };
 
     QCanvasPainterFactory *m_factory = nullptr;
     QRhi::Implementation m_graphicsApi = QRhi::Null;

@@ -171,6 +171,19 @@ BASE_FEATURE(kDocumentPolicyNegotiation,
              "DocumentPolicyNegotiation",
              base::FEATURE_DISABLED_BY_DEFAULT);
 
+// When enabled, DumpWithoutCrashing() is called if a renderer process provides
+// an Origin header on a navigation request that doesn't match the expected
+// origin.
+BASE_FEATURE(kDumpOnOriginHeaderMismatch,
+             "DumpOnOriginHeaderMismatch",
+             base::FEATURE_ENABLED_BY_DEFAULT);
+
+// When enabled, DumpWithoutCrashing() is called if a renderer process provides
+// an Origin header on a navigation request that shouldn't have one.
+BASE_FEATURE(kDumpOnUnexpectedOriginHeader,
+             "DumpOnUnexpectedOriginHeader",
+             base::FEATURE_ENABLED_BY_DEFAULT);
+
 // Requires documents embedded via <iframe>, etc, to explicitly opt-into the
 // embedding: https://github.com/mikewest/embedding-requires-opt-in.
 BASE_FEATURE(kEmbeddingRequiresOptIn,
@@ -183,6 +196,14 @@ BASE_FEATURE(kEnableDevToolsJsErrorReporting,
              "EnableDevToolsJsErrorReporting",
              base::FEATURE_DISABLED_BY_DEFAULT);
 #endif  // BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
+
+// Enforces the use of the browser-authoritative origin from the Mojo receiver
+// context instead of the renderer-supplied origin in FileSystemManager::Open.
+// TODO(crbug.com/497254383): Remove this flag and the origin parameter from
+// the Mojo interface.
+BASE_FEATURE(kEnforceFileSystemManagerOpenOrigin,
+             "EnforceFileSystemManagerOpenOrigin",
+             base::FEATURE_ENABLED_BY_DEFAULT);
 
 // When enabled, enforces that same-document navigations must not change
 // the committed origin, insecure request policy, or insecure navigations set.
@@ -291,6 +312,18 @@ BASE_FEATURE(kFrameRoutingCache,
 const base::FeatureParam<int> kFrameRoutingCacheResponseSize{
     &kFrameRoutingCache, "responseSize", 4};
 
+// Guards the lifetime mediation fix for the Geolocation active frame count.
+// When enabled, `GeolocationProxy` is introduced in the browser process to
+// intermediate between the renderer and the Device Service's Geolocation
+// implementation. This ensures the active frame count (UI location indicator)
+// is tied to the actual geolocation data pipe lifetime, rather than just the
+// broker connection.
+// When disabled, legacy pass-through binding is used.
+// See crbug.com/514489361.
+BASE_FEATURE(kGeolocationProxy,
+             "kGeolocationProxy",
+             base::FEATURE_ENABLED_BY_DEFAULT);
+
 // Group network isolation key(NIK) by storage interest group joining origin to
 // improve privacy and performance -- IGs of the same joining origin can reuse
 // sockets, so we don't need to renegotiate those connections.
@@ -336,6 +369,12 @@ BASE_FEATURE(kIOSurfaceCapturer,
 BASE_FEATURE(kKeepChildProcessAfterIPCReset,
              "KeepChildProcessAfterIPCReset",
              base::FEATURE_DISABLED_BY_DEFAULT);
+
+// When enabled, the renderer process will be killed if it provides
+// invalid (non-allowlisted) headers in a navigation request.
+BASE_FEATURE(kKillOnInvalidNavigationHeaders,
+             "KillOnInvalidNavigationHeaders",
+             base::FEATURE_ENABLED_BY_DEFAULT);
 
 // Enables Local Network Access checks for all types of web workers.
 //
@@ -604,6 +643,20 @@ BASE_FEATURE(kRestrictOrientationLockToPhones,
              base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
 
+// Controls whether redirect Location headers are sanitized during navigation
+// to only include the origin when cross-origin to the final URL.
+// See https://crbug.com/495463654.
+BASE_FEATURE(kSanitizeLocationHeadersDuringNavigation,
+             "kSanitizeLocationHeadersDuringNavigation",
+             base::FEATURE_ENABLED_BY_DEFAULT);
+
+// Controls whether the `original_url` contains the full URL or just the
+// sanitized origin when sent to the renderer on commit.
+// See https://crbug.com/495463654.
+BASE_FEATURE(kSanitizeOriginalUrlDuringNavigation,
+             "kSanitizeOriginalUrlDuringNavigation",
+             base::FEATURE_ENABLED_BY_DEFAULT);
+
 #if BUILDFLAG(IS_ANDROID)
 BASE_FEATURE(kServiceWorkerAvoidMainThreadForInitialization,
              "ServiceWorkerAvoidMainThreadForInitialization",
@@ -639,6 +692,18 @@ BASE_FEATURE(kServiceWorkerSrcdocSupport,
 // in the sw fetch handler.
 BASE_FEATURE(kServiceWorkerStaticRouterRaceRequestFix,
              "kServiceWorkerStaticRouterRaceRequestFix",
+             base::FEATURE_ENABLED_BY_DEFAULT);
+
+// Enforce CORP check for Service Worker Static Router's cache source.
+BASE_FEATURE(kServiceWorkerStaticRouterCORPCheck,
+             "ServiceWorkerStaticRouterCORPCheck",
+             base::FEATURE_ENABLED_BY_DEFAULT);
+
+// crbug.com/495999481: When this is enabled, the navigation request should be
+// blocked when it receives an opaque response from the service worker static
+// router.
+BASE_FEATURE(kServiceWorkerStaticRouterOpaqueCheck,
+             "ServiceWorkerStaticRouterOpaqueCheck",
              base::FEATURE_ENABLED_BY_DEFAULT);
 
 // (crbug.com/1371756): When enabled, the static routing API starts

@@ -5,15 +5,13 @@
 #define IosINAPPPURCHASETRANSACTION_H
 
 #include "../inapp/inapptransaction.h"
-#include <QtCore/QString>
+#include <QString>
 
 #import <StoreKit/StoreKit.h>
 #import <Foundation/Foundation.h>
 #import <StoreKit/StoreKitDefines.h>
 
 @class SKPaymentTransaction;
-
-QT_BEGIN_NAMESPACE
 
 class IosInAppPurchaseBackend;
 
@@ -37,8 +35,6 @@ private:
     QString m_errorString;
     FailureReason m_failureReason;
 };
-
-QT_END_NAMESPACE
 
 Q_DECLARE_METATYPE(IosInAppPurchaseTransaction*)
 

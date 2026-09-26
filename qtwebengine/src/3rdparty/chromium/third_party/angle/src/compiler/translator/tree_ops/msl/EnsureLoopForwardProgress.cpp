@@ -81,7 +81,8 @@ const TVariable *computeFiniteLoopVariable(TIntermLoop *loop)
     {
         return nullptr;
     }
-    if (!IsInteger(variable->getType().getBasicType()))
+    if (!IsInteger(variable->getType().getBasicType()) ||
+        variable->getType().getQualifier() != EvqTemporary)
     {
         return nullptr;
     }
@@ -156,6 +157,10 @@ const TVariable *computeFiniteLoopVariable(TIntermLoop *loop)
                 UNREACHABLE();
                 return nullptr;
         }
+    }
+    else
+    {
+        return nullptr;
     }
     return variable;
 }

@@ -8,7 +8,8 @@
  * \brief Server Side Decoration Compositor is a simple example that demonstrates server side window decorations on xdg-shell.
  * \ingroup qtwaylandcompositor-examples
  *
- * \image server-side-decoration.png
+ * \image server-side-decoration.png {Compositor window with blue-cyan
+ *        gradient background and server-side decorated client}
  *
  * \section1 Introduction
  *

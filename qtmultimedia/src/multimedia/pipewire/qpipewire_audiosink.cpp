@@ -3,10 +3,9 @@
 
 #include "qpipewire_audiosink_p.h"
 
-#include "qpipewire_audiocontextmanager_p.h"
-#include "qpipewire_audiodevice_p.h"
-#include "qpipewire_support_p.h"
-
+#include <QtMultimedia/private/qpipewire_audiocontextmanager_p.h>
+#include <QtMultimedia/private/qpipewire_audiodevice_p.h>
+#include <QtMultimedia/private/qpipewire_support_p.h>
 #include <QtCore/qcoreapplication.h>
 #include <QtCore/qdebug.h>
 #include <QtCore/qloggingcategory.h>
@@ -151,13 +150,13 @@ void QPipewireAudioSinkStream::stop(ShutdownPolicy shutdownPolicy)
     m_parent = nullptr;
 
     disconnectQIODeviceConnections();
+    if (m_deviceRemovalObserver)
+        unregisterDeviceObserver();
 
     if (shutdownPolicy == ShutdownPolicy::DiscardRingbuffer || m_audioCallback) {
         // disconnect immediately
         disconnectStream();
     }
-
-    unregisterDeviceObserver();
 
     if (m_audioCallback)
         // ensure that no callback is sent after we stop the stream
@@ -272,7 +271,7 @@ void QPipewireAudioSinkStream::processRingbuffer() noexcept QT_MM_NONBLOCKING
 
     if (stopRequested && shutdownPolicy == ShutdownPolicy::DiscardRingbuffer) {
         // discarding ringbuffer: we silence the last block and exit early
-        ::memset(writeBuffer.data(), 0, writeBuffer.size());
+        QAudioHelperInternal::fillSilence(writeBuffer, m_format);
         queueBuffer(b, requestedSamples);
 
         if constexpr (pipewireRealtimeTracing)

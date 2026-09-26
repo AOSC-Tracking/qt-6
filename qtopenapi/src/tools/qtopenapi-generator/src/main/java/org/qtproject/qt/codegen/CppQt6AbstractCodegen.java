@@ -142,6 +142,11 @@ public abstract class CppQt6AbstractCodegen extends AbstractCppCodegen implement
 
         reservedWords.add("signals");
         reservedWords.add("slots");
+        reservedWords.add("emit");
+        reservedWords.add("foreach");
+        reservedWords.add("forever");
+        reservedWords.add("connect");
+        reservedWords.add("disconnect");
     }
 
     @Override

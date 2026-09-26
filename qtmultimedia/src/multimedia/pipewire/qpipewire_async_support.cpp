@@ -3,7 +3,7 @@
 
 #include "qpipewire_async_support_p.h"
 
-#include "qpipewire_audiocontextmanager_p.h"
+#include <QtMultimedia/private/qpipewire_audiocontextmanager_p.h>
 
 QT_BEGIN_NAMESPACE
 
@@ -82,7 +82,9 @@ CoreEventListener::CoreEventListener()
 
 CoreEventListener::~CoreEventListener()
 {
-    removeHooks();
+    QAudioContextManager::withEventLoopLock([&] {
+        removeHooks();
+    });
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////

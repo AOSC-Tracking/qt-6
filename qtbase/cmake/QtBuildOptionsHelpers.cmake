@@ -1,6 +1,8 @@
 # Copyright (C) 2023 The Qt Company Ltd.
 # SPDX-License-Identifier: BSD-3-Clause
 
+__qt_internal_cmake_include_guard(GLOBAL GUARD_KEY "QtBuildOptionsHelpers")
+
 # Try to detect if CMAKE_BUILD_TYPE is default initialized by CMake, or it was set by the user.
 #
 # CMake initializes CMAKE_BUILD_TYPE to the value of CMAKE_BUILD_TYPE_INIT during the first
@@ -111,6 +113,26 @@ function(qt_internal_set_cmake_build_type)
     # Default to something sensible when configuring qtbase / top-level.
     else()
         qt_internal_set_qt_appropriate_default_cmake_build_type()
+    endif()
+endfunction()
+
+# Set the build type for standalone tests and examples early enough.
+#
+# Specifically in qt_internal_project_setup() directly after find_package(Qt6BuildInternals) at
+# the top of qt repo CMakeLists.txt files, before we look for any 3rd party packages.
+#
+# This ensures that IMPORTED 3rd party targets are created with appropriate
+# MAP_IMPORTED_CONFIG_<CONFIG> properties based on the value of CMAKE_MAP_IMPORTED_CONFIG_<CONFIG>.
+# This ensures CMake links the correct variants of 3rd party libraries, which is especially relevant
+# on Windows where runtimes can't be mixed.
+# E.g. qtgrpc protobuf examples might link to a debug MSVC variant of the vcpkg protobuf 3rd
+# party dep, if the build type during the creation of the protobuf libraries is not the final one.
+#
+# Note that Qt itself doesn't set CMAKE_MAP_IMPORTED_CONFIG_<CONFIG>, but some toolchain files (like
+# the vcpkg one) do.
+function(qt_internal_set_cmake_build_type_for_standalone_parts)
+    if(NOT QT_NO_FORCE_SET_STANDALONE_PARTS_BUILD_TYPE)
+        qt_internal_set_cmake_build_type()
     endif()
 endfunction()
 
@@ -295,7 +317,6 @@ macro(qt_internal_setup_build_tests)
     option(QT_BUILD_MINIMAL_ANDROID_MULTI_ABI_TESTS
         "Build minimal subset of tests for Android multi-ABI Qt builds" OFF)
 
-    include(CTest)
     enable_testing()
 endmacro()
 

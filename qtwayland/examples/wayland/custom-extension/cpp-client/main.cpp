@@ -5,9 +5,7 @@
 #include <QRasterWindow>
 #include <QPainter>
 #include <QMouseEvent>
-#include <QPlatformSurfaceEvent>
 #include <QDebug>
-#include <QTimer>
 
 #include "../client-common/customextension.h"
 
@@ -112,11 +110,9 @@ private:
     QRectF rect4;
     QFont m_font;
     static int m_objectCount;
-    static int m_hue;
 };
 
 int TestWindow::m_objectCount = 0;
-int TestWindow::m_hue;
 
 int main (int argc, char **argv)
 {

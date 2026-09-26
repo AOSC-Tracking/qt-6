@@ -2,11 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 
 #include "qgstvideobuffer_p.h"
-#include "qgstreamervideosink_p.h"
 #include <private/qvideotexturehelper_p.h>
-#include <qpa/qplatformnativeinterface.h>
-#include <qguiapplication.h>
-#include <QtCore/qapplicationstatic.h>
 #include <QtCore/qloggingcategory.h>
 
 #include <gst/video/video.h>
@@ -32,6 +28,7 @@
 #  endif
 
 #  if QT_CONFIG(gstreamer_gl_egl) && QT_CONFIG(linux_dmabuf)
+#    include <common/qgstreameregldisplay_p.h>
 #    include <gst/allocators/gstdmabuf.h>
 #  endif
 #endif
@@ -39,20 +36,6 @@
 QT_BEGIN_NAMESPACE
 
 Q_STATIC_LOGGING_CATEGORY(qLcGstVideoBuffer, "qt.multimedia.gstreamer.videobuffer");
-
-#if QT_CONFIG(gstreamer_gl) && QT_CONFIG(gstreamer_gl_egl) && QT_CONFIG(linux_dmabuf)
-Qt::HANDLE getEglDisplay() {
-    using namespace Qt::StringLiterals;
-    return qGuiApp
-            ? qGuiApp->platformNativeInterface()->nativeResourceForIntegration("egldisplay"_ba)
-            : nullptr;
-}
-
-Q_APPLICATION_STATIC(Qt::HANDLE, s_eglDisplay, getEglDisplay());
-
-Q_GLOBAL_STATIC(QFunctionPointer, g_eglImageTargetTexture2D,
-                eglGetProcAddress("glEGLImageTargetTexture2DOES"));
-#endif
 
 // keep things building without drm_fourcc.h
 #define fourcc_code(a, b, c, d) ((uint32_t)(a) | ((uint32_t)(b) << 8) | \
@@ -94,11 +77,6 @@ QGstVideoBuffer::QGstVideoBuffer(QGstBufferHandle buffer, const QGstVideoInfo &v
 {
     m_type = m_memoryFormat != QGstCaps::CpuMemory ? QVideoFrame::RhiTextureHandle
                                                    : QVideoFrame::NoHandle;
-#if QT_CONFIG(gstreamer_gl) && QT_CONFIG(gstreamer_gl_egl) && QT_CONFIG(linux_dmabuf)
-    m_eglDisplay = *s_eglDisplay();
-    if (m_eglDisplay)
-        m_eglImageTargetTexture2D = *g_eglImageTargetTexture2D();
-#endif
 }
 
 QGstVideoBuffer::~QGstVideoBuffer()
@@ -370,8 +348,8 @@ static GlTextures mapFromDmaBuffer(QRhi *rhi, const QGstBufferHandle &bufferHand
     Q_ASSERT(gst_is_dmabuf_memory(gst_buffer_peek_memory(buffer, 0)));
     Q_ASSERT(eglDisplay);
     Q_ASSERT(eglImageTargetTexture2D);
-    Q_ASSERT(QGuiApplication::platformName() == QLatin1String("eglfs"));
     Q_ASSERT(rhi);
+    Q_ASSERT(rhi->backend() == QRhi::OpenGLES2);
 
     auto *nativeHandles = static_cast<const QRhiGles2NativeHandles *>(rhi->nativeHandles());
     auto glContext = nativeHandles->context;
@@ -402,7 +380,7 @@ static GlTextures mapFromDmaBuffer(QRhi *rhi, const QGstBufferHandle &bufferHand
     const int nMemoryBlocks = gst_buffer_n_memory(buffer);
     static const bool externalOes = QVideoTextureHelper::forceGlTextureExternalOesIsSet();
     static const bool singleEGLImage =
-            externalOes || qEnvironmentVariableIsSet("QT_GSTREAMER_FORCE_SINGLE_EGLIMAGE");
+            externalOes || qEnvironmentVariableIntValue("QT_GSTREAMER_FORCE_SINGLE_EGLIMAGE") != 0;
 
     qCDebug(qLcGstVideoBuffer) << "format:" << gst_video_format_to_string(format)
                                << "nPlanes:" << nPlanes
@@ -558,17 +536,15 @@ static GlTextures mapFromDmaBuffer(QRhi *rhi, const QGstBufferHandle &bufferHand
 QVideoFrameTexturesUPtr QGstVideoBuffer::mapTextures(QRhi &rhi, QVideoFrameTexturesUPtr& /*oldTextures*/)
 {
 #if QT_CONFIG(gstreamer_gl)
-#  if QT_CONFIG(gstreamer_gl_egl) && QT_CONFIG(linux_dmabuf)
-    static const bool isEglfsQPA = QGuiApplication::platformName() == QLatin1String("eglfs");
-#  endif
     GlTextures textures = {};
     if (m_memoryFormat == QGstCaps::GLTexture)
         textures = mapFromGlTexture(m_buffer, m_frame, m_videoInfo.gstVideoInfo);
 
 #  if QT_CONFIG(gstreamer_gl_egl) && QT_CONFIG(linux_dmabuf)
-    else if (m_memoryFormat == QGstCaps::DMABuf && m_eglDisplay && isEglfsQPA)
-        textures = mapFromDmaBuffer(&rhi, m_buffer, m_videoInfo, m_eglDisplay,
-                                    m_eglImageTargetTexture2D);
+    else if (m_memoryFormat == QGstCaps::DMABuf && qGstEglCanMapDmaBuf()
+             && rhi.backend() == QRhi::OpenGLES2)
+        textures = mapFromDmaBuffer(&rhi, m_buffer, m_videoInfo, qGstEglDisplay(),
+                                    qGstEglImageTargetTexture2D());
 
 #  endif
     if (textures.count > 0)

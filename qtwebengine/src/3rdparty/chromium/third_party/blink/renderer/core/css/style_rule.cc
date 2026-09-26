@@ -21,6 +21,8 @@
 
 #include "third_party/blink/renderer/core/css/style_rule.h"
 
+#include <limits>
+
 #include "base/compiler_specific.h"
 #include "third_party/blink/renderer/core/css/cascade_layer.h"
 #include "third_party/blink/renderer/core/css/css_container_rule.h"
@@ -74,6 +76,7 @@
 #include "third_party/blink/renderer/platform/heap/visitor.h"
 #include "third_party/blink/renderer/platform/instrumentation/use_counter.h"
 #include "third_party/blink/renderer/platform/wtf/size_assertions.h"
+#include "third_party/blink/renderer/platform/wtf/wtf_size_t.h"
 
 namespace blink {
 
@@ -549,6 +552,16 @@ MutableCSSPropertyValueSet& StyleRule::MutableProperties() {
   return *To<MutableCSSPropertyValueSet>(properties_.Get());
 }
 
+wtf_size_t StyleRule::ReplaceChildRuleIfExists(StyleRuleBase* old_rule,
+                                               StyleRuleBase* new_rule,
+                                               wtf_size_t position_hint) {
+  if (child_rules_) {
+    return ReplaceStyleRuleInVector(old_rule, new_rule, position_hint,
+                                    *child_rules_);
+  }
+  return std::numeric_limits<wtf_size_t>::max();  // Not found.
+}
+
 void StyleRule::WrapperInsertRule(CSSStyleSheet* parent_sheet,
                                   unsigned index,
                                   StyleRuleBase* rule) {
@@ -613,6 +626,19 @@ StyleRuleBase* RenestGroupRule(T* group_rule, StyleRule* new_parent) {
   return MakeGarbageCollected<T>(*group_rule, std::move(new_child_rules));
 }
 
+HeapVector<CSSSelector> CloneSelectorListWithDummyFallback(
+    StyleRule* new_parent) {
+  if (new_parent) {
+    return CSSSelectorList::Copy(new_parent->FirstSelector());
+  }
+  // A StyleRule cannot have an empty selector; create a dummy.
+  HeapVector<CSSSelector> selectors;
+  selectors.emplace_back(/*parent_rule=*/nullptr, /*is_implicit=*/true);
+  selectors.back().SetLastInSelectorList(true);
+  selectors.back().SetLastInComplexSelector(true);
+  return selectors;
+}
+
 }  // namespace
 
 StyleRuleBase* StyleRuleBase::Renest(StyleRule* new_parent) {
@@ -675,6 +701,8 @@ StyleRuleBase* StyleRuleBase::Renest(StyleRule* new_parent) {
       return this;
     case kNestedDeclarations: {
       auto* nested_declarations_rule = To<StyleRuleNestedDeclarations>(this);
+      HeapVector<CSSSelector> selectors;
+      StyleRule* old_inner_rule = nested_declarations_rule->InnerStyleRule();
       // Nested declaration rules are different from regular nested style rules,
       // since they don't refer to their parent rule with any '&' selector.
       // Instead the outer selector list is *copied* parse-time. Now that we're
@@ -685,11 +713,10 @@ StyleRuleBase* StyleRuleBase::Renest(StyleRule* new_parent) {
       // by @scope rules, however, since they always just behave like
       // :where(:scope).
       if (nested_declarations_rule->NestingType() == CSSNestingType::kScope) {
-        return this;
+        selectors = CSSSelectorList::Copy(old_inner_rule->FirstSelector());
+      } else {
+        selectors = CloneSelectorListWithDummyFallback(new_parent);
       }
-      StyleRule* old_inner_rule = nested_declarations_rule->InnerStyleRule();
-      HeapVector<CSSSelector> selectors =
-          CSSSelectorList::Copy(new_parent->FirstSelector());
       auto* new_inner_rule = StyleRule::Create(
           selectors, old_inner_rule->Properties().ImmutableCopyIfNeeded());
       return MakeGarbageCollected<StyleRuleNestedDeclarations>(
@@ -807,6 +834,13 @@ StyleRuleGroup::StyleRuleGroup(const StyleRuleGroup& group_rule)
   for (unsigned i = 0; i < child_rules_.size(); ++i) {
     child_rules_[i] = group_rule.child_rules_[i]->Copy();
   }
+}
+
+wtf_size_t StyleRuleGroup::ReplaceChildRuleIfExists(StyleRuleBase* old_rule,
+                                                    StyleRuleBase* new_rule,
+                                                    wtf_size_t position_hint) {
+  return ReplaceStyleRuleInVector(old_rule, new_rule, position_hint,
+                                  child_rules_);
 }
 
 void StyleRuleGroup::WrapperInsertRule(CSSStyleSheet* parent_sheet,

@@ -97,8 +97,9 @@ std::optional<PreflightRequiredReason> NeedsCorsPreflight(
     return PreflightRequiredReason::kCorsWithForcedPreflightMode;
   }
 
-  if (request.cors_preflight_policy ==
-      mojom::CorsPreflightPolicy::kPreventPreflight) {
+  if (!base::FeatureList::IsEnabled(features::kIgnoreCorsPreflightPolicy) &&
+      request.cors_preflight_policy ==
+          mojom::CorsPreflightPolicy::kPreventPreflight) {
     return std::nullopt;
   }
 
@@ -439,10 +440,10 @@ void CorsURLLoader::FollowRedirect(
   // redirect mode FollowRedirect() should never be called.
   if (process_id_ != mojom::kBrowserProcessId &&
       request_.mode == mojom::RequestMode::kNavigate) {
+    HandleComplete(URLLoaderCompletionStatus(net::ERR_FAILED));
     mojo::ReportBadMessage(
         "CorsURLLoader: navigate from non-browser-process should not call "
         "FollowRedirect");
-    HandleComplete(URLLoaderCompletionStatus(net::ERR_FAILED));
     return;
   }
 
@@ -473,6 +474,16 @@ void CorsURLLoader::FollowRedirect(
       HandleComplete(URLLoaderCompletionStatus(net::ERR_INVALID_ARGUMENT));
       return;
     }
+  }
+
+  if (base::FeatureList::IsEnabled(
+          features::kBlockOriginHeaderModificationOnRedirect) &&
+      modified_headers.HasHeader(net::HttpRequestHeaders::kOrigin)) {
+    HandleComplete(URLLoaderCompletionStatus(net::ERR_INVALID_ARGUMENT));
+    mojo::ReportBadMessage(
+        "CorsURLLoader: Origin header modification on redirect is not "
+        "permitted");
+    return;
   }
 
   for (const auto& name : removed_headers) {

@@ -4,15 +4,12 @@
 #ifndef VIEWERFACTORY_H
 #define VIEWERFACTORY_H
 
-#include <QString>
+#include <QFile>
+#include <QMainWindow>
 #include <QMap>
-
-QT_BEGIN_NAMESPACE
-class QMimeType;
-class QWidget;
-class QMainWindow;
-class QFile;
-QT_END_NAMESPACE
+#include <QMimeType>
+#include <QString>
+#include <QWidget>
 
 class AbstractViewer;
 
@@ -35,6 +32,7 @@ public:
     void setDefaultWarning(bool on) { m_defaultWarning = on; }
 
     AbstractViewer *viewer(QFile *file) const;
+    AbstractViewer *viewer(const QByteArray &data, const QString &mimeType) const;
 
     using ViewerMap = QMap<QString, AbstractViewer *>;
     using ViewerList = QList<AbstractViewer *>;

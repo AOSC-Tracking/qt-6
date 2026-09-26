@@ -7,10 +7,13 @@
     \title Qt HTTP Server
     \brief Provides a lightweight server implementing the HTTP protocol.
 
-    Qt HTTP Server supports building HTTP server functionality into an application.
-    Common use cases are exposing the application's functionality through
-    REST APIs, or making devices in a trusted environment configurable also via HTTP.
-    The limitations are described in \l{Limitations and Security}.
+    Qt HTTP Server supports building HTTP server functionality into an
+    application. The main use case is exposing the application's functionality
+    through REST APIs, or making devices in a trusted environment also
+    configurable over HTTP. A trusted environment also means that the Qt HTTP
+    Server must not be directly exposed to the internet nor used to provide
+    functionality of a general-purpose web server for end users. For more
+    details, see \l{Limitations and Security}.
 
     \section1 Overview
 
@@ -63,6 +66,8 @@
     active TLS backend is needed for HTTP/2 support. To check if a backend
     supports this, use \l{QSslSocket::isFeatureSupported}.
 
+    See \l{Qt HTTP Server Security Considerations}.
+
     \section1 Using the Module
 
     Using a Qt module requires linking against the module library, either
@@ -98,6 +103,7 @@
 
     \section1 Reference
     \list
+    \li \l{Qt HTTP Server Security Considerations}
     \li \l{Qt HTTP Server Logging}
     \li \l{Qt HTTP Server C++ Classes}{C++ Classes}
     \endlist

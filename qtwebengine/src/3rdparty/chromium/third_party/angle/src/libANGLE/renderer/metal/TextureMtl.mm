@@ -956,10 +956,30 @@ void TextureMtl::deallocateNativeStorage(bool keepImages, bool keepSamplerStateA
     }
 }
 
-angle::Result TextureMtl::ensureNativeStorageCreated(const gl::Context *context)
+angle::Result TextureMtl::ensureNativeStorageCreated(const gl::Context *context, bool keepImages)
 {
+    auto clearImagesAssociatedWithStorage = [&]() {
+        ASSERT(mNativeTextureStorage);
+        GLuint mips      = mState.getMipmapMaxLevel() - mState.getEffectiveBaseLevel() + 1;
+        int numCubeFaces = static_cast<int>(mNativeTextureStorage->cubeFaces());
+        for (int face = 0; face < numCubeFaces; ++face)
+        {
+            for (mtl::MipmapNativeLevel actualMip = mtl::kZeroNativeMipLevel;
+                 actualMip.get() < mips; ++actualMip)
+            {
+                GLuint imageMipLevel = mNativeTextureStorage->getGLLevel(actualMip);
+                mTexImageDefs[face][imageMipLevel].image = nullptr;
+            }
+        }
+    };
+
     if (mNativeTextureStorage)
     {
+        // Storage exists, deallocate images associated with the storage.
+        if (!keepImages)
+        {
+            clearImagesAssociatedWithStorage();
+        }
         return angle::Result::Continue;
     }
 
@@ -1010,6 +1030,11 @@ angle::Result TextureMtl::ensureNativeStorageCreated(const gl::Context *context)
                 imageToTransfer = nullptr;
             }
         }
+    }
+
+    if (!keepImages)
+    {
+        clearImagesAssociatedWithStorage();
     }
 
     return angle::Result::Continue;
@@ -1134,12 +1159,17 @@ angle::Result TextureMtl::ensureSamplerStateCreated(const gl::Context *context)
 angle::Result TextureMtl::createViewFromBaseToMaxLevel()
 {
     ASSERT(mNativeTextureStorage);
+    uint32_t baseLevel =
+        std::min(mNativeTextureStorage->getMaxSupportedGLLevel(), mState.getEffectiveBaseLevel());
     uint32_t maxLevel =
         std::min(mNativeTextureStorage->getMaxSupportedGLLevel(), mState.getEffectiveMaxLevel());
 
+    // In edge case where base level > max level, clamp up to base level.
+    maxLevel = std::max(maxLevel, baseLevel);
+
     mtl::TextureRef nativeViewFromBaseToMaxLevelRef;
     if (maxLevel == mNativeTextureStorage->getMaxSupportedGLLevel() &&
-        mState.getEffectiveBaseLevel() == mNativeTextureStorage->getBaseGLLevel())
+        baseLevel == mNativeTextureStorage->getBaseGLLevel())
     {
         // If base & max level are the same in mNativeTextureStorage, we don't need
         // a dedicated view. Furthermore, Intel driver has some bugs when sampling a view
@@ -1148,9 +1178,9 @@ angle::Result TextureMtl::createViewFromBaseToMaxLevel()
     }
     else
     {
-        uint32_t baseToMaxLevels = maxLevel - mState.getEffectiveBaseLevel() + 1;
+        uint32_t baseToMaxLevels = maxLevel - baseLevel + 1;
         nativeViewFromBaseToMaxLevelRef =
-            mNativeTextureStorage->createMipsView(mState.getEffectiveBaseLevel(), baseToMaxLevels);
+            mNativeTextureStorage->createMipsView(baseLevel, baseToMaxLevels);
     }
 
     mViewFromBaseToMaxLevel = std::make_unique<NativeTextureWrapper>(
@@ -1182,11 +1212,16 @@ angle::Result TextureMtl::onBaseMaxLevelsChanged(const gl::Context *context)
         return angle::Result::Continue;
     }
 
+    // Account for clamping in createViewFromBaseToMaxLevel() to avoid redundant storage
+    // re-creation when max < base (e.g., base=7 with max toggling 1->2->3 should not re-create).
+    GLuint effectiveMaxForStorage =
+        std::max(mState.getMipmapMaxLevel(), mState.getEffectiveBaseLevel());
+
     if (mState.getEffectiveBaseLevel() == mNativeTextureStorage->getBaseGLLevel() &&
-        mState.getMipmapMaxLevel() == mNativeTextureStorage->getMaxSupportedGLLevel())
+        effectiveMaxForStorage == mNativeTextureStorage->getMaxSupportedGLLevel())
     {
         ASSERT(mState.getBaseLevelDesc().size == mNativeTextureStorage->sizeAt0());
-        // If level range remain the same, don't recreate the texture storage.
+        // If effective level range remains the same, don't recreate the texture storage.
         // This might feel unnecessary at first since the front-end might prevent redundant base/max
         // level change already. However, there are cases that cause native storage to be created
         // before base/max level dirty bit is passed to Metal backend and lead to unwanted problems.
@@ -1359,6 +1394,7 @@ ImageDefinitionMtl &TextureMtl::getImageDefinition(const gl::ImageIndex &imageIn
 
     return imageDef;
 }
+
 angle::Result TextureMtl::getRenderTarget(ContextMtl *context,
                                           const gl::ImageIndex &imageIndex,
                                           GLsizei implicitSamples,
@@ -1509,7 +1545,8 @@ angle::Result TextureMtl::copyImage(const gl::Context *context,
 
     gl::Extents fbSize = source->getReadColorAttachment()->getSize();
     gl::Rectangle fbRect(0, 0, fbSize.width, fbSize.height);
-    if (context->isWebGL() && !fbRect.encloses(sourceArea))
+    if ((context->isWebGL() || context->isRobustResourceInitEnabled()) &&
+        !fbRect.encloses(sourceArea))
     {
         ANGLE_TRY(initializeContents(context, GL_NONE, index));
     }
@@ -1675,7 +1712,7 @@ angle::Result TextureMtl::setImageExternal(const gl::Context *context,
 
 angle::Result TextureMtl::generateMipmap(const gl::Context *context)
 {
-    ANGLE_TRY(ensureNativeStorageCreated(context));
+    ANGLE_TRY(ensureNativeStorageCreated(context, false));
 
     ContextMtl *contextMtl = mtl::GetImpl(context);
     if (!mViewFromBaseToMaxLevel)
@@ -1853,7 +1890,7 @@ angle::Result TextureMtl::getAttachmentRenderTarget(const gl::Context *context,
                                                     GLsizei samples,
                                                     FramebufferAttachmentRenderTarget **rtOut)
 {
-    ANGLE_TRY(ensureNativeStorageCreated(context));
+    ANGLE_TRY(ensureNativeStorageCreated(context, true));
 
     ContextMtl *contextMtl = mtl::GetImpl(context);
     ANGLE_CHECK(contextMtl, mNativeTextureStorage, gl::err::kInternalError, GL_INVALID_OPERATION);
@@ -1914,7 +1951,7 @@ angle::Result TextureMtl::syncState(const gl::Context *context,
         }
     }
 
-    ANGLE_TRY(ensureNativeStorageCreated(context));
+    ANGLE_TRY(ensureNativeStorageCreated(context, true));
     ANGLE_TRY(ensureSamplerStateCreated(context));
 
     return angle::Result::Continue;
@@ -2076,12 +2113,22 @@ angle::Result TextureMtl::redefineImage(const gl::Context *context,
 
     // If native texture still exists, it means the size hasn't been changed, no need to create new
     // image
-    if (mNativeTextureStorage && imageDef.image && imageWithinNativeStorageLevels)
+    if (mNativeTextureStorage && imageWithinNativeStorageLevels)
     {
-        ASSERT(imageDef.image->textureType() ==
-                   mtl::GetTextureType(GetTextureImageType(index.getType())) &&
-               imageDef.formatID == mNativeTextureStorage->getFormat().intendedFormatId &&
-               imageDef.image->sizeAt0() == size);
+        if (imageDef.image &&
+            imageDef.image->textureType() ==
+                mtl::GetTextureType(GetTextureImageType(index.getType())) &&
+            imageDef.formatID == mNativeTextureStorage->getFormat().intendedFormatId &&
+            imageDef.image->sizeAt0() == size)
+        {
+            // Keep it! (No-op)
+        }
+        else
+        {
+            // Recreate the view at this index.
+            imageDef.image = nullptr;
+            imageDef       = getImageDefinition(index);
+        }
     }
     else
     {
@@ -2460,7 +2507,29 @@ angle::Result TextureMtl::convertAndSetPerSliceSubImage(const gl::Context *conte
                                                      ? imageFormat.textureLoadFunctions(type)
                                                      : LoadImageFunctionInfo();
         const angle::Format &dstFormat         = angle::Format::Get(imageFormat.actualFormatId);
-        const size_t dstRowPitch               = dstFormat.pixelBytes * mtlArea.size.width;
+        size_t dstRowPitch;
+        size_t dstDepthPitch;
+        if (dstFormat.isBlock)
+        {
+            const gl::InternalFormat &dstFormatInfo =
+                gl::GetSizedInternalFormatInfo(dstFormat.glInternalFormat);
+            GLuint rowPitch;
+            ANGLE_CHECK_GL_MATH(contextMtl,
+                                dstFormatInfo.computeCompressedImageRowPitch(
+                                    static_cast<GLsizei>(mtlArea.size.width), &rowPitch));
+            dstRowPitch = rowPitch;
+
+            GLuint depthPitch;
+            ANGLE_CHECK_GL_MATH(contextMtl, dstFormatInfo.computeCompressedImageDepthPitch(
+                                                static_cast<GLsizei>(mtlArea.size.height),
+                                                static_cast<GLuint>(dstRowPitch), &depthPitch));
+            dstDepthPitch = depthPitch;
+        }
+        else
+        {
+            dstRowPitch   = dstFormat.pixelBytes * mtlArea.size.width;
+            dstDepthPitch = dstRowPitch * mtlArea.size.height;
+        }
 
         // It is very important to avoid allocating a new buffer for each row during these
         // uploads.
@@ -2474,7 +2543,6 @@ angle::Result TextureMtl::convertAndSetPerSliceSubImage(const gl::Context *conte
                 ASSERT(loadFunctionInfo.loadFunction);
 
                 // Need to create a buffer to hold entire decompressed image.
-                const size_t dstDepthPitch = dstRowPitch * mtlArea.size.height;
                 angle::MemoryBuffer decompressBuf;
                 ANGLE_CHECK_GL_ALLOC(contextMtl,
                                      decompressBuf.resize(dstDepthPitch * mtlArea.size.depth));
@@ -2498,7 +2566,6 @@ angle::Result TextureMtl::convertAndSetPerSliceSubImage(const gl::Context *conte
                        static_cast<unsigned int>(imageDef.image->sizeAt0().width));
                 ASSERT(mtlArea.size.height ==
                        static_cast<unsigned int>(imageDef.image->sizeAt0().height));
-                const size_t dstDepthPitch = dstRowPitch * mtlArea.size.height;
                 ANGLE_TRY(UploadTextureContents(
                     context, dstFormat, mtlArea, mtl::kZeroNativeMipLevel, slice, pixels,
                     dstRowPitch, dstDepthPitch, kAvoidStagingBuffers, imageDef.image));

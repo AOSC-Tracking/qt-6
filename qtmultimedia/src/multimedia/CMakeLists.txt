@@ -359,9 +359,9 @@ qt_internal_extend_target(Multimedia CONDITION QNX
 
 qt_internal_extend_target(Multimedia CONDITION WIN32
     SOURCES
-        windows/qcominitializer.cpp windows/qcominitializer_p.h
         windows/qcomtaskresource_p.h
         windows/qwindows_propertystore.cpp windows/qwindows_propertystore_p.h
+        windows/qwindows_scopedpropvariant_p.h
         windows/qwindows_wasapi_warmup_client.cpp windows/qwindows_wasapi_warmup_client_p.h
         windows/qwindowsaudiodevice.cpp windows/qwindowsaudiodevice_p.h
         windows/qwindowsaudiodevices.cpp windows/qwindowsaudiodevices_p.h

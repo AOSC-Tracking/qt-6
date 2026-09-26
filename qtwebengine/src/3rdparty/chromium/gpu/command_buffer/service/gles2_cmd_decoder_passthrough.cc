@@ -177,6 +177,31 @@ class ScopedScissorTestReset {
   GLboolean scissor_test_;
 };
 
+class ScopedRasterizerDiscardReset {
+ public:
+  explicit ScopedRasterizerDiscardReset(gl::GLApi* api,
+                                        bool rasterizer_discard_available)
+      : api_(api), rasterizer_discard_available_(rasterizer_discard_available) {
+    if (rasterizer_discard_available_) {
+      api_->glGetBooleanvFn(GL_RASTERIZER_DISCARD, &rasterizer_discard_);
+    }
+  }
+  ~ScopedRasterizerDiscardReset() {
+    if (rasterizer_discard_available_) {
+      if (rasterizer_discard_) {
+        api_->glEnableFn(GL_RASTERIZER_DISCARD);
+      } else {
+        api_->glDisableFn(GL_RASTERIZER_DISCARD);
+      }
+    }
+  }
+
+ private:
+  raw_ptr<gl::GLApi> api_;
+  const bool rasterizer_discard_available_;
+  GLboolean rasterizer_discard_;
+};
+
 template <typename ClientType, typename ServiceType, typename DeleteFunction>
 void DeleteServiceObjects(ClientServiceMap<ClientType, ServiceType>* id_map,
                           bool have_context,
@@ -343,6 +368,16 @@ bool PassthroughResources::ResumeSharedImageAccessIfNeeded(gl::GLApi* api) {
   return success;
 }
 
+void PassthroughResources::MarkContextLost() {
+  texture_object_map.ForEach(
+      [](GLuint client_id, scoped_refptr<TexturePassthrough> texture) {
+        texture->MarkContextLost();
+      });
+  for (auto& pair : texture_shared_image_map) {
+    pair.second.representation()->OnContextLost();
+  }
+}
+
 void PassthroughResources::Destroy(gl::GLApi* api,
                                    gl::ProgressReporter* progress_reporter) {
   bool have_context = !!api;
@@ -449,6 +484,8 @@ void PassthroughResources::SharedImageData::EnsureClear(
     auto texture = representation_->GetTexturePassthrough();
     const bool use_oes_draw_buffers_indexed =
         impl->features().oes_draw_buffers_indexed;
+    bool has_rasterizer_discard =
+        impl->GetFeatureInfo()->gl_version_info().IsAtLeastGLES(3, 0);
 
     // Back up all state we are about to change.
     gl::GLApi* api = impl->api();
@@ -461,6 +498,8 @@ void PassthroughResources::SharedImageData::EnsureClear(
     ScopedColorMaskZeroReset color_mask_reset(api,
                                               use_oes_draw_buffers_indexed);
     ScopedScissorTestReset scissor_test_reset(api);
+    ScopedRasterizerDiscardReset rasterizer_discard_reset(
+        api, has_rasterizer_discard);
 
     // Generate a new framebuffer and bind the shared image's uncleared texture
     // to it.
@@ -479,14 +518,20 @@ void PassthroughResources::SharedImageData::EnsureClear(
       api->glColorMaskFn(true, true, true, true);
     api->glDisableFn(GL_SCISSOR_TEST);
     api->glClearFn(GL_COLOR_BUFFER_BIT);
+    if (has_rasterizer_discard) {
+      api->glDisableFn(GL_RASTERIZER_DISCARD);
+    }
+
+    if (api->glCheckFramebufferStatusEXTFn(GL_FRAMEBUFFER) ==
+        GL_FRAMEBUFFER_COMPLETE) {
+      // Mark the shared image as cleared.
+      representation_->SetCleared();
+    }
 
     // Delete the generated framebuffer.
     api->glFramebufferTexture2DEXTFn(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
                                      texture->target(), 0, 0);
     api->glDeleteFramebuffersEXTFn(1, &fbo);
-
-    // Mark the shared image as cleared.
-    representation_->SetCleared();
   }
 }
 
@@ -1589,6 +1634,32 @@ void GLES2DecoderPassthroughImpl::MarkContextLost(
     return;
   }
 
+  bool have_context = context_ && context_->IsCurrent(nullptr);
+  if (have_context) {
+    for (auto& bound_texture_type : bound_textures_) {
+      for (auto& bound_texture : bound_texture_type) {
+        if (bound_texture.texture) {
+          bound_texture.texture->MarkContextLost();
+        }
+      }
+    }
+
+    if (resources_) {
+      resources_->MarkContextLost();
+    }
+
+    // SECURITY: crbug.com/500187083 and crbug.com/517018374.
+    // Unconditionally clear per-context callbacks that hold a raw
+    // `this` pointer if the context IsCurrent before it gets lost, to
+    // prevent UAF when Destroy(have_context=false) skips them.
+    if (api()) {
+      api()->glDebugMessageCallbackFn(nullptr, nullptr);
+      if (feature_info_ && feature_info_->feature_flags().angle_blob_cache) {
+        api()->glBlobCacheCallbacksANGLEFn(nullptr, nullptr, nullptr);
+      }
+    }
+  }
+
   // Don't make GL calls in here, the context might not be current.
   command_buffer_service()->SetContextLostReason(reason);
   context_lost_ = true;
@@ -1848,50 +1919,6 @@ INSTANTIATE_PATCH_NUMERIC_RESULTS(GLint64);
 INSTANTIATE_PATCH_NUMERIC_RESULTS(GLfloat);
 INSTANTIATE_PATCH_NUMERIC_RESULTS(GLboolean);
 #undef INSTANTIATE_PATCH_NUMERIC_RESULTS
-
-template <typename T>
-error::Error GLES2DecoderPassthroughImpl::PatchGetBufferResults(GLenum target,
-                                                                GLenum pname,
-                                                                GLsizei bufsize,
-                                                                GLsizei* length,
-                                                                T* params) {
-  if (pname != GL_BUFFER_ACCESS_FLAGS) {
-    return error::kNoError;
-  }
-
-  // If there was no error, the buffer target should exist
-  DCHECK(bound_buffers_.find(target) != bound_buffers_.end());
-  if (target == GL_ELEMENT_ARRAY_BUFFER) {
-    LazilyUpdateCurrentlyBoundElementArrayBuffer();
-  }
-  GLuint current_client_buffer = bound_buffers_[target];
-
-  auto mapped_buffer_info_iter =
-      resources_->mapped_buffer_map.find(current_client_buffer);
-  if (mapped_buffer_info_iter == resources_->mapped_buffer_map.end()) {
-    // Buffer is not mapped, nothing to do
-    return error::kNoError;
-  }
-
-  // Buffer is mapped, patch the result with the original access flags
-  DCHECK_GE(bufsize, 1);
-  DCHECK_EQ(*length, 1);
-  params[0] = mapped_buffer_info_iter->second.original_access;
-  return error::kNoError;
-}
-
-template error::Error GLES2DecoderPassthroughImpl::PatchGetBufferResults(
-    GLenum target,
-    GLenum pname,
-    GLsizei bufsize,
-    GLsizei* length,
-    GLint64* params);
-template error::Error GLES2DecoderPassthroughImpl::PatchGetBufferResults(
-    GLenum target,
-    GLenum pname,
-    GLsizei bufsize,
-    GLsizei* length,
-    GLint* params);
 
 error::Error GLES2DecoderPassthroughImpl::
     PatchGetFramebufferPixelLocalStorageParameterivANGLE(GLint plane,

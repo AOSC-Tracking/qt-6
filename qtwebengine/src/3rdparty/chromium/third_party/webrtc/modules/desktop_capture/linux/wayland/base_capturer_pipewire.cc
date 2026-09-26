@@ -56,7 +56,10 @@ bool BaseCapturerPipeWire::IsSupported() {
 BaseCapturerPipeWire::BaseCapturerPipeWire(const DesktopCaptureOptions& options,
                                            CaptureType type)
     : BaseCapturerPipeWire(options,
-                           std::make_unique<ScreenCastPortal>(type, this)) {
+                           std::make_unique<ScreenCastPortal>(
+                               type,
+                               this,
+                               options.prefer_cursor_embedded())) {
   is_screencast_portal_ = true;
 }
 
@@ -72,6 +75,10 @@ BaseCapturerPipeWire::BaseCapturerPipeWire(
 }
 
 BaseCapturerPipeWire::~BaseCapturerPipeWire() {
+  // Destroy the portal first. Its destructor may block until in-flight
+  // GDBus callbacks finish, and those callbacks access other members
+  // (options_, callback_) through the notifier_ pointer.
+  portal_.reset();
   options_.screencast_stream()->StopScreenCastStream();
 }
 

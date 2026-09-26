@@ -1,5 +1,5 @@
 {{>licenseInfo}}
-#include "{{#lambda.lowercase}}{{{classname}}}{{/lambda.lowercase}}.h"
+#include "{{classFilename}}.h"
 #include "{{prefixLowerCase}}serverconfiguration.h"
 
 #include <QtCore/qanystringview.h>
@@ -572,19 +572,9 @@ void {{classname}}::{{nickname}}Callback(const QRestReply &reply)
     {{{returnType}}} output;
     const QJsonDocument doc = QJsonDocument::fromJson(response);
     if (!doc.isNull() && doc.isArray()) {
-        const QJsonArray jsonArray = doc.array();
-        for (const QJsonValue &obj : jsonArray) {
-            {{{returnBaseType}}} val;
-            const bool ok = ::{{cppCommonNamespace}}::fromJsonValue(val, obj);
-            if (!ok)
-                qWarning("%s: Failed to convert QJsonValue to {{returnBaseType}}.", Q_FUNC_INFO);
-            {{#uniqueItems}}
-            output.insert(val);
-            {{/uniqueItems}}
-            {{^uniqueItems}}
-            output.append(val);
-            {{/uniqueItems}}
-        }
+        const bool ok = ::{{cppCommonNamespace}}::fromJsonValue(output, doc.array());
+        if (!ok)
+            qWarning("%s: Failed to convert QJsonValue to {{{returnType}}}.", Q_FUNC_INFO);
     } else {
         qWarning("%s: Failed to parse the response as a JSON array.", Q_FUNC_INFO);
     }
@@ -602,14 +592,9 @@ void {{classname}}::{{nickname}}Callback(const QRestReply &reply)
     {{{returnType}}} output;
     const QJsonDocument doc = QJsonDocument::fromJson(response);
     if (!doc.isNull() && doc.isObject()) {
-        const QJsonObject obj = doc.object();
-        for (const QString &key : obj.keys()) {
-            {{returnBaseType}} val;
-            const bool ok = ::{{cppCommonNamespace}}::fromJsonValue(val, obj[key]);
-            if (!ok)
-                qWarning("%s: Failed to convert QJsonValue to {{returnBaseType}}.", Q_FUNC_INFO);
-            output.insert(key, val);
-        }
+        const bool ok = ::{{cppCommonNamespace}}::fromJsonValue(output, doc.object());
+        if (!ok)
+            qWarning("%s: Failed to convert QJsonValue to {{{returnType}}}.", Q_FUNC_INFO);
     } else {
         qWarning("%s: Failed to parse the response as a JSON object.", Q_FUNC_INFO);
     }

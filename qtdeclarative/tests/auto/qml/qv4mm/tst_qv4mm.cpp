@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
 
 #include <qtest.h>
+#include <QSignalSpy>
 #include <QQmlEngine>
 #include <QLoggingCategory>
 #include <QQmlComponent>
@@ -26,6 +27,8 @@
 #include <memory>
 
 #include <private/qqmlobjectcreator_p.h>
+#include <private/qqmlcomponent_p.h>
+#include <private/qv4executablecompilationunit_p.h>
 
 class tst_qv4mm : public QQmlDataTest
 {
@@ -45,6 +48,7 @@ private slots:
     void createObjectsOnDestruction();
     void sharedInternalClassDataMarking();
     void gcTriggeredInOnDestroyed();
+    void populateDuringTeardownWithOngoingIncrementalGc();
     void weakValuesAssignedAfterThePhaseThatShouldHandleWeakValues();
     void mapAndSetKeepValuesAlive();
     void jittedStoreLocalMarksValue();
@@ -495,6 +499,78 @@ void tst_qv4mm::gcTriggeredInOnDestroyed()
     gc(v4); // run another gc cycle
     QVERIFY(!testObject); // now collcted by gc
 }
+
+// QTBUG-138621 / QTBUG-134687: If an incremental GC is still in progress when the
+// engine is torn down, ~MemoryManager aborts the run (dropping the mark stack) but
+// leaves gcBlocked == NormalBlocked. The final lastSweep then destroys objects and
+// runs their C++ destruction handlers in that stale state. If such a handler
+// instantiates a QML object whose compilation unit has not been populated yet,
+// ExecutableCompilationUnit::populate()'s GCCriticalSection destructor observes the
+// stale NormalBlocked state (m_oldState != Unblocked) and marks the unit through the
+// already-freed (null) mark stack, crashing in MarkStack::push().
+void tst_qv4mm::populateDuringTeardownWithOngoingIncrementalGc()
+{
+    auto engine = std::make_unique<QQmlEngine>();
+    QV4::ExecutionEngine &v4 = *engine->handle();
+
+    // Load a component now, so its compilation unit exists, but never create an
+    // instance, so the executable compilation unit stays un-populated. Keep our own
+    // reference to the unit: populate() only needs the loaded unit, not the type
+    // loader (which is torn down before the memory manager during engine destruction).
+    QQmlRefPointer<QV4::ExecutableCompilationUnit> pending;
+    {
+        QQmlComponent component(engine.get(), testFileUrl("populateDuringSweep.qml"));
+        QVERIFY2(!component.isError(), qPrintable(component.errorString()));
+        pending = QQmlComponentPrivate::get(&component)->compilationUnit();
+        QVERIFY(pending);
+    }
+
+    // A JavaScript-owned object with no other references. It is destroyed during the
+    // memory manager's final sweep; its destroyed() handler runs in the buggy window.
+    QQmlComponent trigger(engine.get(), testFileUrl("simpleObject.qml"));
+    QVERIFY2(!trigger.isError(), qPrintable(trigger.errorString()));
+    QObject *obj = trigger.create();
+    QVERIFY(obj);
+    QJSEngine::setObjectOwnership(obj, QJSEngine::JavaScriptOwnership);
+    QV4::QObjectWrapper::ensureWrapper(&v4, obj);
+
+    QSignalSpy destroyed(obj, &QObject::destroyed);
+    connect(obj, &QObject::destroyed, this, [pending = std::move(pending)]() {
+        // When run from ~MemoryManager::sweep() during teardown, gcBlocked == NormalBlocked
+        // while the mark stack has already been freed.
+        if (pending->engine)
+            pending->populate();
+    });
+
+    // Start a real incremental garbage collection and let it pause after its first
+    // slice, exactly as an ordinary incremental run pauses between event-loop
+    // iterations. A minimal time limit makes runGC() execute just the initial step
+    // (which creates the mark stack) before the deadline stops it, leaving the GC in
+    // progress so that ~MemoryManager takes its abort branch during teardown.
+    auto *mm = v4.memoryManager;
+    mm->gcStateMachine->timeLimit = std::chrono::microseconds(1);
+    mm->runGC();
+    QVERIFY(v4.isGCOngoing);
+    QVERIFY(mm->markStack());
+    QCOMPARE(mm->gcBlocked, QV4::MemoryManager::NormalBlocked);
+
+    // Push the unmanaged heap over its limit. Otherwise the GCCriticalSection opened by
+    // populate() bails out at the isAboveUnmanagedHeapLimit() check in its destructor and
+    // never reaches the re-entrant GC that the inShutdown guard is meant to suppress.
+    mm->unmanagedHeapSizeGCLimit = 0;
+    mm->changeUnmanagedHeapSizeUsage(1);
+
+    // Destroying the engine aborts the incremental GC and runs the final sweep, which
+    // destroys obj and invokes the handler above. With the bug present this crashes;
+    // once ~MemoryManager also resets gcBlocked the teardown completes cleanly.
+    engine.reset();
+
+    // The object may only be scheduled for deferred deletion during teardown rather than
+    // deleted by the final sweep. Wait here for the signal so that any crash in the lambda
+    // is correctly attributed to this test.
+    QVERIFY(!destroyed.isEmpty() || destroyed.wait());
+}
+
 void tst_qv4mm::weakValuesAssignedAfterThePhaseThatShouldHandleWeakValues()
 {
     QObject testObject;

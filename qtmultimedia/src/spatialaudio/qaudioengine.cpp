@@ -54,6 +54,9 @@ float QAudioEnginePrivate::masterVolume() const
 void QAudioEnginePrivate::setListenerPosition(std::optional<QVector3D> pos)
 {
     m_position = pos;
+
+    QVector3D posValue = pos.value_or(QVector3D{});
+    resonanceAudio->api->SetHeadPosition(posValue.x(), posValue.y(), posValue.z());
 }
 
 void QAudioEnginePrivate::setListenerRotation(const QQuaternion &rotation)
@@ -122,11 +125,11 @@ QAudioEnginePrivate::findSmallestRoomForListener(QSpan<QAudioRoom *> rooms) cons
     Perception of sound localization is driven mainly by two factors. The first factor is timing
     differences of the sound waves between left and right ear. The second factor comes from various
     ways how sounds coming from different direcations create different types of reflections from our
-    ears and heads. See https://en.wikipedia.org/wiki/Sound_localization for more details.
+    ears and heads. See \l{https://en.wikipedia.org/wiki/Sound_localization} for more details.
 
     The spatial audio engine emulates those timing differences and reflections through
     Head related transfer functions (HRTF, see
-    https://en.wikipedia.org/wiki/Head-related_transfer_function). The functions used emulates those
+    \l{https://en.wikipedia.org/wiki/Head-related_transfer_function}). The functions used emulates those
     effects for an average persons ears and head. It provides a good and immersive 3D sound localization
     experience for most persons when using headphones.
 
@@ -173,6 +176,7 @@ QAudioEngine::~QAudioEngine()
 /*! \enum QAudioEngine::OutputMode
     \value Surround Map the sounds to the loudspeaker configuration of the output device.
         This is normally a stereo or surround speaker setup.
+        \note OutputMode::Surround will disable playback of QAmbientSound
     \value Stereo Map the sounds to the stereo loudspeaker configuration of the output device.
         This will ignore any additional speakers and only use the left and right channels
         to create a stero rendering of the sound field.

@@ -669,7 +669,7 @@ int QDate::day() const
 
     Uses \a cal as calendar if supplied, else the Gregorian calendar. Returns 0
     if the date is invalid. Some calendars may give special meaning
-    (e.g. intercallary days) to values greater than 7.
+    (e.g. intercalary days) to values greater than 7.
 
     \sa day(), dayOfYear(), QCalendar::dayOfWeek(), Qt::DayOfWeek
 */
@@ -3004,7 +3004,7 @@ QString QDateTimePrivate::localNameAtMillis(qint64 millis, DaylightStatus dst)
     const QDateTimePrivate::TransitionOptions resolve = toTransitionOptions(dst);
     QString abbreviation;
     if (millisInSystemRange(millis, MSECS_PER_DAY)) {
-        abbreviation = QLocalTime::localTimeAbbbreviationAt(millis, resolve);
+        abbreviation = QLocalTime::localTimeAbbreviationAt(millis, resolve);
         if (!abbreviation.isEmpty())
             return abbreviation;
     }
@@ -3024,7 +3024,7 @@ QString QDateTimePrivate::localNameAtMillis(qint64 millis, DaylightStatus dst)
     // Use a time in the system range with the same day-of-week pattern to its year:
     auto fake = millisToWithinRange(millis);
     if (Q_LIKELY(fake.good))
-        return QLocalTime::localTimeAbbbreviationAt(fake.shifted, resolve);
+        return QLocalTime::localTimeAbbreviationAt(fake.shifted, resolve);
 
     // Overflow, apparently.
     return {};
@@ -4415,7 +4415,7 @@ void QDateTime::setTime(QTime time, TransitionResolution resolve)
 
 #if QT_DEPRECATED_SINCE(6, 9)
 /*!
-    \deprecated [6.9] Use setTimeZone() instead
+    \deprecated [6.9] Use setTimeZone() instead.
 
     Sets the time specification used in this datetime to \a spec.
     The datetime may refer to a different point in time.
@@ -4440,7 +4440,7 @@ void QDateTime::setTimeSpec(Qt::TimeSpec spec)
 
 /*!
     \since 5.2
-    \deprecated [6.9] Use setTimeZone(QTimeZone::fromSecondsAheadOfUtc(offsetSeconds)) instead
+    \deprecated [6.9] Use setTimeZone(QTimeZone::fromSecondsAheadOfUtc(offsetSeconds)) instead.
 
     Sets the timeSpec() to Qt::OffsetFromUTC and the offset to \a offsetSeconds.
     The datetime may refer to a different point in time.

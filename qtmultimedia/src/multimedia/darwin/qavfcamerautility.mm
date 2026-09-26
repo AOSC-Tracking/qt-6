@@ -8,6 +8,7 @@
 #include <private/qmultimediautils_p.h>
 #include <private/qcameradevice_p.h>
 #include <QtMultimedia/private/qavfhelpers_p.h>
+#include <QtMultimedia/private/qmultimedia_ranges_p.h>
 
 #include <functional>
 #include <algorithm>
@@ -17,6 +18,8 @@
 #include <AudioToolbox/AudioToolbox.h>
 
 QT_BEGIN_NAMESPACE
+
+namespace ranges = QtMultimediaPrivate::ranges;
 
 Q_LOGGING_CATEGORY(qLcCamera, "qt.multimedia.camera")
 
@@ -162,7 +165,7 @@ QVector<AVCaptureDeviceFormat *> qt_unique_device_formats(AVCaptureDevice *captu
     if (!formats.size())
         return formats;
 
-    std::sort(formats.begin(), formats.end(), ByResolution<std::less>());
+    ranges::sort(formats, ByResolution<std::less>());
 
     QSize size(qt_device_format_resolution(formats[0]));
     FourCharCode codec = CMVideoFormatDescriptionGetCodecType(formats[0].formatDescription);
@@ -324,11 +327,11 @@ AVCaptureDeviceFormat *qt_find_best_framerate_match(AVCaptureDevice *captureDevi
 
     const qreal epsilon = 0.1;
 
-    QVector<AVCaptureDeviceFormat *>sorted(qt_unique_device_formats(captureDevice, filter));
+    QVector<AVCaptureDeviceFormat *> sorted(qt_unique_device_formats(captureDevice, filter));
     // Sort formats by their resolution in decreasing order:
-    std::sort(sorted.begin(), sorted.end(), ByResolution<std::greater>());
+    ranges::sort(sorted, ByResolution<std::greater>());
     // We can use only formats with framerate ranges:
-    sorted.erase(std::remove_if(sorted.begin(), sorted.end(), FormatHasNoFPSRange()), sorted.end());
+    sorted.removeIf(FormatHasNoFPSRange());
 
     if (!sorted.size())
         return nil;

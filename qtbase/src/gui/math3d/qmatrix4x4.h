@@ -35,7 +35,8 @@ public:
                       float m41, float m42, float m43, float m44);
 
     template <int N, int M>
-    explicit QMatrix4x4(const QGenericMatrix<N, M, float>& matrix);
+    explicit QMatrix4x4(const QGenericMatrix<N, M, float>& matrix)
+        : QMatrix4x4(matrix.data(), N, M) {}
 
     QMatrix4x4(const float *values, int cols, int rows);
     QMatrix4x4(const QTransform& transform);
@@ -209,36 +210,19 @@ inline QMatrix4x4::QMatrix4x4
 }
 
 template <int N, int M>
-Q_INLINE_TEMPLATE QMatrix4x4::QMatrix4x4
-    (const QGenericMatrix<N, M, float>& matrix)
-{
-    const float *values = matrix.constData();
-    for (int matrixCol = 0; matrixCol < 4; ++matrixCol) {
-        for (int matrixRow = 0; matrixRow < 4; ++matrixRow) {
-            if (matrixCol < N && matrixRow < M)
-                m[matrixCol][matrixRow] = values[matrixCol * M + matrixRow];
-            else if (matrixCol == matrixRow)
-                m[matrixCol][matrixRow] = 1.0f;
-            else
-                m[matrixCol][matrixRow] = 0.0f;
-        }
-    }
-    flagBits = General;
-}
-
-template <int N, int M>
 QGenericMatrix<N, M, float> QMatrix4x4::toGenericMatrix() const
 {
-    QGenericMatrix<N, M, float> result;
+    Q_DECL_UNINITIALIZED
+    QGenericMatrix<N, M, float> result(Qt::Uninitialized);
     float *values = result.data();
     for (int matrixCol = 0; matrixCol < N; ++matrixCol) {
         for (int matrixRow = 0; matrixRow < M; ++matrixRow) {
             if (matrixCol < 4 && matrixRow < 4)
-                values[matrixCol * M + matrixRow] = m[matrixCol][matrixRow];
+                *values++ = m[matrixCol][matrixRow];
             else if (matrixCol == matrixRow)
-                values[matrixCol * M + matrixRow] = 1.0f;
+                *values++ = 1.0f;
             else
-                values[matrixCol * M + matrixRow] = 0.0f;
+                *values++ = 0.0f;
         }
     }
     return result;

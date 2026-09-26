@@ -60,6 +60,19 @@ public class CppQt6ClientGenerator extends CppQt6AbstractCodegen implements Code
     protected static final String USE_COMMON_LIBRARY = "enableCommonLibGeneration";
     private final Logger LOGGER = LoggerFactory.getLogger(CppQt6ClientGenerator.class);
     private final boolean makeOperationsVirtual = true;
+    // {{prefix}}BaseApi method names that must not be used as operationIds.
+    // Keep in sync with api-base-header.mustache.
+    // Stored separately from reservedWords so that model properties are not affected.
+    private final Set<String> apiReservedOperationNames = new HashSet<>(Arrays.asList(
+        "operations", "serverConfigurations", "setServerVariable", "setServer", "activeServer",
+        "setApiKey", "apiKey", "setBearerToken", "bearerToken", "setUsername", "username",
+        "setPassword", "password", "setTimeOut", "setSslConfiguration", "sslConfiguration",
+        "setWorkingDirectory", "workingDirectory", "setRestAccessManager", "restAccessManager",
+        "setNetworkRequestFactory", "networkRequestFactory", "setHeader",
+        "setRequestCompressionEnabled", "requestCompressionEnabled",
+        "setResponseCompressionEnabled", "responseCompressionEnabled", "errorString",
+        "execute", "setServersForOperation", "setBaseServerUrl", "setCallerInfo", "takeCallerInfo"
+    ));
     @Setter protected boolean addDownloadProgress = false;
     @Setter protected boolean enableQmlCode = false;
     @Setter protected String commonLibrary = GENERATION_TYPE.CLIENT_LIB.value;
@@ -193,6 +206,20 @@ public class CppQt6ClientGenerator extends CppQt6AbstractCodegen implements Code
         additionalProperties.put("prefix", namePrefix);
         additionalProperties.put("camelcase", new CamelCaseAndSanitizeLambda(false).generator(this));
         additionalProperties.put("cppCommonNamespace", cppCommonNamespace);
+    }
+
+    protected boolean isBaseApiOperationName(String word) {
+        return apiReservedOperationNames.contains(word);
+    }
+
+    @Override
+    public String toOperationId(String operationId) {
+        if (isBaseApiOperationName(operationId)) {
+            LOGGER.warn("{} ({{prefix}}BaseApi method name) cannot be used as an API method name. "
+                        + "Renamed to {}", operationId, escapeReservedWord(operationId));
+            return escapeReservedWord(operationId);
+        }
+        return super.toOperationId(operationId);
     }
 
     @Override

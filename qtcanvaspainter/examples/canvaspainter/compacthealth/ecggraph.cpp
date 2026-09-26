@@ -3,10 +3,12 @@
 
 #include "ecggraph.h"
 #include "mainwindow.h"
-#include <QColor>
+
 #include <QRandomGenerator>
-#include <QTimer>
-#include <QtCanvasPainter/QCanvasPath>
+
+#include <QColor>
+
+#include <cmath>
 
 ECGGraph::ECGGraph()
 {
@@ -64,7 +66,7 @@ void ECGGraph::paintWave(float x, float y, float w, float h)
     if (m_clearDataIndex > m_heartDataIndex) {
         // Stroke with 2 lines
         // Before the space
-        const float firstY = y + hC - hC*data.constFirst();
+        const float firstY = y + hC - hC * data.constFirst();
         p->moveTo(x, firstY);
         for (int i = 1; i < m_heartDataIndex; i++) {
             const float d = data.at(i);
@@ -80,11 +82,11 @@ void ECGGraph::paintWave(float x, float y, float w, float h)
         }
     } else {
         // Stroke with 1 line
-        const float firstY = y + hC + hC*data.at(m_clearDataIndex);
+        const float firstY = y + hC + hC * data.at(m_clearDataIndex);
         p->moveTo(x + m_clearDataIndex * xMove, firstY);
         for (int i = m_clearDataIndex + 1; i < m_heartDataIndex; i++) {
             const float d = data.at(i);
-            p->lineTo(x + i * xMove, y+hC - hC * d);
+            p->lineTo(x + i * xMove, y + hC - hC * d);
         }
     }
     p->stroke();
@@ -103,7 +105,7 @@ void ECGGraph::paintSpo2Wave(float x, float y, float w, float h)
     if (m_clearDataIndex > m_heartDataIndex) {
         // Stroke with 2 lines
         // Before the space
-        const float firstY = y + hC - hC*data.constFirst();
+        const float firstY = y + hC - hC * data.constFirst();
         p->moveTo(x, firstY);
         for (int i = 1; i < m_heartDataIndex; i++) {
             const float d = data.at(i);
@@ -119,11 +121,11 @@ void ECGGraph::paintSpo2Wave(float x, float y, float w, float h)
         }
     } else {
         // Stroke with 1 line
-        const float firstY = y + hC - hC*data.at(m_clearDataIndex);
+        const float firstY = y + hC - hC * data.at(m_clearDataIndex);
         p->moveTo(x + m_clearDataIndex * xMove, firstY);
         for (int i = m_clearDataIndex + 1; i < m_heartDataIndex; i++) {
             const float d = data.at(i);
-            p->lineTo(x + i * xMove, y+hC - hC*d);
+            p->lineTo(x + i * xMove, y + hC - hC * d);
         }
     }
     p->stroke();
@@ -153,9 +155,11 @@ void ECGGraph::updateData(float hr)
     const float beatState = float(m_currentFrame - m_beatFrame) / (m_pulseRate + 1);
     // Generate something that looks like SpO2, synchronized with beats.
     float sp = std::sin(-1.5f + beatState * M_PI * 2);
-    const float spPhaseVarying = 2.8f + 0.3f * (std::sin(0.123 * m_currentFrame) + std::cos(0.141 * m_currentFrame));
+    const float spPhaseVarying =
+            2.8f + 0.3f * (std::sin(0.123 * m_currentFrame) + std::cos(0.141 * m_currentFrame));
     sp += 0.6 * std::sin(spPhaseVarying + beatState * M_PI * 4);
-    const float spSizeVarying = 0.05f * (std::sin(0.14 * m_currentFrame) + std::cos(0.24 * m_currentFrame));
+    const float spSizeVarying =
+            0.05f * (std::sin(0.14 * m_currentFrame) + std::cos(0.24 * m_currentFrame));
     sp *= 0.4 + spSizeVarying;
     // Add random interference.
     //const float spRand = 0.02f;
@@ -163,11 +167,13 @@ void ECGGraph::updateData(float hr)
     m_spo2Data[m_heartDataIndex] = sp;
 }
 
-void ECGGraph::fillEmptyData() {
+void ECGGraph::fillEmptyData()
+{
     m_waveData[m_heartDataIndex] = 0;
 }
 
-void ECGGraph::fillRandomData() {
+void ECGGraph::fillRandomData()
+{
     auto *rand = QRandomGenerator::global();
     if (m_defibrillator)
         m_waveData[m_heartDataIndex] = rand->generateDouble() * 1.2f - 0.6f;
@@ -176,18 +182,27 @@ void ECGGraph::fillRandomData() {
 }
 
 // Create random data which looks like heart beat
-void ECGGraph::fillBeatData() {
+void ECGGraph::fillBeatData()
+{
     auto *rand = QRandomGenerator::global();
     const int i = m_beatDataIndex;
     float value = 0;
     float r = float(rand->generateDouble());
-    if (i == 0) value = r * 0.1f + 0.1f;
-    else if (i == 1) value = r * 0.2f - 0.1f;
-    else if (i == 2) value = r * 0.4f + 0.6f;
-    else if (i == 3) value = r * 0.1f - 0.05f;
-    else if (i == 4) value = r * 0.4f - 0.8f;
-    else if (i == 5) value = r * 0.2f - 0.05f;
-    else if (i == 6) value = r * 0.1f - 0.05f;
-    else if (i == 7) value = r * 0.1f + 0.15f;
+    if (i == 0)
+        value = r * 0.1f + 0.1f;
+    else if (i == 1)
+        value = r * 0.2f - 0.1f;
+    else if (i == 2)
+        value = r * 0.4f + 0.6f;
+    else if (i == 3)
+        value = r * 0.1f - 0.05f;
+    else if (i == 4)
+        value = r * 0.4f - 0.8f;
+    else if (i == 5)
+        value = r * 0.2f - 0.05f;
+    else if (i == 6)
+        value = r * 0.1f - 0.05f;
+    else if (i == 7)
+        value = r * 0.1f + 0.15f;
     m_waveData[m_heartDataIndex] = value;
 }

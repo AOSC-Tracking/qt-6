@@ -5,12 +5,14 @@
     \title Graphs with CSV Data
     \examplecategory {Data Visualization}
     \ingroup qtquickdemos
+    \ingroup qtgraphs_qmlexamples
     \example demos/graphs_csv
     \brief How to visualize data from a CSV file in Qt Graphs.
     \meta {tag} {demo,quick,graphs}
     \meta {docdependencies} {QtGraphs}
 
-    \borderedimage qtquick-demo-graphs-csv.png
+    \image qtquick-demo-graphs-csv.png
+           {2D bar chart visualizing data loaded from a CSV file}
 
     The \b {Graphs with CSV Data} example shows how to display data from a CSV file in
     a 2D bar chart. The application reads the CSV file using a third-party CSV parser.

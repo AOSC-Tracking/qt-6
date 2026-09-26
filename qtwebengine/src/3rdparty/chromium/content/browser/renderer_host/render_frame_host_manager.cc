@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <string>
+#include <tuple>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -1035,8 +1036,20 @@ void RenderFrameHostManager::DidChangeOpener(
         *opener_frame_token);
     // If |opener_rfhi| is null, the opener RFH has already disappeared.  In
     // this case, clear the opener rather than keeping the old opener around.
-    if (opener_rfhi)
+    if (opener_rfhi) {
+      // Ignore this message if |opener_rfhi| is inactive (e.g., in BFCache or
+      // pending deletion), or if the FrameTreeNode's current RenderFrameHost
+      // is in a different BrowsingInstance, as it would be incorrect to
+      // establish an opener relationship in those cases.
+      if (opener_rfhi->IsInactiveAndDisallowActivation(
+              DisallowActivationReasonId::kDidChangeOpener) ||
+          !render_frame_host_->GetSiteInstance()
+               ->group()
+               ->IsRelatedSiteInstanceGroup(source_site_instance_group)) {
+        return;
+      }
       opener = opener_rfhi->frame_tree_node();
+    }
   }
 
   if (frame_tree_node_->opener() == opener)
@@ -2602,8 +2615,11 @@ void RenderFrameHostManager::UpdateUserActivationState(
           blink::mojom::UserActivationUpdateType::kNotifyActivation) {
     outer_delegate_proxy->GetAssociatedRemoteFrame()->UpdateUserActivationState(
         update_type, notification_type);
-    GetOuterDelegateNode()->UpdateUserActivationState(update_type,
-                                                      notification_type);
+    // Ignore the result here, since a failure when providing a user activation
+    // isn't really why `UpdateUserActivationState` is [[nodiscard]].  It's
+    // when a gesture can't be consumed that it's potentially an issue.
+    std::ignore = GetOuterDelegateNode()->UpdateUserActivationState(
+        update_type, notification_type);
   }
 }
 

@@ -49,6 +49,8 @@ QT_BEGIN_NAMESPACE
     \endcode
 
     \image gridpattern_example_1.png
+           {Rounded square filled with a yellow diagonal grid and bordered by
+           a dashed white stroke}
 
 */
 
@@ -63,7 +65,6 @@ QCanvasGridPattern::QCanvasGridPattern()
 {
 }
 
-#define G_D() auto *d = QCanvasGridPatternPrivate::get(this)
 
 /*!
     Constructs an grid pattern.
@@ -79,7 +80,7 @@ QCanvasGridPattern::QCanvasGridPattern(const QRectF &rect,
                              float lineWidth, float feather, float angle)
     : QCanvasBrush(new QCanvasGridPatternPrivate)
 {
-    G_D();
+    auto *d = QCanvasGridPatternPrivate::get(this);
     d->x = float(rect.x());
     d->y = float(rect.y());
     d->width = float(rect.width());
@@ -104,7 +105,7 @@ QCanvasGridPattern::QCanvasGridPattern(float x, float y, float width, float heig
                              float lineWidth, float feather, float angle)
     : QCanvasBrush(new QCanvasGridPatternPrivate)
 {
-    G_D();
+    auto *d = QCanvasGridPatternPrivate::get(this);
     d->x = x;
     d->y = y;
     d->width = width;
@@ -242,7 +243,7 @@ QDataStream &operator>>(QDataStream &s, QCanvasGridPattern &p)
 
 QPointF QCanvasGridPattern::startPosition() const
 {
-    G_D();
+    auto *d = QCanvasGridPatternPrivate::get(this);
     return QPointF(d->x, d->y);
 }
 
@@ -255,8 +256,8 @@ QPointF QCanvasGridPattern::startPosition() const
 
 void QCanvasGridPattern::setStartPosition(float x, float y)
 {
-    G_D();
     detach();
+    auto *d = QCanvasGridPatternPrivate::get(this);
     d->x = x;
     d->y = y;
     d->changed = true;
@@ -280,7 +281,7 @@ void QCanvasGridPattern::setStartPosition(float x, float y)
 
 QSizeF QCanvasGridPattern::cellSize() const
 {
-    G_D();
+    auto *d = QCanvasGridPatternPrivate::get(this);
     return QSizeF(d->width, d->height);
 }
 
@@ -293,8 +294,8 @@ QSizeF QCanvasGridPattern::cellSize() const
 
 void QCanvasGridPattern::setCellSize(float width, float height)
 {
-    G_D();
     detach();
+    auto *d = QCanvasGridPatternPrivate::get(this);
     d->width = width;
     d->height = height;
     d->changed = true;
@@ -317,7 +318,7 @@ void QCanvasGridPattern::setCellSize(float width, float height)
 
 float QCanvasGridPattern::lineWidth() const
 {
-    G_D();
+    auto *d = QCanvasGridPatternPrivate::get(this);
     return d->lineWidth;
 }
 
@@ -328,8 +329,8 @@ float QCanvasGridPattern::lineWidth() const
 
 void QCanvasGridPattern::setLineWidth(float width)
 {
-    G_D();
     detach();
+    auto *d = QCanvasGridPatternPrivate::get(this);
     d->lineWidth = width;
     d->changed = true;
 }
@@ -340,7 +341,7 @@ void QCanvasGridPattern::setLineWidth(float width)
 
 float QCanvasGridPattern::feather() const
 {
-    G_D();
+    auto *d = QCanvasGridPatternPrivate::get(this);
     return d->feather;
 }
 
@@ -351,8 +352,8 @@ float QCanvasGridPattern::feather() const
 
 void QCanvasGridPattern::setFeather(float feather)
 {
-    G_D();
     detach();
+    auto *d = QCanvasGridPatternPrivate::get(this);
     d->feather = feather;
     d->changed = true;
 }
@@ -363,7 +364,7 @@ void QCanvasGridPattern::setFeather(float feather)
 
 float QCanvasGridPattern::rotation() const
 {
-    G_D();
+    auto *d = QCanvasGridPatternPrivate::get(this);
     return d->angle;
 }
 
@@ -375,8 +376,8 @@ float QCanvasGridPattern::rotation() const
 
 void QCanvasGridPattern::setRotation(float rotation)
 {
-    G_D();
     detach();
+    auto *d = QCanvasGridPatternPrivate::get(this);
     d->angle = rotation;
     d->changed = true;
 }
@@ -387,7 +388,7 @@ void QCanvasGridPattern::setRotation(float rotation)
 
 QColor QCanvasGridPattern::lineColor() const
 {
-    G_D();
+    auto *d = QCanvasGridPatternPrivate::get(this);
     return d->lineColor;
 }
 
@@ -398,8 +399,8 @@ QColor QCanvasGridPattern::lineColor() const
 
 void QCanvasGridPattern::setLineColor(const QColor &color)
 {
-    G_D();
     detach();
+    auto *d = QCanvasGridPatternPrivate::get(this);
     d->lineColor = color;
     d->changed = true;
 }
@@ -410,7 +411,7 @@ void QCanvasGridPattern::setLineColor(const QColor &color)
 
 QColor QCanvasGridPattern::backgroundColor() const
 {
-    G_D();
+    auto *d = QCanvasGridPatternPrivate::get(this);
     return d->backgroundColor;
 }
 
@@ -421,8 +422,8 @@ QColor QCanvasGridPattern::backgroundColor() const
 
 void QCanvasGridPattern::setBackgroundColor(const QColor &color)
 {
-    G_D();
     detach();
+    auto *d = QCanvasGridPatternPrivate::get(this);
     d->backgroundColor = color;
     d->changed = true;
 }
@@ -475,7 +476,6 @@ QCanvasBrushPrivate *QCanvasGridPatternPrivate::clone()
     return new QCanvasGridPatternPrivate(*this);
 }
 
-#undef G_D
 #undef DECONST
 
 QT_END_NAMESPACE

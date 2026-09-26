@@ -1,5 +1,8 @@
 // Copyright (C) 2020 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Note: uses ETC2 compressed texture, which is not supported on D3D11/D3D12.
+// On those backends the texture will be blank. See compressed_mipmaps_bc3.qml
+// for a companion test using BC3 which works on D3D11, D3D12, Vulkan, and Metal.
 
 import QtQuick
 import QtQuick3D

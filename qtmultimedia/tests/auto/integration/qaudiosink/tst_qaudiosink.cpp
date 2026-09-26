@@ -13,6 +13,7 @@
 #include <QtMultimedia/qmediadevices.h>
 #include <QtMultimedia/qwavedecoder.h>
 #include <QtMultimedia/private/qaudiosystem_p.h>
+#include <QtMultimedia/private/qplatformaudiodevices_p.h>
 #include <QtMultimedia/private/qplatformmediaintegration_p.h>
 
 #include <private/audiogenerationutils_p.h>
@@ -30,9 +31,17 @@ using AudioSinkInitializer = bool (*)(QAudioSink &);
 class AudioPullSource : public QIODevice
 {
 public:
-    AudioPullSource(bool isContinuous = false)
+    AudioPullSource(bool isContinuous, QAudioFormat format)
+        : AudioPullSource{ isContinuous,
+                           format.sampleFormat() == QAudioFormat::UInt8 ? std::byte{ 0x80 }
+                                                                        : std::byte{ 0 } }
+    {
+    }
+
+    AudioPullSource(bool isContinuous = false, std::byte nullByte = std::byte{ 0 })
         : available(isContinuous ? std::numeric_limits<int>::max() : 0),
-          m_isContinuous(isContinuous)
+          m_isContinuous(isContinuous),
+          m_nullByte(nullByte)
     {
     }
 
@@ -41,7 +50,7 @@ public:
         qint64 read = qMin(len, available);
         if (!m_isContinuous)
             available -= read;
-        memset(data, 0, read);
+        memset(data, int(m_nullByte), read);
         return read;
     }
     qint64 writeData(const char *, qint64) override { return 0; }
@@ -55,6 +64,7 @@ public:
 
 private:
     bool m_isContinuous;
+    const std::byte m_nullByte;
 };
 
 static bool isPipewireBackend()
@@ -132,6 +142,7 @@ private slots:
     void stateChanged_stringBasedConnect();
 
     void callbackAPI();
+    void callbackAPI_availabilityCheck();
     void callbackAPI_startFailsWithWrongType();
     void callbackAPI_startWithMoveOnlyFunctor();
 
@@ -437,13 +448,13 @@ void tst_QAudioSink::start_withSupportedSampleFormats_data()
 void tst_QAudioSink::start_withSupportedSampleFormats()
 {
     // Arrange
-    AudioPullSource source(true);
-    source.open(QIODevice::ReadOnly);
-
     QFETCH(QAudioFormat::SampleFormat, sampleFormat);
     QAudioFormat format = audioDevice.preferredFormat();
     format.setSampleFormat(sampleFormat);
     QAudioSink sink(audioDevice, format);
+
+    AudioPullSource source(true, format);
+    source.open(QIODevice::ReadOnly);
 
     QSignalSpy stateSignal(&sink, &QAudioSink::stateChanged);
 
@@ -460,7 +471,7 @@ void tst_QAudioSink::start_withSupportedSampleFormats()
 void tst_QAudioSink::bufferSize_data()
 {
     QTest::addColumn<int>("bufferSize");
-    QTest::newRow("Buffer size 512") << 512;
+    QTest::newRow("Buffer size 1024") << 1024;
     QTest::newRow("Buffer size 4096") << 4096;
     QTest::newRow("Buffer size 8192") << 8192;
 }
@@ -780,15 +791,14 @@ void tst_QAudioSink::pullSuspendResume()
 
 void tst_QAudioSink::pullResumeFromUnderrun()
 {
-    constexpr int chunkSize = 128;
-
     QAudioDevice output = QMediaDevices::defaultAudioOutput();
     if (output.isNull())
         QSKIP("no audio output detected");
 
     QAudioFormat format = output.preferredFormat();
+    const int chunkSize = format.bytesForFrames(128);
 
-    AudioPullSource audioSource;
+    AudioPullSource audioSource(false, format);
     QAudioSink audioSink(format, this);
     QSignalSpy stateSignal(&audioSink, &QAudioSink::stateChanged);
 
@@ -1353,6 +1363,17 @@ void tst_QAudioSink::callbackAPI()
 #endif
 }
 
+void tst_QAudioSink::callbackAPI_availabilityCheck()
+{
+    QAudioFormat format = audioDevice.preferredFormat();
+    format.setSampleFormat(QAudioFormat::SampleFormat::Float);
+
+    QAudioSink audioSink(audioDevice, format);
+    QPlatformAudioSink *platformSink = QPlatformAudioSink::get(audioSink);
+    QCOMPARE(QPlatformMediaIntegration::instance()->audioDevices()->hasCallbackApi(),
+             platformSink->hasCallbackAPI());
+}
+
 void tst_QAudioSink::callbackAPI_startFailsWithWrongType()
 {
     using namespace std::chrono_literals;
@@ -1405,12 +1426,12 @@ void tst_QAudioSink::multipleSinks()
 
     auto format1 = firstSinkDevice.preferredFormat();
     auto sink1 = std::make_unique<QAudioSink>(firstSinkDevice, format1, this);
-    AudioPullSource source1(true);
+    AudioPullSource source1(true, format1);
     source1.open(QIODeviceBase::ReadOnly);
 
     auto format2 = secondSinkDevice.preferredFormat();
     auto sink2 = std::make_unique<QAudioSink>(secondSinkDevice, format2, this);
-    AudioPullSource source2(true);
+    AudioPullSource source2(true, format2);
     source2.open(QIODeviceBase::ReadOnly);
 
     sink1->start(&source1);
@@ -1443,7 +1464,7 @@ void tst_QAudioSink::start_afterStopAndReset()
 
     auto format1 = firstSinkDevice.preferredFormat();
     auto sink = std::make_unique<QAudioSink>(firstSinkDevice, format1, this);
-    AudioPullSource source1(true);
+    AudioPullSource source1(true, format1);
     source1.open(QIODeviceBase::ReadOnly);
     sink->start(&source1);
     QTRY_COMPARE_GT(sink->processedUSecs(), 0);

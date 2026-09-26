@@ -1,6 +1,8 @@
 # Copyright (C) 2022 The Qt Company Ltd.
 # SPDX-License-Identifier: BSD-3-Clause
 
+__qt_internal_cmake_include_guard(GLOBAL GUARD_KEY "QtPublicCMakeHelpers")
+
 # copy_if_different works incorrect in Windows if file size if bigger than 2GB.
 # See https://gitlab.kitware.com/cmake/cmake/-/issues/23052 and QTBUG-99491 for details.
 function(_qt_internal_copy_file_if_different_command out_var src_file dst_file)
@@ -913,6 +915,25 @@ function(_qt_internal_path_is_prefix path_var input out_var)
         cmake_path(IS_PREFIX ${path_var} ${input} ${out_var})
     endif()
     set(${out_var} "${${out_var}}" PARENT_SCOPE)
+endfunction()
+
+# Return the current build dir's drive letter on Windows hosts.
+function(_qt_internal_get_current_build_dir_drive_letter_on_windows out_var)
+    # For newer CMake versions extract the drive letter directly from the binary dir.
+    if(CMAKE_VERSION VERSION_GREATER_EQUAL "3.20" AND FALSE)
+        cmake_path(GET CMAKE_BINARY_DIR ROOT_NAME drive_letter)
+    else()
+        # For older CMakes, we need to rely on cmd.exe + echo.
+        # %CD% expands to the current directory full path.
+        # ~0,2 gets a substring of 2 chars from the beginning.
+        # (%CD:~0,2% -> "C:").
+        execute_process(
+            COMMAND cmd /c "echo %CD:~0,2%"
+            WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
+            OUTPUT_VARIABLE drive_letter
+            OUTPUT_STRIP_TRAILING_WHITESPACE)
+    endif()
+    set(${out_var} "${drive_letter}" PARENT_SCOPE)
 endfunction()
 
 # Configures the file using either the input template or the CONTENT.

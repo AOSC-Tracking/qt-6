@@ -1,5 +1,6 @@
 // Copyright (C) 2019 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:critical reason:network-protocol
 
 #ifndef QWLTEXTURESHARINGEXTENSION_P_H
 #define QWLTEXTURESHARINGEXTENSION_P_H

@@ -12,5 +12,12 @@ instructions:
     - !include "{{qt/qtbase}}/coin_module_build_template_v2.yaml"
 
   Test:
+    - type: EnvironmentVariable
+      variableName: PREBUILD_MODULE_FOR_AXIVION
+      variableValue: "1"
+      enable_if:
+        condition: runtime
+        env_var: AXIVION_ANALYSIS
+        equals_value: "1"
     - !include "{{qt/qtbase}}/coin_module_test_template_v3.yaml"
     - !include "{{qt/qtbase}}/coin_module_test_docs.yaml"

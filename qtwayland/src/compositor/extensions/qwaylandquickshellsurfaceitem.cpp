@@ -1,5 +1,6 @@
 // Copyright (C) 2017 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:significant reason:default
 
 #include "qwaylandquickshellsurfaceitem.h"
 #include "qwaylandquickshellsurfaceitem_p.h"
@@ -312,7 +313,9 @@ static QWaylandQuickShellSurfaceItem *findSurfaceItemFromMoveItem(QQuickItem *mo
         return nullptr;
     if (auto *surf = qobject_cast<QWaylandQuickShellSurfaceItem *>(moveItem))
         return surf;
-    for (auto *item : moveItem->childItems()) {
+
+    const auto childItems = moveItem->childItems();
+    for (auto *item : childItems) {
         if (auto *surf = findSurfaceItemFromMoveItem(item))
             return surf;
     }
@@ -346,13 +349,14 @@ void QWaylandQuickShellSurfaceItemPrivate::raise()
     const bool putOnTop = staysOnTop || m_shellSurface->isModal();
     const bool putOnBottom = staysOnBottom && !m_shellSurface->isModal();
 
-    auto it = parent->childItems().crbegin();
+    const QList<QQuickItem *> childItems = parent->childItems();
+    auto it = childItems.crbegin();
+    const auto end = childItems.crend();
     auto skip = [putOnTop, putOnBottom](QQuickItem *item) {
         if (auto *surf = findSurfaceItemFromMoveItem(item))
             return (!putOnTop && onTop(surf)) || (putOnBottom && !onBottom(surf));
         return true; // ignore any other Quick items that may be there
     };
-    auto end = parent->childItems().crend();
     while (it != end && skip(*it))
         ++it;
     if (it != end) {
@@ -379,7 +383,8 @@ void QWaylandQuickShellSurfaceItemPrivate::lower()
     const bool putOnTop = staysOnTop || m_shellSurface->isModal();
     const bool putOnBottom = staysOnBottom && !m_shellSurface->isModal();
 
-    auto it = parent->childItems().cbegin();
+    const QList<QQuickItem *> childItems = parent->childItems();
+    auto it = childItems.cbegin();
     auto skip = [putOnTop, putOnBottom](QQuickItem *item) {
         if (auto *surf = findSurfaceItemFromMoveItem(item))
             return (!putOnBottom && onBottom(surf)) || (putOnTop && !onTop(surf));

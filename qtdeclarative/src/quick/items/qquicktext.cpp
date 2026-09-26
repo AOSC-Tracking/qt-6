@@ -246,6 +246,10 @@ void QQuickTextPrivate::updateLayout()
                 tmp.replace(QLatin1Char('\n'), QChar::LineSeparator);
                 layout.setText(tmp);
             }
+            // Detect direction from the layout text (already stripped of
+            // HTML markup for StyledText, identical to source for plain).
+            rightToLeftText = layout.text().isRightToLeft();
+            determineHorizontalAlignment();
             textHasChanged = false;
         }
     } else if (extra.isAllocated() && extra->lineHeightValid) {
@@ -313,7 +317,7 @@ QVariant QQuickText::loadResource(int type, const QUrl &source)
             if (job->isError()) {
                 qmlWarning(this) << job->error();
                 delete *it;
-                it = d->extra->pixmapsInProgress.erase(it);
+                d->extra->pixmapsInProgress.erase(it);
                 return QImage();
             }
             qCDebug(lcText) << "already downloading" << url;
@@ -341,7 +345,7 @@ void QQuickText::resourceRequestFinished()
 {
     Q_D(QQuickText);
     bool allDone = true;
-    for (auto it = d->extra->pixmapsInProgress.cbegin(); it != d->extra->pixmapsInProgress.cend();) {
+    for (auto it = d->extra->pixmapsInProgress.begin(); it != d->extra->pixmapsInProgress.end();) {
         auto *job = *it;
         if (job->isError()) {
             // get QTextDocument::loadResource() to call QQuickText::loadResource() again, to return the placeholder
@@ -1404,6 +1408,7 @@ void QQuickTextPrivate::updateDocumentText()
         extra->doc->setPlainText(text);
 #endif
     rightToLeftText = extra->doc->toPlainText().isRightToLeft();
+    determineHorizontalAlignment();
 }
 
 /*!
@@ -1455,7 +1460,8 @@ void QQuickTextPrivate::updateDocumentText()
       \endtabcontent
     \endif
 
-    \image declarative-text.png
+    \image declarative-text.png {Markdown styling to show Hello in bold
+           and World in italics}
 
     If height and width are not explicitly set, Text will try to determine how
     much room is needed and set it accordingly. Unless \l wrapMode is set, it
@@ -1845,13 +1851,10 @@ void QQuickText::setText(const QString &n)
     d->styledText = d->format == StyledText || (d->format == AutoText && Qt::mightBeRichText(n));
     d->text = n;
     if (isComponentComplete()) {
-        if (d->richText) {
+        if (d->richText)
             d->updateDocumentText();
-        } else {
+        else
             d->clearFormats();
-            d->rightToLeftText = d->text.isRightToLeft();
-        }
-        d->determineHorizontalAlignment();
     }
     d->textHasChanged = true;
     d->implicitWidthValid = false;
@@ -1961,7 +1964,8 @@ void QQuickText::setLinkColor(const QColor &color)
     }
     \endqml
 
-    \image declarative-textstyle.png
+    \image declarative-textstyle.png {Four text styles: Normal, Raised,
+           Outline with red border, and Sunken}
 */
 QQuickText::TextStyle QQuickText::style() const
 {
@@ -2299,7 +2303,8 @@ void QQuickText::resetMaximumLineCount()
     \row
     \li
     \snippet qml/text/textFormats.qml 0
-    \li \image declarative-textformat.png
+    \li \image declarative-textformat.png {Multiple text format display
+               examples: AutoText, HTML, plain, and Markdown}
     \endtable
 
     \c Text.RichText supports a larger subset of HTML 4, as described on the
@@ -2341,10 +2346,8 @@ void QQuickText::setTextFormat(TextFormat format)
             d->updateDocumentText();
         } else {
             d->clearFormats();
-            d->rightToLeftText = d->text.isRightToLeft();
             d->textHasChanged = true;
         }
-        d->determineHorizontalAlignment();
     }
     d->updateLayout();
     setAcceptHoverEvents(d->richText || d->styledText);
@@ -2910,12 +2913,8 @@ void QQuickText::componentComplete()
 {
     Q_D(QQuickText);
     if (d->updateOnComponentComplete) {
-        if (d->richText) {
+        if (d->richText)
             d->updateDocumentText();
-        } else {
-            d->rightToLeftText = d->text.isRightToLeft();
-        }
-        d->determineHorizontalAlignment();
     }
     QQuickItem::componentComplete();
     if (d->updateOnComponentComplete)
@@ -3017,7 +3016,8 @@ bool QQuickTextPrivate::isLinkHoveredConnected()
 
 static void getLinks_helper(const QTextLayout *layout, QList<QQuickTextPrivate::LinkDesc> *links)
 {
-    for (const QTextLayout::FormatRange &formatRange : layout->formats()) {
+    const auto formats = layout->formats();
+    for (const QTextLayout::FormatRange &formatRange : formats) {
         if (formatRange.format.isAnchor()) {
             const int start = formatRange.start;
             const int len = formatRange.length;

@@ -228,7 +228,7 @@ void QBasicPlatformVulkanInstance::initInstance(QVulkanInstance *instance, const
         QByteArray envExts = qgetenv("QT_VULKAN_INSTANCE_EXTENSIONS");
         if (!envExts.isEmpty()) {
             QByteArrayList envExtList =  envExts.split(';');
-            for (auto ext : m_enabledExtensions)
+            for (const QByteArray &ext : std::as_const(m_enabledExtensions))
                 envExtList.removeAll(ext);
             m_enabledExtensions.append(envExtList);
         }
@@ -236,7 +236,7 @@ void QBasicPlatformVulkanInstance::initInstance(QVulkanInstance *instance, const
         QByteArray envLayers = qgetenv("QT_VULKAN_INSTANCE_LAYERS");
         if (!envLayers.isEmpty()) {
             QByteArrayList envLayerList = envLayers.split(';');
-            for (auto ext : m_enabledLayers)
+            for (const QByteArray &ext : std::as_const(m_enabledLayers))
                 envLayerList.removeAll(ext);
             m_enabledLayers.append(envLayerList);
         }
@@ -259,7 +259,8 @@ void QBasicPlatformVulkanInstance::initInstance(QVulkanInstance *instance, const
         VkInstanceCreateInfo instInfo = {};
         instInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
         instInfo.pApplicationInfo = &appInfo;
-        if (!flags.testFlag(QVulkanInstance::NoPortabilityDrivers)) {
+        if (!flags.testFlag(QVulkanInstance::NoPortabilityDrivers)
+                && m_enabledExtensions.contains("VK_KHR_portability_enumeration")) {
             // With old Vulkan SDKs setting a non-zero flags gives a validation error.
             // Whereas from 1.3.216 on the portability bit is required for MoltenVK to function.
             // Hence the version check.
@@ -402,7 +403,8 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL defaultDebugCallbackFunc(VkDebugUtilsMessa
     }
 
     // filters with new signature
-    for (QVulkanInstance::DebugUtilsFilter filter : *self->debugUtilsFilters()) {
+    const QList<QVulkanInstance::DebugUtilsFilter> *filters = self->debugUtilsFilters();
+    for (const QVulkanInstance::DebugUtilsFilter &filter : *filters) {
         QVulkanInstance::DebugMessageSeverityFlags severity;
         if (messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT)
             severity |= QVulkanInstance::VerboseSeverity;

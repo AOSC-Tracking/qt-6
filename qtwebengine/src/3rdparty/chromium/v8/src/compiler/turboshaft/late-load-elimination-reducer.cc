@@ -282,6 +282,14 @@ void LateLoadEliminationAnalyzer::ProcessBlock(const Block& block,
 
         break;
     }
+    if (op.Effects().can_allocate && v8_flags.turbolev) {
+      // String maps can be invalidated by the GC. Unfortunately, there is no
+      // way to know if a particular load at offset 0 loads a string map or not.
+      // So, to be safe, we invalidate every load at offset 0 whenever we see an
+      // allocation.
+      memory_.InvalidatePotentialLoadedStringMaps();
+      WipeAllMaps();
+    }
   }
 
   FinishBlock(&block);
@@ -425,9 +433,13 @@ void LateLoadEliminationAnalyzer::ProcessStore(OpIndex op_idx,
     // TODO(dmercadier): do this only if `value` is a Constant with kind
     // kHeapObject, since all map stores should store a known constant maps.
     TRACE(">> Wiping all maps\n");
-    for (auto it : object_maps_) {
-      object_maps_.Set(it.second, MapMaskAndOr{});
-    }
+    WipeAllMaps();
+  }
+}
+
+void LateLoadEliminationAnalyzer::WipeAllMaps() {
+  for (auto it : object_maps_) {
+    object_maps_.Set(it.second, MapMaskAndOr{});
   }
 }
 
@@ -514,6 +526,14 @@ void LateLoadEliminationAnalyzer::ProcessCall(OpIndex op_idx,
   // The call could modify arbitrary memory, so we invalidate every
   // potentially-aliasing object.
   memory_.InvalidateMaybeAliasing();
+
+  // This call could transition objects, thus invalidating their maps.
+  // TODO(dmercadier): we should only wipe unstable maps here, except that we
+  // don't know which maps are stable or not because we compact maps in
+  // MapMaskAndOr. I'm really not sure how much benefits this MapMaskAndOr
+  // structure brings, so we could instead consider to record exact maps, in
+  // which case we'd be able to only invalidate unstable ones.
+  WipeAllMaps();
 }
 
 // The only time an Allocate should flow into a WordBinop is for Smi checks
@@ -577,24 +597,10 @@ void LateLoadEliminationAnalyzer::InvalidateIfAlias(OpIndex op_idx) {
   }
 }
 
-void LateLoadEliminationAnalyzer::InvalidateAllMaps() {
-  TRACE(">> InvalidateAllMaps");
-  memory_.InvalidateAtMapOffset();
-  TRACE(">>> Wiping all maps\n");
-  for (auto it : object_maps_) {
-    object_maps_.Set(it.second, MapMaskAndOr{});
-  }
-}
-
 void LateLoadEliminationAnalyzer::ProcessAllocate(OpIndex op_idx,
                                                   const AllocateOp&) {
   TRACE("> ProcessAllocate(" << op_idx << ") ==> Fresh non-aliasing object");
   non_aliasing_objects_.Set(op_idx, true);
-
-  // Allocate can trigger a GC, which can shortcut references to strings after
-  // flattening. That will change the map we see on repeated loads.
-  // TODO(nicohartmann): See if we can limit this to fewer cases.
-  InvalidateAllMaps();
 }
 
 void LateLoadEliminationAnalyzer::ProcessAssumeMap(

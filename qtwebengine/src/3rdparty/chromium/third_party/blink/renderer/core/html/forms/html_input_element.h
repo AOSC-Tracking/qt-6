@@ -478,7 +478,7 @@ class CORE_EXPORT HTMLInputElement
   bool IsRequiredFormControl() const final;
   bool RecalcWillValidate() const final;
   void RequiredAttributeChanged() final;
-  void DisabledAttributeChanged() final;
+  void DisabledAttributeChanged(DisabledChangedReason) final;
 
   void InitializeTypeInParsing();
   void UpdateType(const AtomicString&);
@@ -495,6 +495,8 @@ class CORE_EXPORT HTMLInputElement
   void AdjustStyle(ComputedStyleBuilder&) override;
 
   void MaybeReportPiiMetrics();
+
+  void DidChangeIsCanvasOrInCanvasSubtree() final;
 
   AtomicString name_;
   // The value string in |value| value mode.

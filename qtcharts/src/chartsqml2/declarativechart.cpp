@@ -65,7 +65,8 @@ QT_BEGIN_NAMESPACE
 
     This example shows how to create a simple line chart:
 
-    \image examples_qmlchart2.png
+    \image examples_qmlchart2.png {Line chart with a single rising line that
+           peaks and then levels off}
     \snippet qmlchartsgallery/qml/LineSeries.qml 1
 */
 
@@ -596,7 +597,8 @@ void DeclarativeChart::childEvent(QChildEvent *event)
 
 void DeclarativeChart::componentComplete()
 {
-    foreach (QObject *child, children()) {
+    const auto childlist = children();
+    for (QObject *child : childlist) {
         if (qobject_cast<QAbstractSeries *>(child)) {
             // Add series to the chart
             QAbstractSeries *series = qobject_cast<QAbstractSeries *>(child);

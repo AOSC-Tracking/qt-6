@@ -3,12 +3,14 @@
 
 #include "theme.h"
 
-Theme::Theme() {
+Theme::Theme()
+{
     initThemes();
     m_theme = m_darkTheme;
 }
 
-void Theme::initThemes() {
+void Theme::initThemes()
+{
     m_darkTheme.background1 = QColor(0x111111);
     m_darkTheme.background2 = QColor(0x1d2127);
     m_darkTheme.foreground1 = QColor(0xf0f0f0);
@@ -42,7 +44,8 @@ void Theme::initThemes() {
     m_lightTheme.gradient2.setColorAt(1.0f, QColor::fromRgba(0x80504030));
 }
 
-void Theme::switchTheme() {
+void Theme::switchTheme()
+{
     m_isDarkTheme = !m_isDarkTheme;
     if (m_isDarkTheme)
         m_theme = m_darkTheme;

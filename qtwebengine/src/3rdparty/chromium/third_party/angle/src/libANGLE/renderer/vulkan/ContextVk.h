@@ -79,6 +79,8 @@ static constexpr GLbitfield kImageMemoryBarrierBits =
 class ContextVk : public ContextImpl, public vk::Context, public MultisampleTextureInitializer
 {
   public:
+    using VertexArrayGeneration = UniqueSerial;
+
     ContextVk(const gl::State &state, gl::ErrorSet *errorSet, vk::Renderer *renderer);
     ~ContextVk() override;
 
@@ -348,7 +350,7 @@ class ContextVk : public ContextImpl, public vk::Context, public MultisampleText
     // Query and Fence creation
     QueryImpl *createQuery(gl::QueryType type) override;
     FenceNVImpl *createFenceNV() override;
-    SyncImpl *createSync() override;
+    SyncImpl *createSync(const gl::Context *context) override;
 
     // Transform Feedback creation
     TransformFeedbackImpl *createTransformFeedback(
@@ -472,6 +474,7 @@ class ContextVk : public ContextImpl, public vk::Context, public MultisampleText
                                        gl::SamplerFormat format,
                                        gl::Texture **textureOut);
     void updateColorMasks();
+    void updateBlendEnabled();
     void updateBlendFuncsAndEquations();
 
     void handleError(VkResult errorCode,
@@ -788,6 +791,8 @@ class ContextVk : public ContextImpl, public vk::Context, public MultisampleText
         if (newBufferOut)
         {
             mHasInFlightStreamedVertexBuffers.set(attribIndex);
+            mDefaultAttribsGeneration = mDefaultAttribsGenerationFactory.generate();
+            mGraphicsDirtyBits.set(DIRTY_BIT_DEFAULT_ATTRIBS);
         }
         return angle::Result::Continue;
     }
@@ -1118,6 +1123,7 @@ class ContextVk : public ContextImpl, public vk::Context, public MultisampleText
                             gl::PrimitiveMode mode,
                             GLint firstVertexOrInvalid,
                             GLsizei vertexOrIndexCount,
+                            GLsizei baseInstance,
                             GLsizei instanceCount,
                             gl::DrawElementsType indexTypeOrInvalid,
                             const void *indices,
@@ -1126,6 +1132,7 @@ class ContextVk : public ContextImpl, public vk::Context, public MultisampleText
     angle::Result setupIndexedDraw(const gl::Context *context,
                                    gl::PrimitiveMode mode,
                                    GLsizei indexCount,
+                                   GLsizei baseInstance,
                                    GLsizei instanceCount,
                                    gl::DrawElementsType indexType,
                                    const void *indices);
@@ -1155,6 +1162,8 @@ class ContextVk : public ContextImpl, public vk::Context, public MultisampleText
                                     gl::PrimitiveMode mode,
                                     GLint firstVertex,
                                     GLsizei vertexOrIndexCount,
+                                    GLsizei baseInstance,
+                                    GLsizei instanceCount,
                                     gl::DrawElementsType indexTypeOrInvalid,
                                     const void *indices,
                                     uint32_t *numIndicesOut);
@@ -1585,6 +1594,10 @@ class ContextVk : public ContextImpl, public vk::Context, public MultisampleText
 
     // "Current Value" aka default vertex attribute state.
     gl::AttributesMask mDirtyDefaultAttribsMask;
+
+    // Tracks if default vertex attribute buffers have been invalidated.
+    UniqueSerialFactory mDefaultAttribsGenerationFactory;
+    VertexArrayGeneration mDefaultAttribsGeneration;
 
     // DynamicBuffers for streaming vertex data from client memory pointer as well as for default
     // attributes. mHasInFlightStreamedVertexBuffers indicates if the dynamic buffer has any

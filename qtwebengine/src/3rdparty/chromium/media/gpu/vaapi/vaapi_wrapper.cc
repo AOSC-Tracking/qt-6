@@ -55,15 +55,19 @@
 #include "base/types/pass_key.h"
 #include "base/version.h"
 #include "build/build_config.h"
+#include "media/base/format_utils.h"
 #include "media/base/limits.h"
 #include "media/base/media_switches.h"
 #include "media/base/platform_features.h"
 #include "media/base/video_codecs.h"
 #include "media/base/video_frame.h"
 #include "media/base/video_types.h"
+#include "media/gpu/buffer_validation.h"
 #include "media/gpu/chromeos/frame_resource.h"
 #include "media/gpu/macros.h"
 // Auto-generated for dlopen libva libraries
+#include "components/viz/common/resources/shared_image_format.h"
+#include "components/viz/common/resources/shared_image_format_utils.h"
 #include "media/gpu/vaapi/va_stubs.h"
 #include "media/media_buildflags.h"
 #include "third_party/abseil-cpp/absl/cleanup/cleanup.h"
@@ -135,7 +139,7 @@ std::pair<base::ScopedFD, bool> LoadDrmFD(const base::FilePath& dev_path) {
 
 // These values are logged to UMA. Entries should not be renumbered and numeric
 // values should never be reused. Please keep in sync with
-// "VaapiFunctions" in src/tools/metrics/histograms/enums.xml.
+// "VaapiFunctions" in src/tools/metrics/histograms/metadata/media/enums.xml.
 enum class VaapiFunctions {
   kVABeginPicture = 0,
   kVACreateBuffer = 1,
@@ -169,9 +173,11 @@ enum class VaapiFunctions {
   kVADetachProtectedSession = 28,
   kVAProtectedSessionHwUpdate_Deprecated = 29,
   kVAProtectedSessionExecute = 30,
-  // Anything else is captured in this last entry.
+  // Anything else is captured in this entry. It used to be last, but more
+  // library calls have since been added, and we can't change the number.
   kOtherVAFunction = 31,
-  kMaxValue = kOtherVAFunction,
+  kVADeriveImage = 32,
+  kMaxValue = kVADeriveImage,
 };
 
 void ReportVaapiErrorToUMA(const std::string& histogram_name,
@@ -213,7 +219,8 @@ constexpr std::array<const char*,
         "vaDetachProtectedSession",
         "vaProtectedSessionHwUpdate (Deprecated)",
         "vaProtectedSessionExecute",
-        "Other VA function"};
+        "Other VA function",
+        "vaDeriveImage"};
 
 // Translates |function| into a human readable string for logging.
 const char* VaapiFunctionName(VaapiFunctions function) {
@@ -353,25 +360,30 @@ class VADisplayStateSingleton {
 
 namespace {
 
-uint32_t BufferFormatToVAFourCC(gfx::BufferFormat fmt) {
-  switch (fmt) {
-    case gfx::BufferFormat::BGRX_8888:
-      return VA_FOURCC_BGRX;
-    case gfx::BufferFormat::BGRA_8888:
-      return VA_FOURCC_BGRA;
-    case gfx::BufferFormat::RGBX_8888:
-      return VA_FOURCC_RGBX;
-    case gfx::BufferFormat::RGBA_8888:
-      return VA_FOURCC_RGBA;
-    case gfx::BufferFormat::YVU_420:
-      return VA_FOURCC_YV12;
-    case gfx::BufferFormat::YUV_420_BIPLANAR:
-      return VA_FOURCC_NV12;
-    case gfx::BufferFormat::P010:
-      return VA_FOURCC_P010;
-    default:
-      NOTREACHED() << gfx::BufferFormatToString(fmt);
+uint32_t SharedImageFormatToVAFourCC(viz::SharedImageFormat format) {
+  if (format == viz::SinglePlaneFormat::kBGRX_8888) {
+    return VA_FOURCC_BGRX;
   }
+  if (format == viz::SinglePlaneFormat::kBGRA_8888) {
+    return VA_FOURCC_BGRA;
+  }
+  if (format == viz::SinglePlaneFormat::kRGBX_8888) {
+    return VA_FOURCC_RGBX;
+  }
+  if (format == viz::SinglePlaneFormat::kRGBA_8888) {
+    return VA_FOURCC_RGBA;
+  }
+  if (format == viz::MultiPlaneFormat::kYV12) {
+    return VA_FOURCC_YV12;
+  }
+  if (format == viz::MultiPlaneFormat::kNV12) {
+    return VA_FOURCC_NV12;
+  }
+  if (format == viz::MultiPlaneFormat::kP010) {
+    return VA_FOURCC_P010;
+  }
+
+  NOTREACHED() << "Unsupported format: " << format.ToString();
 }
 
 media::VAImplementation VendorStringToImplementationType(
@@ -412,21 +424,91 @@ bool UseGlobalVaapiLock(media::VAImplementation implementation_type) {
          base::FeatureList::IsEnabled(media::kGlobalVaapiLock);
 }
 
+bool ValidateAndGetPlaneInfo(const gfx::NativePixmap& pixmap,
+                             const media::VideoPixelFormat format,
+                             const gfx::Size& resolution,
+                             const int dma_buf_fd,
+                             const size_t plane_index,
+                             uint32_t& dmabuf_size,
+                             uint32_t& plane_offset,
+                             uint32_t& plane_pitch) {
+  size_t dmabuf_size_sz = 0;
+  if (!media::GetFileSize(dma_buf_fd, &dmabuf_size_sz)) {
+    LOG(ERROR) << "Failed to get the size of the dma-buf";
+    return false;
+  }
+  if (!base::IsValueInRangeForNumericType<uint32_t>(dmabuf_size_sz)) {
+    LOG(ERROR) << "Invalid data size: " << dmabuf_size_sz;
+    return false;
+  }
+  dmabuf_size = static_cast<uint32_t>(dmabuf_size_sz);
+
+  const size_t plane_offset_sz = pixmap.GetDmaBufOffset(plane_index);
+  if (!base::IsValueInRangeForNumericType<uint32_t>(plane_offset_sz)) {
+    LOG(ERROR) << "Invalid plane offset: " << plane_offset_sz;
+    return false;
+  }
+  plane_offset = static_cast<uint32_t>(plane_offset_sz);
+
+  plane_pitch = pixmap.GetDmaBufPitch(plane_index);
+  const size_t min_stride =
+      media::VideoFrame::RowBytes(plane_index, format, resolution.width());
+  if (base::saturated_cast<size_t>(plane_pitch) < min_stride) {
+    LOG(ERROR) << "Invalid stride for plane " << plane_index << ": "
+               << plane_pitch << " < " << min_stride;
+    return false;
+  }
+  const size_t plane_height =
+      media::VideoFrame::Rows(plane_index, format, resolution.height());
+  base::CheckedNumeric<size_t> min_plane_size =
+      base::CheckMul(plane_pitch, plane_height);
+  if (!min_plane_size.IsValid()) {
+    LOG(ERROR) << "Invalid plane size for plane " << plane_index;
+    return false;
+  }
+
+  base::CheckedNumeric<uint64_t> min_buffer_size =
+      base::CheckAdd(plane_offset, min_plane_size.ValueOrDie());
+  if (!min_buffer_size.IsValid()) {
+    LOG(ERROR) << "Invalid buffer size for plane " << plane_index;
+    return false;
+  }
+
+  if (min_buffer_size.ValueOrDie() >
+      base::checked_cast<uint64_t>(dmabuf_size)) {
+    LOG(ERROR) << "Plane " << plane_index << " is out of bounds: "
+               << static_cast<uint64_t>(min_buffer_size.ValueOrDie()) << " > "
+               << dmabuf_size;
+    return false;
+  }
+  return true;
+}
+
 bool FillVADRMPRIMESurfaceDescriptor(const gfx::NativePixmap& pixmap,
                                      VADRMPRIMESurfaceDescriptor& descriptor) {
   memset(&descriptor, 0, sizeof(VADRMPRIMESurfaceDescriptor));
 
-  const gfx::BufferFormat buffer_format = pixmap.GetBufferFormat();
-  const uint32_t va_fourcc = BufferFormatToVAFourCC(buffer_format);
+  auto shared_image_format =
+      viz::GetSharedImageFormat(pixmap.GetBufferFormat());
+  const uint32_t va_fourcc = SharedImageFormatToVAFourCC(shared_image_format);
   DCHECK(va_fourcc);
 
   const gfx::Size size = pixmap.GetBufferSize();
   const size_t num_planes = pixmap.GetNumberOfPlanes();
-  const int drm_fourcc = ui::GetFourCCFormatFromBufferFormat(buffer_format);
+  const int drm_fourcc =
+      ui::GetFourCCFormatFromSharedImageFormat(shared_image_format);
   if (drm_fourcc == DRM_FORMAT_INVALID) {
     LOG(ERROR) << "Failed to get the DRM format from the buffer format";
     return false;
   }
+
+  const std::optional<media::VideoPixelFormat> format =
+      media::SharedImageFormatToVideoPixelFormat(shared_image_format);
+  if (!format) {
+    LOG(ERROR) << "Failed to get the VideoPixelFormat from the buffer format";
+    return false;
+  }
+
   if (num_planes > std::size(descriptor.objects)) {
     LOG(ERROR) << "Too many planes in the NativePixmap; got " << num_planes
                << " but the maximum number is "
@@ -460,30 +542,21 @@ bool FillVADRMPRIMESurfaceDescriptor(const gfx::NativePixmap& pixmap,
       LOG(ERROR) << "Failed to get dmabuf from a NativePixmap";
       return false;
     }
-    const off_t data_size = lseek(dma_buf_fd, /*offset=*/0, SEEK_END);
-    if (data_size == static_cast<off_t>(-1)) {
-      PLOG(ERROR) << "Failed to get the size of the dma-buf";
-      return false;
-    }
-    if (lseek(dma_buf_fd, /*offset=*/0, SEEK_SET) == static_cast<off_t>(-1)) {
-      PLOG(ERROR) << "Failed to reset the file offset of the dma-buf";
+    uint32_t plane_offset = 0u;
+    uint32_t plane_pitch = 0u;
+    uint32_t dmabuf_size = 0u;
+    if (!ValidateAndGetPlaneInfo(pixmap, *format, size, dma_buf_fd, i,
+                                 dmabuf_size, plane_offset, plane_pitch)) {
       return false;
     }
 
-    descriptor.objects[i].fd = dma_buf_fd;
-    descriptor.objects[i].size = base::checked_cast<uint32_t>(data_size);
+    descriptor.objects[i].size = dmabuf_size;
     descriptor.objects[i].drm_format_modifier =
         pixmap.GetBufferFormatModifier();
 
     descriptor.layers[0].object_index[i] = base::checked_cast<uint32_t>(i);
-    if (!base::IsValueInRangeForNumericType<uint32_t>(
-            pixmap.GetDmaBufOffset(i))) {
-      LOG(ERROR) << "The offset for plane " << i << " is out-of-range";
-      return false;
-    }
-    descriptor.layers[0].offset[i] =
-        base::checked_cast<uint32_t>(pixmap.GetDmaBufOffset(i));
-    descriptor.layers[0].pitch[i] = pixmap.GetDmaBufPitch(i);
+    descriptor.layers[0].offset[i] = plane_offset;
+    descriptor.layers[0].pitch[i] = plane_pitch;
   }
 
   return true;
@@ -502,7 +575,9 @@ bool FillVASurfaceAttribExternalBuffers(
   memset(&va_attrib_extbuf_and_fd, 0,
          sizeof(VASurfaceAttribExternalBuffersAndFD));
 
-  const uint32_t va_fourcc = BufferFormatToVAFourCC(pixmap.GetBufferFormat());
+  auto shared_image_format =
+      viz::GetSharedImageFormat(pixmap.GetBufferFormat());
+  const uint32_t va_fourcc = SharedImageFormatToVAFourCC(shared_image_format);
   DCHECK(va_fourcc);
 
   const gfx::Size size = pixmap.GetBufferSize();
@@ -2109,21 +2184,22 @@ VAEntrypoint VaapiWrapper::GetDefaultVaEntryPoint(CodecMode mode,
 }
 
 // static
-uint32_t VaapiWrapper::BufferFormatToVARTFormat(gfx::BufferFormat fmt) {
-  switch (fmt) {
-    case gfx::BufferFormat::BGRX_8888:
-    case gfx::BufferFormat::BGRA_8888:
-    case gfx::BufferFormat::RGBX_8888:
-    case gfx::BufferFormat::RGBA_8888:
-      return VA_RT_FORMAT_RGB32;
-    case gfx::BufferFormat::YVU_420:
-    case gfx::BufferFormat::YUV_420_BIPLANAR:
-      return VA_RT_FORMAT_YUV420;
-    case gfx::BufferFormat::P010:
-      return VA_RT_FORMAT_YUV420_10BPP;
-    default:
-      NOTREACHED() << gfx::BufferFormatToString(fmt);
+uint32_t VaapiWrapper::SharedImageFormatToVARTFormat(
+    viz::SharedImageFormat format) {
+  if (format == viz::SinglePlaneFormat::kBGRX_8888 ||
+      format == viz::SinglePlaneFormat::kBGRA_8888 ||
+      format == viz::SinglePlaneFormat::kRGBX_8888 ||
+      format == viz::SinglePlaneFormat::kRGBA_8888) {
+    return VA_RT_FORMAT_RGB32;
   }
+  if (format == viz::MultiPlaneFormat::kYV12 ||
+      format == viz::MultiPlaneFormat::kNV12) {
+    return VA_RT_FORMAT_YUV420;
+  }
+  if (format == viz::MultiPlaneFormat::kP010) {
+    return VA_RT_FORMAT_YUV420_10BPP;
+  }
+  NOTREACHED() << "Unsupported format: " << format.ToString();
 }
 
 bool VaapiWrapper::CreateContextAndSurfaces(
@@ -2412,8 +2488,9 @@ std::unique_ptr<ScopedVASurface> VaapiWrapper::CreateVASurfaceForPixmap(
     scoped_refptr<const gfx::NativePixmap> pixmap,
     bool protected_content) {
   VAAPI_CHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  const gfx::BufferFormat buffer_format = pixmap->GetBufferFormat();
-  if (!BufferFormatToVAFourCC(buffer_format)) {
+  auto shared_image_format =
+      viz::GetSharedImageFormat(pixmap->GetBufferFormat());
+  if (!SharedImageFormatToVAFourCC(shared_image_format)) {
     LOG(ERROR) << "Failed to get the VA fourcc from the buffer format";
     return nullptr;
   }
@@ -2444,8 +2521,8 @@ std::unique_ptr<ScopedVASurface> VaapiWrapper::CreateVASurfaceForPixmap(
       return nullptr;
   }
 
-  unsigned int va_format =
-      base::strict_cast<unsigned int>(BufferFormatToVARTFormat(buffer_format));
+  unsigned int va_format = base::strict_cast<unsigned int>(
+      SharedImageFormatToVARTFormat(shared_image_format));
   if (!va_format) {
     LOG(ERROR) << "Failed to get the VA RT format from the buffer format";
     return nullptr;
@@ -2803,7 +2880,7 @@ bool VaapiWrapper::UploadVideoFrameToSurface(const VideoFrame& frame,
 
   const gfx::Size visible_size = frame.visible_rect().size();
   bool needs_va_put_image = false;
-  VAImage image;
+  VAImage image = {};
   VAStatus va_res = vaDeriveImage(va_display_, va_surface_id, &image);
   if (va_res == VA_STATUS_ERROR_OPERATION_FAILED) {
     DVLOG(4) << "vaDeriveImage failed and fallback to Create_PutImage";
@@ -2816,6 +2893,8 @@ bool VaapiWrapper::UploadVideoFrameToSurface(const VideoFrame& frame,
                            va_surface_size.height(), &image);
     VA_SUCCESS_OR_RETURN(va_res, VaapiFunctions::kVACreateImage, false);
     needs_va_put_image = true;
+  } else {
+    VA_SUCCESS_OR_RETURN(va_res, VaapiFunctions::kVADeriveImage, false);
   }
   absl::Cleanup vaimage_deleter =
       [this, &image]() EXCLUSIVE_LOCKS_REQUIRED(va_lock_.get()) {

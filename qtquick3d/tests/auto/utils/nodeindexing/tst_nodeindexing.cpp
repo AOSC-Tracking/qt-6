@@ -7,6 +7,7 @@
 
 #include <QtQuick3DRuntimeRender/private/qssgrenderroot_p.h>
 #include <QtQuick3DRuntimeRender/private/qssgrenderdata_p.h>
+#include <QtQuick3DRuntimeRender/private/qssgrenderlayer_p.h>
 
 
 class tst_NodeIndexing : public QObject
@@ -23,6 +24,10 @@ private slots:
     void testIndexingWithMultipleViews();
     void testIndexingWithImportScene();
     void testVersionWrapAround();
+    void testActiveStateSuppressesReindex();
+    void testRemoveFromGraphClearsRootNodeRefOnChildren();
+    void testImportSceneStateAfterAddRemove();
+    void testImportSceneRemovePreservesSharedState();
 
 private:
     static void removeFromLayer(QSSGRenderLayer &layer, std::vector<QSSGRenderNode *> &nodes);
@@ -258,6 +263,56 @@ void tst_NodeIndexing::testVersionWrapAround()
     rootNode.removeChild(layer);
 }
 
+void tst_NodeIndexing::testActiveStateSuppressesReindex()
+{
+    QSSGRenderLayer layer;
+    layer.ref(&rootNode);
+    rootNode.addChild(layer);
+
+    std::vector<QSSGRenderNode *> nodes;
+    buildBasicNodeHierarchy(&layer, nodes);
+
+    rootNode.reindex();
+
+    auto &gnd = *rootNode.globalNodeData();
+    const auto versionBefore = gnd.m_version;
+
+    // Capture the current handle state of every node.
+    std::vector<std::pair<QSSGRenderNodeVersionType, quint32>> snapshot;
+    snapshot.reserve(nodes.size());
+    for (auto *node : nodes)
+        snapshot.push_back({ node->h.version(), node->h.index() });
+
+    // nodes[0] is added directly to the layer; nodes[1] and nodes[2] are its children.
+    // nodes[3..5] form a sibling group with no relation to nodes[0..2].
+    nodes.front()->setState(QSSGRenderNode::LocalState::Active, false);
+
+    // The GND version must not have changed — no reindex should have occurred.
+    QCOMPARE(gnd.m_version, versionBefore);
+
+    // All handles must remain valid and unchanged.
+    for (size_t i = 0; i < nodes.size(); ++i) {
+        QCOMPARE(nodes[i]->h.version(), snapshot[i].first);
+        QCOMPARE(nodes[i]->h.index(),   snapshot[i].second);
+    }
+
+    // The changed node and its children must have ActiveDirty set.
+    // markDirty() propagates ActiveDirty to descendants via SubtreeUpdateMask.
+    using DirtyFlag = QSSGRenderNode::DirtyFlag;
+    QVERIFY( nodes[0]->isDirty(DirtyFlag::ActiveDirty));
+    QVERIFY( nodes[1]->isDirty(DirtyFlag::ActiveDirty));
+    QVERIFY( nodes[2]->isDirty(DirtyFlag::ActiveDirty));
+
+    // The sibling sub-tree must not be affected.
+    QVERIFY(!nodes[3]->isDirty(DirtyFlag::ActiveDirty));
+    QVERIFY(!nodes[4]->isDirty(DirtyFlag::ActiveDirty));
+    QVERIFY(!nodes[5]->isDirty(DirtyFlag::ActiveDirty));
+
+    removeFromLayer(layer, nodes);
+    rootNode.removeChild(layer);
+    qDeleteAll(nodes);
+}
+
 void tst_NodeIndexing::removeFromLayer(QSSGRenderLayer &layer, std::vector<QSSGRenderNode *> &nodes)
 {
     for (auto *node : nodes) {
@@ -299,6 +354,227 @@ void tst_NodeIndexing::buildBasicNodeHierarchy(QSSGRenderNode *parent, std::vect
             node->addChild(*childNode);
         }
     }
+}
+
+void tst_NodeIndexing::testRemoveFromGraphClearsRootNodeRefOnChildren()
+{
+    // When removeFromGraph() orphans its direct children it must also clear
+    // their rootNodeRef, just as removeChild() does for the removed node
+    // itself. Without the fix, an orphaned node P retains a live
+    // rootNodeRef. If the root is then destroyed and a grandchild C calls
+    // removeFromGraph() it will execute P->removeChild(C), which accesses
+    // P->rootNodeRef via QSSGRenderRoot::get() — a use-after-free crash.
+    //
+    // Hierarchy under test:
+    //   Root -> Layer -> sceneRoot -> GP -> P -> C
+    //
+    // sceneRoot is a plain node added directly to the layer. GP, P, and C
+    // form a chain beneath it. We remove GP from the graph and assert that
+    // P's rootNodeRef is null afterwards.  We also exercise
+    // C->removeFromGraph() to verify it is safe when P->rootNodeRef is null
+    // (get() returns nullptr so markDirty is not called).
+    //
+    // Note: layers do not set the parent pointer on their direct children
+    // (see the Layer / ImportScene special case in addChild), so sceneRoot
+    // is needed to give GP a non-null parent that removeFromGraph() can
+    // walk up through.
+
+    QSSGRenderLayer layer;
+    layer.ref(&rootNode);
+    rootNode.addChild(layer);
+
+    auto *sceneRoot = new QSSGRenderNode;
+    auto *gp = new QSSGRenderNode;
+    auto *p = new QSSGRenderNode;
+    auto *c = new QSSGRenderNode;
+
+    layer.addChild(*sceneRoot);
+    sceneRoot->addChild(*gp);
+    gp->addChild(*p);
+    p->addChild(*c);
+
+    rootNode.reindex();
+
+    // Pre-condition: all nodes must have a rootNodeRef pointing to the root.
+    QVERIFY(sceneRoot->rootNodeRef != nullptr);
+    QVERIFY(gp->rootNodeRef != nullptr);
+    QVERIFY(p->rootNodeRef != nullptr);
+    QVERIFY(c->rootNodeRef != nullptr);
+
+    // Remove GP — this calls sceneRoot->removeChild(GP) which clears
+    // GP->rootNodeRef, then orphans P: P->parent = nullptr.
+    // The fix requires that P->rootNodeRef is also cleared here.
+    gp->removeFromGraph();
+
+    // GP itself must be fully detached by sceneRoot->removeChild(GP).
+    QCOMPARE(gp->parent, nullptr);
+    QCOMPARE(gp->rootNodeRef, nullptr);
+
+    // P was orphaned by the loop inside GP->removeFromGraph().
+    // Its rootNodeRef must be null — this is what the fix ensures.
+    QCOMPARE(p->parent, nullptr);
+    QCOMPARE(p->rootNodeRef, nullptr);
+
+    // C is still a child of P at this point (P->removeFromGraph not called).
+    // Calling C->removeFromGraph() will invoke P->removeChild(C).
+    // With P->rootNodeRef == nullptr, get() returns null and markDirty is
+    // skipped — this must not crash.
+    c->removeFromGraph();
+
+    QCOMPARE(c->parent, nullptr);
+    QCOMPARE(c->rootNodeRef, nullptr);
+
+    delete c;
+    delete p;
+    delete gp;
+    layer.removeChild(*sceneRoot);
+    delete sceneRoot;
+    rootNode.removeChild(layer);
+}
+
+void tst_NodeIndexing::testImportSceneStateAfterAddRemove()
+{
+    // setImportScene()/removeImportScene() inject and detach a shared scene
+    // through addChild() and the dummy import-scene node. Verify that:
+    //  - the dummy import-scene node is inserted at the *front* of the layer's
+    //    child list, so the imported scene always gets the lowest indices,
+    //  - the imported node keeps its existing parent (it belongs to its home
+    //    tree) and gets the Imported state plus a rootNodeRef, and
+    //  - removeImportScene() only resets the handle 'h', leaving the Imported
+    //    state, rootNodeRef and parent untouched.
+
+    QSSGRenderLayer mainLayer;
+    QSSGRenderLayer importerLayer;
+    mainLayer.ref(&rootNode);
+    importerLayer.ref(&rootNode);
+
+    // Home tree: mainLayer -> container -> sceneRoot -> { leafA, leafB }.
+    // container is a SceneRoot so it gives sceneRoot a real, non-null parent
+    // without tripping the "already part of another scene graph" warning.
+    auto *container = new QSSGRenderNode(QSSGRenderNode::Type::SceneRoot);
+    auto *sceneRoot = new QSSGRenderNode(QSSGRenderNode::Type::Node);
+    auto *leafA = new QSSGRenderNode(QSSGRenderNode::Type::Node);
+    auto *leafB = new QSSGRenderNode(QSSGRenderNode::Type::Node);
+    mainLayer.addChild(*container);
+    container->addChild(*sceneRoot);
+    sceneRoot->addChild(*leafA);
+    sceneRoot->addChild(*leafB);
+    QCOMPARE(sceneRoot->parent, container);
+
+    // A plain node added to the importer layer before the import: the dummy
+    // import-scene node must end up *before* it in the child list.
+    auto *regular = new QSSGRenderNode(QSSGRenderNode::Type::Node);
+    importerLayer.addChild(*regular);
+
+    rootNode.addChild(mainLayer);
+    rootNode.addChild(importerLayer);
+
+    importerLayer.setImportScene(*sceneRoot);
+
+    // The dummy import-scene node exists and is at the front of the children.
+    auto *dummy = importerLayer.importSceneNode;
+    QVERIFY(dummy != nullptr);
+    QVERIFY(!importerLayer.children.isEmpty());
+    QCOMPARE(&importerLayer.children.front(), dummy);
+    // The imported node is the (only) child of the dummy node.
+    QVERIFY(!dummy->children.isEmpty());
+    QCOMPARE(&dummy->children.back(), sceneRoot);
+
+    // Import bookkeeping on the shared node.
+    QVERIFY(sceneRoot->getLocalState(QSSGRenderNode::LocalState::Imported));
+    QVERIFY(sceneRoot->rootNodeRef != nullptr);
+    QCOMPARE(sceneRoot->parent, container); // parent must be untouched
+
+    rootNode.reindex();
+
+    // Everything got an index, and the import-scene node indexes before the
+    // plain sibling node (front insertion).
+    QVERIFY(dummy->h.hasId());
+    QVERIFY(sceneRoot->h.hasId());
+    QVERIFY(regular->h.hasId());
+    QVERIFY(dummy->h.index() < regular->h.index());
+
+    // Detach the import scene.
+    importerLayer.removeImportScene(*sceneRoot);
+
+    // The dummy's child list is cleared and the handle is reset...
+    QVERIFY(dummy->children.isEmpty());
+    QVERIFY(!sceneRoot->h.hasId());
+    // ...but the Imported state, rootNodeRef and parent must be preserved.
+    QVERIFY(sceneRoot->getLocalState(QSSGRenderNode::LocalState::Imported));
+    QVERIFY(sceneRoot->rootNodeRef != nullptr);
+    QCOMPARE(sceneRoot->parent, container);
+
+    // Teardown.
+    importerLayer.removeChild(*regular);
+    sceneRoot->removeChild(*leafA);
+    sceneRoot->removeChild(*leafB);
+    container->removeChild(*sceneRoot);
+    mainLayer.removeChild(*container);
+    rootNode.removeChild(mainLayer);
+    rootNode.removeChild(importerLayer);
+    delete leafA;
+    delete leafB;
+    delete sceneRoot;
+    delete container;
+    delete regular;
+}
+
+void tst_NodeIndexing::testImportSceneRemovePreservesSharedState()
+{
+    // The same imported scene may be imported by more than one view. Removing
+    // it from one importer must NOT clear the Imported state or rootNodeRef:
+    // neither is restored by the update/reindex, and the other importing view
+    // still relies on them.
+
+    QSSGRenderLayer mainLayer;
+    QSSGRenderLayer importerB;
+    QSSGRenderLayer importerC;
+    mainLayer.ref(&rootNode);
+    importerB.ref(&rootNode);
+    importerC.ref(&rootNode);
+
+    auto *container = new QSSGRenderNode(QSSGRenderNode::Type::SceneRoot);
+    auto *sceneRoot = new QSSGRenderNode(QSSGRenderNode::Type::Node);
+    mainLayer.addChild(*container);
+    container->addChild(*sceneRoot);
+
+    rootNode.addChild(mainLayer);
+    rootNode.addChild(importerB);
+    rootNode.addChild(importerC);
+
+    importerB.setImportScene(*sceneRoot);
+    importerC.setImportScene(*sceneRoot);
+    rootNode.reindex();
+
+    auto *dummyB = importerB.importSceneNode;
+    auto *dummyC = importerC.importSceneNode;
+    QVERIFY(dummyB != nullptr);
+    QVERIFY(dummyC != nullptr);
+    QVERIFY(sceneRoot->getLocalState(QSSGRenderNode::LocalState::Imported));
+    QVERIFY(sceneRoot->rootNodeRef != nullptr);
+    QVERIFY(sceneRoot->h.hasId());
+
+    // Remove from B only.
+    importerB.removeImportScene(*sceneRoot);
+
+    // B no longer references the scene...
+    QVERIFY(dummyB->children.isEmpty());
+    // ...but C still does, and the shared state survives.
+    QVERIFY(!dummyC->children.isEmpty());
+    QCOMPARE(&dummyC->children.back(), sceneRoot);
+    QVERIFY(sceneRoot->getLocalState(QSSGRenderNode::LocalState::Imported));
+    QVERIFY(sceneRoot->rootNodeRef != nullptr);
+
+    // Teardown.
+    importerC.removeImportScene(*sceneRoot);
+    container->removeChild(*sceneRoot);
+    mainLayer.removeChild(*container);
+    rootNode.removeChild(mainLayer);
+    rootNode.removeChild(importerB);
+    rootNode.removeChild(importerC);
+    delete sceneRoot;
+    delete container;
 }
 
 QTEST_APPLESS_MAIN(tst_NodeIndexing)

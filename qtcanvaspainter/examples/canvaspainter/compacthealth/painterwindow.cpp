@@ -3,9 +3,11 @@
 
 #include "painterwindow.h"
 #include "qcanvasrhipaintdriver.h"
+
 #include <QPlatformSurfaceEvent>
-#include <QtCanvasPainter/QCanvasPainter>
-#include <QtCanvasPainter/QCanvasPainterFactory>
+
+#include <QCanvasPainter>
+#include <QCanvasPainterFactory>
 
 #if QT_CONFIG(vulkan)
 static QVulkanInstance g_vulkanInstance;
@@ -36,9 +38,7 @@ void PainterWindow::setFillColor(const QColor &color)
     requestUpdate();
 }
 
-void PainterWindow::cleanup()
-{
-}
+void PainterWindow::cleanup() { }
 
 void PainterWindow::updateSurfaceType()
 {
@@ -92,7 +92,8 @@ bool PainterWindow::event(QEvent *e)
         break;
 
     case QEvent::PlatformSurface:
-        if (static_cast<QPlatformSurfaceEvent *>(e)->surfaceEventType() == QPlatformSurfaceEvent::SurfaceAboutToBeDestroyed) {
+        if (static_cast<QPlatformSurfaceEvent *>(e)->surfaceEventType()
+            == QPlatformSurfaceEvent::SurfaceAboutToBeDestroyed) {
             cleanup();
             releaseSwapChain();
         }
@@ -163,16 +164,14 @@ void PainterWindow::init()
 
     if (!m_rhi)
         qFatal("Failed to create RHI backend");
-//![painterfactory]
+    //![painterfactory]
     if (!m_factory) {
         m_factory = new QCanvasPainterFactory;
         m_factory->create(m_rhi.get());
     }
-//![painterfactory]
+    //![painterfactory]
     m_sc.reset(m_rhi->newSwapChain());
-    m_ds.reset(m_rhi->newRenderBuffer(QRhiRenderBuffer::DepthStencil,
-                                      QSize(),
-                                      1,
+    m_ds.reset(m_rhi->newRenderBuffer(QRhiRenderBuffer::DepthStencil, QSize(), 1,
                                       QRhiRenderBuffer::UsedWithSwapChainOnly));
     m_sc->setWindow(this);
     m_sc->setDepthStencil(m_ds.get());

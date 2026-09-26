@@ -39,10 +39,57 @@
 
 QT_BEGIN_NAMESPACE
 
+using namespace Qt::StringLiterals;
+
 Q_LOGGING_CATEGORY(lcSvgHandler, "qt.svg")
 
-static const char *qt_inherit_text = "inherit";
-#define QT_INHERIT QLatin1String(qt_inherit_text)
+namespace {
+namespace tokens {
+// common
+constexpr auto inherit = "inherit"_L1;
+constexpr auto normal = "normal"_L1;
+// font-style
+constexpr auto italic = "italic"_L1;
+constexpr auto oblique = "oblique"_L1;
+// font-weight
+constexpr auto bold = "bold"_L1;
+constexpr auto bolder = "bolder"_L1;
+constexpr auto lighter = "lighter"_L1;
+// font-variant
+constexpr auto small_caps = "small-caps"_L1;
+// text-anchor
+constexpr auto start = "start"_L1;
+constexpr auto middle = "middle"_L1;
+constexpr auto end = "end"_L1;
+// comp-op
+namespace compOp{
+constexpr auto clear = "clear"_L1;
+constexpr auto src = "src"_L1;
+constexpr auto dst = "dst"_L1;
+constexpr auto srcOver = "src-over"_L1;
+constexpr auto dstOver = "dst-over"_L1;
+constexpr auto srcIn = "src-in"_L1;
+constexpr auto dstIn = "dst-in"_L1;
+constexpr auto srcOut = "src-out"_L1;
+constexpr auto dstOut = "dst-out"_L1;
+constexpr auto srcAtop = "src-atop"_L1;
+constexpr auto dstAtop = "dst-atop"_L1;
+constexpr auto xorOp = "xor"_L1;
+constexpr auto plus = "plus"_L1;
+constexpr auto multiply = "multiply"_L1;
+constexpr auto screen = "screen"_L1;
+constexpr auto overlay = "overlay"_L1;
+constexpr auto darken = "darken"_L1;
+constexpr auto lighten = "lighten"_L1;
+constexpr auto colorDodge = "color-dodge"_L1;
+constexpr auto colorBurn = "color-burn"_L1;
+constexpr auto hardLight = "hard-light"_L1;
+constexpr auto softLight = "soft-light"_L1;
+constexpr auto difference = "difference"_L1;
+constexpr auto exclusion = "exclusion"_L1;
+} // namespace compOp
+} // namespace tokens
+} // unnamed namespace
 
 static QByteArray prefixMessage(const QByteArray &msg, const QXmlStreamReader *r)
 {
@@ -467,7 +514,7 @@ static bool resolveColor(QStringView colorStr, QColor &color, QSvgHandler *handl
             }
             break;
         case 'i':
-            if (colorStrTr == QT_INHERIT)
+            if (colorStrTr == tokens::inherit)
                 return false;
             break;
         default:
@@ -557,7 +604,7 @@ static void parseBrush(QSvgNode *node,
         QSvgFillStyle *prop = new QSvgFillStyle;
 
         //fill-rule attribute handling
-        if (!attributes.fillRule.isEmpty() && attributes.fillRule != QT_INHERIT) {
+        if (!attributes.fillRule.isEmpty() && attributes.fillRule != tokens::inherit) {
             if (attributes.fillRule == QLatin1String("evenodd"))
                 prop->setFillRule(Qt::OddEvenFill);
             else if (attributes.fillRule == QLatin1String("nonzero"))
@@ -565,12 +612,12 @@ static void parseBrush(QSvgNode *node,
         }
 
         //fill-opacity attribute handling
-        if (!attributes.fillOpacity.isEmpty() && attributes.fillOpacity != QT_INHERIT) {
+        if (!attributes.fillOpacity.isEmpty() && attributes.fillOpacity != tokens::inherit) {
             prop->setFillOpacity(qMin(qreal(1.0), qMax(qreal(0.0), QSvgUtils::toDouble(attributes.fillOpacity))));
         }
 
         //fill attribute handling
-        if ((!attributes.fill.isEmpty()) && (attributes.fill != QT_INHERIT) ) {
+        if (!attributes.fill.isEmpty() && attributes.fill != tokens::inherit) {
             if (attributes.fill.startsWith(QLatin1String("url"))) {
                 QStringView value = attributes.fill.sliced(3);
                 QSvgStyleProperty *style = styleFromUrl(node, value);
@@ -581,7 +628,7 @@ static void parseBrush(QSvgNode *node,
                 } else {
                     QString id = idFromUrl(value).toString();
                     prop->setPaintStyleId(id);
-                    prop->setPaintStyleResolved(false);
+                    handler->pushUnresolvedStyle(prop);
                 }
             } else if (attributes.fill != QLatin1String("none")) {
                 QColor color;
@@ -735,7 +782,7 @@ static void parsePen(QSvgNode *node,
         QSvgStrokeStyle *prop = new QSvgStrokeStyle;
 
         //stroke attribute handling
-        if ((!attributes.stroke.isEmpty()) && (attributes.stroke != QT_INHERIT) ) {
+        if (!attributes.stroke.isEmpty() && attributes.stroke != tokens::inherit) {
             if (attributes.stroke.startsWith(QLatin1String("url"))) {
                  QStringView value = attributes.stroke.sliced(3);
                     QSvgStyleProperty *style = styleFromUrl(node, value);
@@ -746,7 +793,7 @@ static void parsePen(QSvgNode *node,
                     } else {
                         QString id = idFromUrl(value).toString();
                         prop->setPaintStyleId(id);
-                        prop->setPaintStyleResolved(false);
+                        handler->pushUnresolvedStyle(prop);
                     }
             } else if (attributes.stroke != QLatin1String("none")) {
                 QColor color;
@@ -758,13 +805,13 @@ static void parsePen(QSvgNode *node,
         }
 
         //stroke-width handling
-        if (!attributes.strokeWidth.isEmpty() && attributes.strokeWidth != QT_INHERIT) {
+        if (!attributes.strokeWidth.isEmpty() && attributes.strokeWidth != tokens::inherit) {
             QSvgUtils::LengthType lt;
             prop->setWidth(QSvgUtils::parseLength(attributes.strokeWidth, &lt));
         }
 
         //stroke-dasharray
-        if (!attributes.strokeDashArray.isEmpty() && attributes.strokeDashArray != QT_INHERIT) {
+        if (!attributes.strokeDashArray.isEmpty() && attributes.strokeDashArray != tokens::inherit) {
             if (attributes.strokeDashArray == QLatin1String("none")) {
                 prop->setDashArrayNone();
             } else {
@@ -812,7 +859,7 @@ static void parsePen(QSvgNode *node,
         }
 
         //stroke-dashoffset attribute handling
-        if (!attributes.strokeDashOffset.isEmpty() && attributes.strokeDashOffset != QT_INHERIT)
+        if (!attributes.strokeDashOffset.isEmpty() && attributes.strokeDashOffset != tokens::inherit)
             prop->setDashOffset(QSvgUtils::toDouble(attributes.strokeDashOffset));
 
         //vector-effect attribute handling
@@ -824,11 +871,11 @@ static void parsePen(QSvgNode *node,
         }
 
         //stroke-miterlimit
-        if (!attributes.strokeMiterLimit.isEmpty() && attributes.strokeMiterLimit != QT_INHERIT)
+        if (!attributes.strokeMiterLimit.isEmpty() && attributes.strokeMiterLimit != tokens::inherit)
             prop->setMiterLimit(QSvgUtils::toDouble(attributes.strokeMiterLimit));
 
         //stroke-opacity atttribute handling
-        if (!attributes.strokeOpacity.isEmpty() && attributes.strokeOpacity != QT_INHERIT)
+        if (!attributes.strokeOpacity.isEmpty() && attributes.strokeOpacity != tokens::inherit)
             prop->setOpacity(qMin(qreal(1.0), qMax(qreal(0.0), QSvgUtils::toDouble(attributes.strokeOpacity))));
 
         node->appendStyleProperty(prop, attributes.id);
@@ -878,12 +925,148 @@ static FontSizeSpec fontSizeSpec(QStringView spec)
     return FontSizeValue;
 }
 
+static std::optional<QFont::Style> parseFontStyle(QStringView s)
+{
+    // https://www.w3.org/TR/2018/REC-css-fonts-3-20180920/#font-style-prop
+    //   Value: normal | italic | oblique
+
+    if (s == tokens::normal)
+        return QFont::StyleNormal;
+    if (s == tokens::italic)
+        return QFont::StyleItalic;
+    if (s == tokens::oblique)
+        return QFont::StyleOblique;
+
+    return std::nullopt; // incl. empty and tokens::inherit
+}
+
+static std::optional<qreal> parseFontSize(QStringView s)
+{
+    // https://www.w3.org/TR/2018/REC-css-fonts-3-20180920/#font-size-prop
+    //   Value:           <absolute-size> | <relative-size> | <length-percentage>
+    //   <absolute-size>: [ xx-small | x-small | small | medium | large | x-large | xx-large ]
+    //   <relative-size>: [ larger | smaller ]
+
+    // TODO: Support <relative-size>s
+
+    if (s.isEmpty() || s == tokens::inherit)
+        return std::nullopt;
+
+    const FontSizeSpec spec = fontSizeSpec(s);
+    switch (spec) {
+    case FontSizeNone:
+        return std::nullopt;
+    case FontSizeValue: {
+        QSvgUtils::LengthType type;
+        bool ok = false;
+        qreal fs = QSvgUtils::parseLength(s, &type, &ok);
+        if (!ok)
+            return std::nullopt;
+        fs = QSvgUtils::convertToPixels(fs, true, type);
+        return (std::min)(fs, qreal(0xffff));
+    }
+    case XXSmall:
+    case XSmall:
+    case Small:
+    case Medium:
+    case Large:
+    case XLarge:
+    case XXLarge:
+        return sizeTable[spec];
+    }
+
+    Q_UNREACHABLE_RETURN(std::nullopt);
+}
+
+static std::optional<int> parseFontWeight(QStringView s)
+{
+    // https://www.w3.org/TR/2018/REC-css-fonts-3-20180920/#font-weight-prop
+    //   Value: normal | bold | bolder | lighter | 100 | 200 | 300 | 400 | 500 | 600 | 700 | 800 | 900
+
+    if (s.isEmpty() || s == tokens::inherit)
+        return std::nullopt;
+
+    if (s == tokens::normal)
+        return QFont::Normal;
+    if (s == tokens::bold)
+        return QFont::Bold;
+    if (s == tokens::bolder)
+        return QSvgFontStyle::BOLDER;
+    if (s == tokens::lighter)
+        return QSvgFontStyle::LIGHTER;
+
+    bool ok = false;
+    const int num = s.toInt(&ok);
+    if (ok)
+        return num;
+
+    return std::nullopt;
+}
+
+static std::optional<QFont::Capitalization> parseFontVariant(const QSvgAttributes &attributes)
+{
+    // https://www.w3.org/TR/2018/REC-css-fonts-3-20180920/#font-variant-prop
+    //   Value: normal |
+    //          none |
+    //          [
+    //              <common-lig-values> ||
+    //              <discretionary-lig-values> ||
+    //              <historical-lig-values> ||
+    //              <contextual-alt-values> ||
+    //              [ small-caps | all-small-caps | petite-caps | all-petite-caps | unicase | titling-caps ] ||
+    //              <numeric-figure-values> ||
+    //              <numeric-spacing-values> ||
+    //              <numeric-fraction-values> ||
+    //              ordinal ||
+    //              slashed-zero ||
+    //              <east-asian-variant-values> ||
+    //              <east-asian-width-values> ||
+    //              ruby ||
+    //              [ sub | super ]
+    //          ]
+
+    // TODO: implement parsing of sub-properties, and values other than normal and small-caps
+
+    auto s = attributes.fontVariant;
+
+    if (s == tokens::normal)
+        return QFont::MixedCase;
+    if (s == tokens::small_caps)
+        return QFont::SmallCaps;
+
+    return std::nullopt; // incl. empty and tokens::inherit
+}
+
+static std::optional<Qt::Alignment> parseTextAnchor(QStringView s)
+{
+    // https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Properties/text-anchor#formal_syntax
+    //   text-anchor =
+    //      start   |
+    //      middle  |
+    //      end
+
+    if (s == tokens::start)
+        return Qt::AlignLeft;
+    if (s == tokens::middle)
+        return Qt::AlignHCenter;
+    if (s == tokens::end)
+        return Qt::AlignRight;
+
+    return std::nullopt; // incl. empty and tokens::inherit
+}
+
 static void parseFont(QSvgNode *node,
                       const QSvgAttributes &attributes,
                       QSvgHandler *)
 {
-    if (attributes.fontFamily.isEmpty() && attributes.fontSize.isEmpty() && attributes.fontStyle.isEmpty() &&
-        attributes.fontWeight.isEmpty() && attributes.fontVariant.isEmpty() && attributes.textAnchor.isEmpty())
+    auto parsedFontSize = parseFontSize(attributes.fontSize);
+    auto parsedFontStyle = parseFontStyle(attributes.fontStyle);
+    auto parsedFontWeight = parseFontWeight(attributes.fontWeight);
+    auto parsedFontVariant = parseFontVariant(attributes);
+    auto parsedTextAnchor = parseTextAnchor(attributes.textAnchor);
+
+    if (attributes.fontFamily.isEmpty() && !parsedFontSize && !parsedFontStyle &&
+        !parsedFontWeight && !parsedFontVariant && !parsedTextAnchor)
         return;
 
     QSvgFontStyle *fontStyle = nullptr;
@@ -897,75 +1080,27 @@ static void parseFont(QSvgNode *node,
     }
     if (!fontStyle)
         fontStyle = new QSvgFontStyle;
-    if (!attributes.fontFamily.isEmpty() && attributes.fontFamily != QT_INHERIT) {
+    if (!attributes.fontFamily.isEmpty() && attributes.fontFamily != tokens::inherit) {
         QStringView family = attributes.fontFamily.trimmed();
         if (!family.isEmpty() && (family.at(0) == QLatin1Char('\'') || family.at(0) == QLatin1Char('\"')))
             family = family.mid(1, family.size() - 2);
         fontStyle->setFamily(family.toString());
     }
 
-    if (!attributes.fontSize.isEmpty() && attributes.fontSize != QT_INHERIT) {
-        // TODO: Support relative sizes 'larger' and 'smaller'.
-        const FontSizeSpec spec = fontSizeSpec(attributes.fontSize);
-        switch (spec) {
-        case FontSizeNone:
-            break;
-        case FontSizeValue: {
-            QSvgUtils::LengthType type;
-            qreal fs = QSvgUtils::parseLength(attributes.fontSize, &type);
-            fs = QSvgUtils::convertToPixels(fs, true, type);
-            fontStyle->setSize(qMin(fs, qreal(0xffff)));
-        }
-            break;
-        default:
-            fontStyle->setSize(sizeTable[spec]);
-            break;
-        }
-    }
+    if (parsedFontSize)
+        fontStyle->setSize(*parsedFontSize);
 
-    if (!attributes.fontStyle.isEmpty() && attributes.fontStyle != QT_INHERIT) {
-        if (attributes.fontStyle == QLatin1String("normal")) {
-            fontStyle->setStyle(QFont::StyleNormal);
-        } else if (attributes.fontStyle == QLatin1String("italic")) {
-            fontStyle->setStyle(QFont::StyleItalic);
-        } else if (attributes.fontStyle == QLatin1String("oblique")) {
-            fontStyle->setStyle(QFont::StyleOblique);
-        }
-    }
+    if (parsedFontStyle)
+        fontStyle->setStyle(*parsedFontStyle);
 
-    if (!attributes.fontWeight.isEmpty() && attributes.fontWeight != QT_INHERIT) {
-        bool ok = false;
-        const int weightNum = attributes.fontWeight.toInt(&ok);
-        if (ok) {
-            fontStyle->setWeight(weightNum);
-        } else {
-            if (attributes.fontWeight == QLatin1String("normal")) {
-                fontStyle->setWeight(QFont::Normal);
-            } else if (attributes.fontWeight == QLatin1String("bold")) {
-                fontStyle->setWeight(QFont::Bold);
-            } else if (attributes.fontWeight == QLatin1String("bolder")) {
-                fontStyle->setWeight(QSvgFontStyle::BOLDER);
-            } else if (attributes.fontWeight == QLatin1String("lighter")) {
-                fontStyle->setWeight(QSvgFontStyle::LIGHTER);
-            }
-        }
-    }
+    if (parsedFontWeight)
+        fontStyle->setWeight(*parsedFontWeight);
 
-    if (!attributes.fontVariant.isEmpty() && attributes.fontVariant != QT_INHERIT) {
-        if (attributes.fontVariant == QLatin1String("normal"))
-            fontStyle->setVariant(QFont::MixedCase);
-        else if (attributes.fontVariant == QLatin1String("small-caps"))
-            fontStyle->setVariant(QFont::SmallCaps);
-    }
+    if (parsedFontVariant)
+        fontStyle->setVariant(*parsedFontVariant);
 
-    if (!attributes.textAnchor.isEmpty() && attributes.textAnchor != QT_INHERIT) {
-        if (attributes.textAnchor == QLatin1String("start"))
-            fontStyle->setTextAnchor(Qt::AlignLeft);
-        if (attributes.textAnchor == QLatin1String("middle"))
-           fontStyle->setTextAnchor(Qt::AlignHCenter);
-        else if (attributes.textAnchor == QLatin1String("end"))
-           fontStyle->setTextAnchor(Qt::AlignRight);
-    }
+    if (parsedTextAnchor)
+        fontStyle->setTextAnchor(*parsedTextAnchor);
 
     node->appendStyleProperty(fontStyle, attributes.id);
 }
@@ -990,7 +1125,7 @@ static void parseVisibility(QSvgNode *node,
 {
     QSvgNode *parent = node->parent();
 
-    if (parent && (attributes.visibility.isEmpty() || attributes.visibility == QT_INHERIT))
+    if (parent && (attributes.visibility.isEmpty() || attributes.visibility == tokens::inherit))
         node->setVisible(parent->isVisible());
     else if (attributes.visibility == QLatin1String("hidden") || attributes.visibility == QLatin1String("collapse")) {
         node->setVisible(false);
@@ -1158,59 +1293,56 @@ static void parseOpacity(QSvgNode *node,
 
 static QPainter::CompositionMode svgToQtCompositionMode(const QStringView op)
 {
-#define NOOP qDebug()<<"Operation: "<<op<<" is not implemented"
-    if (op == QLatin1String("clear")) {
+    if (op == tokens::compOp::clear)
         return QPainter::CompositionMode_Clear;
-    } else if (op == QLatin1String("src")) {
+    else if (op == tokens::compOp::src)
         return QPainter::CompositionMode_Source;
-    } else if (op == QLatin1String("dst")) {
+    else if (op == tokens::compOp::dst)
         return QPainter::CompositionMode_Destination;
-    } else if (op == QLatin1String("src-over")) {
+    else if (op == tokens::compOp::srcOver)
         return QPainter::CompositionMode_SourceOver;
-    } else if (op == QLatin1String("dst-over")) {
+    else if (op == tokens::compOp::dstOver)
         return QPainter::CompositionMode_DestinationOver;
-    } else if (op == QLatin1String("src-in")) {
+    else if (op == tokens::compOp::srcIn)
         return QPainter::CompositionMode_SourceIn;
-    } else if (op == QLatin1String("dst-in")) {
+    else if (op == tokens::compOp::dstIn)
         return QPainter::CompositionMode_DestinationIn;
-    } else if (op == QLatin1String("src-out")) {
+    else if (op == tokens::compOp::srcOut)
         return QPainter::CompositionMode_SourceOut;
-    } else if (op == QLatin1String("dst-out")) {
+    else if (op == tokens::compOp::dstOut)
         return QPainter::CompositionMode_DestinationOut;
-    } else if (op == QLatin1String("src-atop")) {
+    else if (op == tokens::compOp::srcAtop)
         return QPainter::CompositionMode_SourceAtop;
-    } else if (op == QLatin1String("dst-atop")) {
+    else if (op == tokens::compOp::dstAtop)
         return QPainter::CompositionMode_DestinationAtop;
-    } else if (op == QLatin1String("xor")) {
+    else if (op == tokens::compOp::xorOp)
         return QPainter::CompositionMode_Xor;
-    } else if (op == QLatin1String("plus")) {
+    else if (op == tokens::compOp::plus)
         return QPainter::CompositionMode_Plus;
-    } else if (op == QLatin1String("multiply")) {
+    else if (op == tokens::compOp::multiply)
         return QPainter::CompositionMode_Multiply;
-    } else if (op == QLatin1String("screen")) {
+    else if (op == tokens::compOp::screen)
         return QPainter::CompositionMode_Screen;
-    } else if (op == QLatin1String("overlay")) {
+    else if (op == tokens::compOp::overlay)
         return QPainter::CompositionMode_Overlay;
-    } else if (op == QLatin1String("darken")) {
+    else if (op == tokens::compOp::darken)
         return QPainter::CompositionMode_Darken;
-    } else if (op == QLatin1String("lighten")) {
+    else if (op == tokens::compOp::lighten)
         return QPainter::CompositionMode_Lighten;
-    } else if (op == QLatin1String("color-dodge")) {
+    else if (op == tokens::compOp::colorDodge)
         return QPainter::CompositionMode_ColorDodge;
-    } else if (op == QLatin1String("color-burn")) {
+    else if (op == tokens::compOp::colorBurn)
         return QPainter::CompositionMode_ColorBurn;
-    } else if (op == QLatin1String("hard-light")) {
+    else if (op == tokens::compOp::hardLight)
         return QPainter::CompositionMode_HardLight;
-    } else if (op == QLatin1String("soft-light")) {
+    else if (op == tokens::compOp::softLight)
         return QPainter::CompositionMode_SoftLight;
-    } else if (op == QLatin1String("difference")) {
+    else if (op == tokens::compOp::difference)
         return QPainter::CompositionMode_Difference;
-    } else if (op == QLatin1String("exclusion")) {
+    else if (op == tokens::compOp::exclusion)
         return QPainter::CompositionMode_Exclusion;
-    } else {
-        NOOP;
-    }
 
+    qCWarning(lcSvgHandler) << "Composition mode not supported : "_L1 << op;
     return QPainter::CompositionMode_SourceOver;
 }
 
@@ -1264,7 +1396,7 @@ static QSvgNode::DisplayMode displayStringToEnum(const QStringView str)
         return QSvgNode::TableCaptionMode;
     } else if (str == QLatin1String("none")) {
         return QSvgNode::NoneMode;
-    } else if (str == QT_INHERIT) {
+    } else if (str == tokens::inherit) {
         return QSvgNode::InheritMode;
     }
     return QSvgNode::BlockMode;
@@ -1492,7 +1624,7 @@ static QSvgNode *createAnimateColorNode(QSvgNode *parent,
     return anim;
 }
 
-static QSvgNode *createAimateMotionNode(QSvgNode *parent,
+static QSvgNode *createAnimateMotionNode(QSvgNode *parent,
                                         const QXmlStreamAttributes &attributes,
                                         QSvgHandler *)
 {
@@ -1892,9 +2024,11 @@ static QSvgNode *createImageNode(QSvgNode *parent,
     if (image.format() == QImage::Format_ARGB32)
         image = image.convertToFormat(QImage::Format_ARGB32_Premultiplied);
 
+    if (filenameType != LoadedFromFile)
+        filename = QString();
     QSvgNode *img = new QSvgImage(parent,
                                   image,
-                                  filenameType == LoadedFromFile ? filename : QString{},
+                                  filename,
                                   QRectF(nx,
                                          ny,
                                          nwidth,
@@ -2319,8 +2453,8 @@ static QSvgNode *createFeGaussianBlurNode(QSvgNode *parent,
     qreal stdDeviationX = 0;
     qreal stdDeviationY = 0;
     if (stdDeviationString.contains(QStringLiteral(" "))){
-        stdDeviationX = qMax(0., QSvgUtils::toDouble(stdDeviationString.split(u" ").first()));
-        stdDeviationY = qMax(0., QSvgUtils::toDouble(stdDeviationString.split(u" ").last()));
+        stdDeviationX = qMax(0., QSvgUtils::toDouble(stdDeviationString.split(u" ").constFirst()));
+        stdDeviationY = qMax(0., QSvgUtils::toDouble(stdDeviationString.split(u" ").constLast()));
     } else {
         stdDeviationY = stdDeviationX = qMax(0., QSvgUtils::toDouble(stdDeviationString));
     }
@@ -3179,12 +3313,11 @@ static QSvgNode *createTspanNode(QSvgNode *parent,
 
 static QSvgNode *createUseNode(QSvgNode *parent,
                                const QXmlStreamAttributes &attributes,
-                               QSvgHandler *)
+                               QSvgHandler *handler)
 {
     QStringView linkId     = attributes.value(QLatin1String("xlink:href"));
     const QStringView xStr = attributes.value(QLatin1String("x"));
     const QStringView yStr = attributes.value(QLatin1String("y"));
-    QSvgStructureNode *group = nullptr;
 
     if (linkId.isEmpty())
         linkId = attributes.value(QLatin1String("href"));
@@ -3196,38 +3329,36 @@ static QSvgNode *createUseNode(QSvgNode *parent,
     case QSvgNode::Group:
     case QSvgNode::Switch:
     case QSvgNode::Mask:
-        group = static_cast<QSvgStructureNode*>(parent);
+    case QSvgNode::Symbol:
+    case QSvgNode::Marker:
+    case QSvgNode::Pattern:
         break;
     default:
-        break;
+        qCWarning(lcSvgHandler, "<use> element %ls in wrong context!", qUtf16Printable(linkIdStr));
+        return 0;
     }
 
-    if (group) {
-        QPointF pt;
-        if (!xStr.isNull() || !yStr.isNull()) {
-            QSvgUtils::LengthType type;
-            qreal nx = QSvgUtils::parseLength(xStr, &type);
-            nx = QSvgUtils::convertToPixels(nx, true, type);
+    QPointF pt;
+    if (!xStr.isNull() || !yStr.isNull()) {
+        QSvgUtils::LengthType type;
+        qreal nx = QSvgUtils::parseLength(xStr, &type);
+        nx = QSvgUtils::convertToPixels(nx, true, type);
 
-            qreal ny = QSvgUtils::parseLength(yStr, &type);
-            ny = QSvgUtils::convertToPixels(ny, true, type);
-            pt = QPointF(nx, ny);
-        }
-
-        QSvgNode *link = group->scopeNode(linkIdStr);
-        if (link) {
-            if (parent->isDescendantOf(link))
-                qCWarning(lcSvgHandler, "link %ls is recursive!", qUtf16Printable(linkIdStr));
-
-            return new QSvgUse(pt, parent, link);
-        }
-
-        //delay link resolving, link might have not been created yet
-        return new QSvgUse(pt, parent, linkIdStr);
+        qreal ny = QSvgUtils::parseLength(yStr, &type);
+        ny = QSvgUtils::convertToPixels(ny, true, type);
+        pt = QPointF(nx, ny);
     }
 
-    qCWarning(lcSvgHandler, "<use> element %ls in wrong context!", qUtf16Printable(linkIdStr));
-    return 0;
+    QSvgNode *link = handler->document()->namedNode(linkIdStr);
+    if (link) {
+        if (parent->isDescendantOf(link))
+            qCWarning(lcSvgHandler, "link %ls is recursive!", qUtf16Printable(linkIdStr));
+
+        return new QSvgUse(pt, parent, link);
+    }
+
+    //delay link resolving, link might have not been created yet
+    return new QSvgUse(pt, parent, linkIdStr);
 }
 
 static QSvgNode *createVideoNode(QSvgNode *parent,
@@ -3375,7 +3506,7 @@ static AnimationMethod findAnimationFactory(const QStringView name, QtSvg::Optio
     case 'a':
         if (ref == QLatin1String("nimate")) return createAnimateNode;
         if (ref == QLatin1String("nimateColor")) return createAnimateColorNode;
-        if (ref == QLatin1String("nimateMotion")) return createAimateMotionNode;
+        if (ref == QLatin1String("nimateMotion")) return createAnimateMotionNode;
         if (ref == QLatin1String("nimateTransform")) return createAnimateTransformNode;
         break;
     default:
@@ -3525,7 +3656,6 @@ QSvgHandler::QSvgHandler(QXmlStreamReader *const reader, QtSvg::Options options,
 void QSvgHandler::init()
 {
     m_doc = 0;
-    m_style = 0;
     m_animEnd = 0;
     m_defaultCoords = QSvgUtils::LT_PX;
     m_defaultPen = QPen(Qt::black, 1, Qt::SolidLine, Qt::FlatCap, Qt::SvgMiterJoin);
@@ -3533,13 +3663,13 @@ void QSvgHandler::init()
     parse();
 }
 
-static bool detectPatternCycles(const QSvgNode *node, QList<const QSvgNode *> active = {})
+static bool detectPatternCycles(const QSvgNode *node, QList<const QSvgNode *> &linkable)
 {
     QSvgFillStyle *fillStyle = static_cast<QSvgFillStyle*>
         (node->styleProperty(QSvgStyleProperty::FILL));
     if (fillStyle && fillStyle->style() && fillStyle->style()->type() == QSvgStyleProperty::PATTERN) {
         QSvgPatternStyle *patternStyle = static_cast<QSvgPatternStyle *>(fillStyle->style());
-        if (active.contains(patternStyle->patternNode()))
+        if (linkable.contains(patternStyle->patternNode()))
             return true;
     }
 
@@ -3547,61 +3677,91 @@ static bool detectPatternCycles(const QSvgNode *node, QList<const QSvgNode *> ac
         (node->styleProperty(QSvgStyleProperty::STROKE));
     if (strokeStyle && strokeStyle->style() && strokeStyle->style()->type() == QSvgStyleProperty::PATTERN) {
         QSvgPatternStyle *patternStyle = static_cast<QSvgPatternStyle *>(strokeStyle->style());
-        if (active.contains(patternStyle->patternNode()))
+        if (linkable.contains(patternStyle->patternNode()))
             return true;
     }
 
     return false;
 }
 
-static bool detectCycles(const QSvgNode *node, QList<const QSvgNode *> active = {})
+/* The function goes through a node and its descendants to
+ * find any circular references in the parsed SVG file. It
+ * is important for this to happen non-recursively to avoid
+ * stack overflows.
+ * The function maintains two lists of nodes. The list "linkable"
+ * is used to track patterns and uses because these are the nodes
+ * that can be referenced by other nodes.
+ * Example :
+ * <pattern id="pat1" />
+ *  <rect fill="url(#pat1)" />
+ * </pattern>
+ *
+ * The other list of nodes is a stack to traverse the tree
+ * non-recursively, the std::pair stored in the stack will
+ * indicate whether a pattern or use has been visited and
+ * added to the "linkable" list or not. If the bool is set to true,
+ * this element can be popped out from the "linkable" list. */
+static bool detectCycles(const QSvgNode *n)
 {
-    if (Q_UNLIKELY(!node))
+    if (Q_UNLIKELY(!n))
         return false;
-    switch (node->type()) {
-    case QSvgNode::Doc:
-    case QSvgNode::Group:
-    case QSvgNode::Defs:
-    case QSvgNode::Pattern:
-    {
-        if (node->type() == QSvgNode::Pattern)
-            active.append(node);
 
-        auto *g = static_cast<const QSvgStructureNode*>(node);
-        for (auto &node : g->renderers()) {
-            if (detectCycles(node.get(), active))
-                return true;
-        }
-    }
-    break;
-    case QSvgNode::Use:
-    {
-        if (active.contains(node))
-            return true;
+    QList<const QSvgNode *> linkable;
+    using NodeState = std::pair<const QSvgNode *, bool>;
+    QStack<NodeState> nodes;
+    nodes.push({n, false});
 
-        auto *u = static_cast<const QSvgUse*>(node);
-        auto *target = u->link();
-        if (target) {
-            active.append(u);
-            if (detectCycles(target, active))
-                return true;
+    do {
+        auto current = nodes.pop();
+        if (current.second) {
+            Q_ASSERT(!linkable.isEmpty() && current.first == linkable.back());
+            linkable.pop_back();
+            continue;
         }
-    }
-    break;
-    case QSvgNode::Rect:
-    case QSvgNode::Ellipse:
-    case QSvgNode::Circle:
-    case QSvgNode::Line:
-    case QSvgNode::Path:
-    case QSvgNode::Polygon:
-    case QSvgNode::Polyline:
-    case QSvgNode::Tspan:
-        if (detectPatternCycles(node, active))
-            return true;
+
+        switch (current.first->type()) {
+        case QSvgNode::Doc:
+        case QSvgNode::Group:
+        case QSvgNode::Defs:
+        case QSvgNode::Pattern:
+        {
+            if (current.first->type() == QSvgNode::Pattern) {
+                linkable.append(current.first);
+                nodes.push({current.first, true});
+            }
+            auto *g = static_cast<const QSvgStructureNode*>(current.first);
+            for (auto it = g->renderers().crbegin(); it != g->renderers().crend(); it++)
+                nodes.push({it->get(), false});
+        }
         break;
-    default:
+        case QSvgNode::Use:
+        {
+            if (linkable.contains(current.first))
+                return true;
+            auto *u = static_cast<const QSvgUse*>(current.first);
+            auto *target = u->link();
+            if (target) {
+                linkable.append(u);
+                nodes.push({u, true});
+                nodes.push({target, false});
+            }
+        }
         break;
-    }
+        case QSvgNode::Rect:
+        case QSvgNode::Ellipse:
+        case QSvgNode::Circle:
+        case QSvgNode::Line:
+        case QSvgNode::Path:
+        case QSvgNode::Polygon:
+        case QSvgNode::Polyline:
+        case QSvgNode::Tspan:
+            if (detectPatternCycles(current.first, linkable))
+                return true;
+            break;
+        default:
+            break;
+        }
+    } while (!nodes.isEmpty());
     return false;
 }
 
@@ -3657,7 +3817,11 @@ void QSvgHandler::parse()
             break;
         }
     }
-    resolvePaintServers(m_doc);
+
+    if (!m_doc)
+        return;
+
+    resolvePaintServers();
     resolveNodes();
     if (detectCyclesAndWarn(m_doc)) {
         delete m_doc;
@@ -3834,7 +3998,7 @@ bool QSvgHandler::startElement(const QStringView localName,
     } else if (StyleFactoryMethod method = findStyleFactoryMethod(localName)) {
         QSvgStyleProperty *prop = method(m_nodes.top(), attributes, this);
         if (prop) {
-            m_style = prop;
+            m_style.reset(prop);
             m_nodes.top()->appendStyleProperty(prop, someId(attributes));
         } else {
             const QByteArray msg = QByteArrayLiteral("Could not parse node: ") + localName.toLocal8Bit();
@@ -3886,37 +4050,32 @@ bool QSvgHandler::endElement(const QStringView localName)
     if (node == Graphics)
         m_nodes.pop();
     else if (m_style && !m_skipNodes.isEmpty() && m_skipNodes.top() != Style)
-        m_style = 0;
+        m_style.reset();
 
     return ((localName == QLatin1String("svg")) && (node != Doc));
 }
 
-void QSvgHandler::resolvePaintServers(QSvgNode *node, int nestedDepth)
+void QSvgHandler::resolvePaintServers()
 {
-    if (!node || (node->type() != QSvgNode::Doc && node->type() != QSvgNode::Group
-        && node->type() != QSvgNode::Defs && node->type() != QSvgNode::Switch)) {
-        return;
-    }
-
-    QSvgStructureNode *structureNode = static_cast<QSvgStructureNode *>(node);
-
-    for (auto &node : structureNode->renderers()) {
-        QSvgFillStyle *fill = static_cast<QSvgFillStyle *>(node->styleProperty(QSvgStyleProperty::FILL));
-        if (fill && !fill->isPaintStyleResolved()) {
+    for (QSvgStyleProperty *prop : std::as_const(m_unresolvedStyles)) {
+        if (prop->type() == QSvgStyleProperty::FILL) {
+            QSvgFillStyle *fill = static_cast<QSvgFillStyle *>(prop);
             QString id = fill->paintStyleId();
-            QSvgPaintStyleProperty *style = structureNode->styleProperty(id);
+            if (id.startsWith(QLatin1Char('#')))
+                id.slice(1);
+            QSvgPaintStyleProperty *style = m_doc->namedStyle(id);
             if (style) {
                 fill->setFillStyle(style);
             } else {
                 qCWarning(lcSvgHandler, "%s", msgCouldNotResolveProperty(id, xml).constData());
                 fill->setBrush(Qt::NoBrush);
             }
-        }
-
-        QSvgStrokeStyle *stroke = static_cast<QSvgStrokeStyle *>(node->styleProperty(QSvgStyleProperty::STROKE));
-        if (stroke && !stroke->isPaintStyleResolved()) {
+        } else if (prop->type() == QSvgStyleProperty::STROKE) {
+            QSvgStrokeStyle *stroke = static_cast<QSvgStrokeStyle *>(prop);
             QString id = stroke->paintStyleId();
-            QSvgPaintStyleProperty *style = structureNode->styleProperty(id);
+            if (id.startsWith(QLatin1Char('#')))
+                id.slice(1);
+            QSvgPaintStyleProperty *style = m_doc->namedStyle(id);
             if (style) {
                 stroke->setStyle(style);
             } else {
@@ -3924,10 +4083,9 @@ void QSvgHandler::resolvePaintServers(QSvgNode *node, int nestedDepth)
                 stroke->setStroke(Qt::NoBrush);
             }
         }
-
-        if (nestedDepth < 2048)
-            resolvePaintServers(node.get(), nestedDepth + 1);
     }
+
+    m_unresolvedStyles.clear();
 }
 
 void QSvgHandler::resolveNodes()
@@ -3943,8 +4101,7 @@ void QSvgHandler::resolveNodes()
             if (t != QSvgNode::Doc && t != QSvgNode::Defs && t != QSvgNode::Group && t != QSvgNode::Switch)
                 continue;
 
-            QSvgStructureNode *group = static_cast<QSvgStructureNode *>(parent);
-            QSvgNode *link = group->scopeNode(useNode->linkId());
+            QSvgNode *link = m_doc->namedNode(useNode->linkId());
             if (!link) {
                 qCWarning(lcSvgHandler, "link #%s is undefined!", qPrintable(useNode->linkId()));
                 continue;
@@ -4048,6 +4205,11 @@ QColor QSvgHandler::currentColor() const
         return m_colorStack.top();
     else
         return QColor(0, 0, 0);
+}
+
+void QSvgHandler::pushUnresolvedStyle(QSvgStyleProperty *prop)
+{
+    m_unresolvedStyles.append(prop);
 }
 
 #ifndef QT_NO_CSSPARSER

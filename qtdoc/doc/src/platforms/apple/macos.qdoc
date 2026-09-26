@@ -72,8 +72,9 @@
     To install or build Qt, follow the general \l{Getting Started with Qt}
     {getting started with Qt} guide.
 
-    You can also follow \l{Alternative ways of installing Qt for macOS} for information on
-    how to install Qt from Homebrew.
+    You can also follow \l{Qt for \macos - Alternative ways of installing Qt}
+    {Alternative ways of installing Qt for macOS} for information on how to
+    install Qt from Homebrew.
 
     \section2 Generating Xcode Project Files
 
@@ -670,6 +671,8 @@
     structure:
 
     \image deployment-mac-bundlestructure.png
+           {macOS app bundle structure showing Contents folder with Frameworks,
+           MacOs, Resources, PlugIns, and configuration files}
 
     The bundle provides many advantages to the user:
     \list
@@ -954,6 +957,7 @@
     \table
     \row
     \li \inlineimage deployment-mac-application.png
+                     {macOS Finder showing the deployed app bundle with plugin folders}
     \li
     The additional code in \c tools/plugandpaint/mainwindow.cpp also
     enables us to view the plugins in the Finder, as shown in the image.

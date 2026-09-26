@@ -505,6 +505,11 @@ void PhysicalDevice::SetupBackendDeviceToggles(dawn::platform::Platform* platfor
                                true);
     }
 
+    if (gpu_info::IsAMD(vendorId)) {
+        // crbug.com/508265321: Nested subgroupMin/Max operations cause a crash in the AMD driver.
+        deviceToggles->Default(Toggle::CollapseSubgroupMinMax, true);
+    }
+
     if (gpu_info::IsApple(vendorId)) {
         deviceToggles->Default(Toggle::MetalFillEmptyOcclusionQueriesWithZero, true);
 
@@ -514,6 +519,9 @@ void PhysicalDevice::SetupBackendDeviceToggles(dawn::platform::Platform* platfor
         if ([*mDevice supportsFamily:static_cast<::MTLGPUFamily>(1008)]) {
             deviceToggles->Default(Toggle::MetalSerializeTimestampGenerationAndResolution, true);
         }
+
+        // TODO(517225032): Gate on macOS version when a fix is released.
+        deviceToggles->Default(Toggle::MetalFixU32DivMod, true);
     }
 
     // Local testing shows the workaround is needed on AMD Radeon HD 8870M (gcn-1) MacOS 12.1;

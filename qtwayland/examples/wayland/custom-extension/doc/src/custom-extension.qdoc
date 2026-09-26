@@ -12,7 +12,9 @@
  * the \c wayland-scanner tool converts this to glue code in C. Qt expands on this with the
  * \c qtwaylandscanner, which generates additional glue code in Qt and C++.
  *
- * \image custom-extension.png
+ * \image custom-extension.png {Custom compositor with two client windows
+ *        labeled "QML Client" and "C++ Client", with colored panels for spin
+ *        and bounce requests}
  *
  * The Custom Extension example shows how to use these tools to extend the Wayland protocol and
  * send custom requests and events between a Wayland client and a server.

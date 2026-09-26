@@ -11,8 +11,6 @@
 
 QT_BEGIN_NAMESPACE
 
-#define C_D() auto *d = static_cast<QCanvasCustomBrushPrivate*>(baseData.get())
-#define C_CD() const auto *d = static_cast<QCanvasCustomBrushPrivate*>(baseData.get())
 
 static QShader getCustomShader(const QString &name)
 {
@@ -201,8 +199,8 @@ QDebug operator<<(QDebug dbg, const QCanvasCustomBrush &)
 
 void QCanvasCustomBrush::setFragmentShader(const QString &fragmentShader)
 {
-    auto *d = QCanvasCustomBrushPrivate::get(this);
     detach();
+    auto *d = QCanvasCustomBrushPrivate::get(this);
     d->fragmentShader = getCustomShader(fragmentShader);
 }
 
@@ -212,8 +210,8 @@ void QCanvasCustomBrush::setFragmentShader(const QString &fragmentShader)
 
 void QCanvasCustomBrush::setFragmentShader(const QShader &fragmentShader)
 {
-    auto *d = QCanvasCustomBrushPrivate::get(this);
     detach();
+    auto *d = QCanvasCustomBrushPrivate::get(this);
     d->fragmentShader = fragmentShader;
 }
 
@@ -225,8 +223,8 @@ void QCanvasCustomBrush::setFragmentShader(const QShader &fragmentShader)
 
 void QCanvasCustomBrush::setVertexShader(const QString &vertexShader)
 {
-    auto *d = QCanvasCustomBrushPrivate::get(this);
     detach();
+    auto *d = QCanvasCustomBrushPrivate::get(this);
     d->vertexShader = getCustomShader(vertexShader);
 }
 
@@ -236,8 +234,8 @@ void QCanvasCustomBrush::setVertexShader(const QString &vertexShader)
 
 void QCanvasCustomBrush::setVertexShader(const QShader &vertexShader)
 {
-    auto *d = QCanvasCustomBrushPrivate::get(this);
     detach();
+    auto *d = QCanvasCustomBrushPrivate::get(this);
     d->vertexShader = vertexShader;
 }
 
@@ -261,8 +259,8 @@ bool QCanvasCustomBrush::timeRunning() const
 
 void QCanvasCustomBrush::setTimeRunning(bool running)
 {
-    auto *d = QCanvasCustomBrushPrivate::get(this);
     detach();
+    auto *d = QCanvasCustomBrushPrivate::get(this);
     d->timeRunning = running;
 }
 
@@ -273,8 +271,8 @@ void QCanvasCustomBrush::setTimeRunning(bool running)
 
 void QCanvasCustomBrush::setData1(const QVector4D &data)
 {
-    auto *d = QCanvasCustomBrushPrivate::get(this);
     detach();
+    auto *d = QCanvasCustomBrushPrivate::get(this);
     d->data[0] = data;
 }
 
@@ -285,8 +283,8 @@ void QCanvasCustomBrush::setData1(const QVector4D &data)
 
 void QCanvasCustomBrush::setData2(const QVector4D &data)
 {
-    auto *d = QCanvasCustomBrushPrivate::get(this);
     detach();
+    auto *d = QCanvasCustomBrushPrivate::get(this);
     d->data[1] = data;
 }
 
@@ -297,8 +295,8 @@ void QCanvasCustomBrush::setData2(const QVector4D &data)
 
 void QCanvasCustomBrush::setData3(const QVector4D &data)
 {
-    auto *d = QCanvasCustomBrushPrivate::get(this);
     detach();
+    auto *d = QCanvasCustomBrushPrivate::get(this);
     d->data[2] = data;
 }
 
@@ -309,8 +307,8 @@ void QCanvasCustomBrush::setData3(const QVector4D &data)
 
 void QCanvasCustomBrush::setData4(const QVector4D &data)
 {
-    auto *d = QCanvasCustomBrushPrivate::get(this);
     detach();
+    auto *d = QCanvasCustomBrushPrivate::get(this);
     d->data[3] = data;
 }
 

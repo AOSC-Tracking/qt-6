@@ -267,6 +267,8 @@ void ReflectionMapPass::renderPrep(QSSGRenderer &renderer, QSSGLayerRenderData &
                   QSSGRhiGraphicsPipelineState::Flag::DepthWriteEnabled,
                   QSSGRhiGraphicsPipelineState::Flag::BlendEnabled };
 
+    QSSG_ASSERT(data.reflectionProbesView.size() != 0, return);
+
     reflectionProbes = { data.reflectionProbesView.begin(), data.reflectionProbesView.end() };
     reflectionMapManager = data.requestReflectionMapManager();
 
@@ -309,7 +311,7 @@ void ReflectionMapPass::renderPass(QSSGRenderer &renderer)
     QSSG_ASSERT(layerData, return);
 
     QSSG_CHECK(reflectionMapManager);
-    if (!reflectionPassObjects.isEmpty() || !reflectionProbes.isEmpty()) {
+    if (!reflectionPassObjects.isEmpty() || (reflectionProbes.size() != 0)) {
         cb->debugMarkBegin(QByteArrayLiteral("Quick3D reflection map"));
         Q_TRACE_SCOPE(QSSG_renderPass, QStringLiteral("Quick3D reflection map"));
         Q_QUICK3D_PROFILE_START(QQuick3DProfiler::Quick3DRenderPass);
@@ -714,6 +716,8 @@ void ScreenMapPass::renderPrep(QSSGRenderer &renderer, QSSGLayerRenderData &data
     ps = data.getPipelineState();
     ps.samples = 1; // screen texture is always non-MSAA
     ps.viewCount = data.layer.viewCount; // but is a 2D texture array when multiview
+    if (ps.flags.testFlag(QSSGRhiGraphicsPipelineState::Flag::DepthTestEnabled))
+        ps.flags.setFlag(QSSGRhiGraphicsPipelineState::Flag::DepthWriteEnabled, true);
 
     if (layer.background == QSSGRenderLayer::Background::Color)
         clearColor = QColor::fromRgbF(layer.clearColor.x(), layer.clearColor.y(), layer.clearColor.z());
@@ -1420,6 +1424,24 @@ static quint32 ensureFreeNodes(quint32 value, quint32 multiple)
     return multipleOf;
 }
 
+bool OITRenderPass::linkedListRequiresResize(QSize dim)
+{
+    quint32 reported = reportedNodeCount;
+    quint32 current = currentNodeCount;
+    quint32 fullCount = dim.width() * dim.height();
+
+    // resize if reported is greater than current or if there are less than 50% of screen size nodes free
+    if (reported > current)
+        return true;
+    quint32 freeCount = current - reported;
+    if (freeCount < fullCount / 2)
+        return true;
+    // resize if we have more than 100% screen size free nodes
+    if (freeCount > fullCount)
+        return true;
+    return false;
+}
+
 void OITRenderPass::renderPrep(QSSGRenderer &renderer, QSSGLayerRenderData &data)
 {
     auto *ctx = renderer.contextInterface();
@@ -1551,9 +1573,9 @@ void OITRenderPass::renderPrep(QSSGRenderer &renderer, QSSGLayerRenderData &data
         dim.setWidth(dim.width() * ps.samples);
         dim.setHeight(dim.height() * ps.viewCount);
 #ifdef QSSG_OIT_USE_BUFFERS
-        if (!rhiAuxBuffer || rhiAuxBuffer->size() != (dim.width() * dim.height() * 4u) || currentNodeCount == 0 || currentNodeCount != reportedNodeCount)
+        if (!rhiAuxBuffer || rhiAuxBuffer->size() != (dim.width() * dim.height() * 4u) || currentNodeCount == 0 || linkedListRequiresResize(dim))
 #else
-        if (!rhiAuxiliaryImage->texture || rhiAuxiliaryImage->texture->pixelSize() != dim || currentNodeCount == 0 || currentNodeCount != reportedNodeCount)
+        if (!rhiAuxiliaryImage->texture || rhiAuxiliaryImage->texture->pixelSize() != dim || currentNodeCount == 0 || linkedListRequiresResize(dim))
 #endif
         {
             quint32 extraNodeCount = 0;
@@ -1568,14 +1590,15 @@ void OITRenderPass::renderPrep(QSSGRenderer &renderer, QSSGLayerRenderData &data
             if (rhiABufferImage->texture) {
                 const auto s = rhiAuxiliaryImage->texture->pixelSize();
                 if (s.width() * s.height() < dim.width() * dim.height())
-                    extraNodeCount = ensureFreeNodes(s.width() * s.height() - dim.width() * dim.height(), 32u * 1024u);
+                    extraNodeCount = ensureFreeNodes(dim.width() * dim.height() - s.width() * s.height(), 32u * 1024u);
                 rhiABufferImage->texture->destroy();
                 rhiAuxiliaryImage->texture->destroy();
             }
 #endif
 
             if (reportedNodeCount) {
-                currentNodeCount = reportedNodeCount + extraNodeCount;
+                // ensure there are at least 50% of the screen size nodes available
+                currentNodeCount = ensureFreeNodes(reportedNodeCount + extraNodeCount, dim.width() * dim.height() / 2);
             } else {
                 quint32 size = RenderHelpers::rhiCalculateABufferSize(data.layerPrepResult.textureDimensions(), 4 * ps.samples * ps.viewCount);
                 currentNodeCount = ensureFreeNodes(size * size, 32u * 1024u);
@@ -2132,8 +2155,10 @@ void UserRenderPass::preparePassImpl(QSSGRenderer &renderer,
                 ps.flags.setFlag(QSSGRhiGraphicsPipelineState::Flag::UsesScissor, *pipelineCommand->m_usesScissor);
             if (pipelineCommand->m_depthFunction)
                 ps.depthFunc = *pipelineCommand->m_depthFunction;
-            if (pipelineCommand->m_cullMode)
+            if (pipelineCommand->m_cullMode) {
                 ps.cullMode = *pipelineCommand->m_cullMode;
+                ps.userSetCullMode = true;
+            }
             if (pipelineCommand->m_polygonMode)
                 ps.polygonMode = *pipelineCommand->m_polygonMode;
             if (pipelineCommand->m_stencilOpFrontState)
@@ -2200,6 +2225,13 @@ void UserRenderPass::preparePassImpl(QSSGRenderer &renderer,
 
         // Even if the render target is valid we need to check if the textures are still compatible.
         if (!needsBuild) {
+            // Render target flags (e.g. PreserveColorContents) change the Metal load/store actions
+            // baked into the QRhiRenderPassDescriptor, so a flag change requires a full rebuild.
+            if (renderTarget->getRenderTarget() && renderTarget->getRenderTarget()->flags() != passNode->renderTargetFlags)
+                needsBuild = true;
+        }
+
+        if (!needsBuild) {
             // Color attachments
             for (int i = 0; i != oldAttachmentCount; ++i) {
                 const auto &colorAttachment = colorAttachments.at(i);
@@ -2221,6 +2253,13 @@ void UserRenderPass::preparePassImpl(QSSGRenderer &renderer,
                 needsBuild = needsBuild || needsRebuild(&(*depthTextureWrapper->texture()), targetSize, format);
             } else {
                 if (renderTarget->getDepthTexture() != nullptr)
+                    needsBuild = true;
+            }
+
+            // Flags are baked into the render pass descriptor.
+            if (!needsBuild) {
+                const auto &rt = renderTarget->getRenderTarget();
+                if (rt && rt->flags() != passNode->renderTargetFlags)
                     needsBuild = true;
             }
         }

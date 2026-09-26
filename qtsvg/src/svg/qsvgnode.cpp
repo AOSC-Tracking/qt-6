@@ -15,6 +15,8 @@
 
 #include <QtGui/private/qoutlinemapper_p.h>
 
+#include <vector>
+
 QT_BEGIN_NAMESPACE
 
 #ifndef QT_NO_DEBUG
@@ -171,7 +173,7 @@ QImage QSvgNode::drawIntoBuffer(QPainter *p, QSvgExtraStates &states, const QRec
     return proxy;
 }
 
-void QSvgNode::applyMaskToBuffer(QImage *proxy, QImage mask) const
+void QSvgNode::applyMaskToBuffer(QImage *proxy, const QImage &mask) const
 {
     QPainter proxyPainter(proxy);
     proxyPainter.setCompositionMode(QPainter::CompositionMode_DestinationOut);
@@ -179,7 +181,7 @@ void QSvgNode::applyMaskToBuffer(QImage *proxy, QImage mask) const
     proxyPainter.drawImage(QRect(0, 0, mask.width(), mask.height()), mask);
 }
 
-void QSvgNode::applyBufferToCanvas(QPainter *p, QImage proxy) const
+void QSvgNode::applyBufferToCanvas(QPainter *p, const QImage &proxy) const
 {
     QTransform xf = p->transform();
     p->resetTransform();
@@ -204,54 +206,54 @@ void QSvgNode::appendStyleProperty(QSvgStyleProperty *prop, const QString &id)
     QSvgDocument *doc;
     switch (prop->type()) {
     case QSvgStyleProperty::QUALITY:
-        m_style.quality = static_cast<QSvgQualityStyle*>(prop);
-        break;
+        m_style.quality.reset(static_cast<QSvgQualityStyle*>(prop));
+        return;
     case QSvgStyleProperty::FILL:
-        m_style.fill = static_cast<QSvgFillStyle*>(prop);
-        break;
+        m_style.fill.reset(static_cast<QSvgFillStyle*>(prop));
+        return;
     case QSvgStyleProperty::VIEWPORT_FILL:
-        m_style.viewportFill = static_cast<QSvgViewportFillStyle*>(prop);
-        break;
+        m_style.viewportFill.reset(static_cast<QSvgViewportFillStyle*>(prop));
+        return;
     case QSvgStyleProperty::FONT:
-        m_style.font = static_cast<QSvgFontStyle*>(prop);
-        break;
+        m_style.font.reset(static_cast<QSvgFontStyle*>(prop));
+        return;
     case QSvgStyleProperty::STROKE:
-        m_style.stroke = static_cast<QSvgStrokeStyle*>(prop);
-        break;
+        m_style.stroke.reset(static_cast<QSvgStrokeStyle*>(prop));
+        return;
     case QSvgStyleProperty::SOLID_COLOR:
-        m_style.solidColor = static_cast<QSvgSolidColorStyle*>(prop);
+        m_style.solidColor.reset(static_cast<QSvgSolidColorStyle*>(prop));
         doc = document();
         if (doc && !id.isEmpty())
             doc->addNamedStyle(id, m_style.solidColor);
-        break;
+        return;
     case QSvgStyleProperty::GRADIENT:
-        m_style.gradient = static_cast<QSvgGradientStyle*>(prop);
+        m_style.gradient.reset(static_cast<QSvgGradientStyle*>(prop));
         doc = document();
         if (doc && !id.isEmpty())
             doc->addNamedStyle(id, m_style.gradient);
-        break;
+        return;
     case QSvgStyleProperty::PATTERN:
-        m_style.pattern = static_cast<QSvgPatternStyle*>(prop);
+        m_style.pattern.reset(static_cast<QSvgPatternStyle*>(prop));
         doc = document();
         if (doc && !id.isEmpty())
             doc->addNamedStyle(id, m_style.pattern);
-        break;
+        return;
     case QSvgStyleProperty::TRANSFORM:
-        m_style.transform = static_cast<QSvgTransformStyle*>(prop);
-        break;
+        m_style.transform.reset(static_cast<QSvgTransformStyle*>(prop));
+        return;
     case QSvgStyleProperty::OPACITY:
-        m_style.opacity = static_cast<QSvgOpacityStyle*>(prop);
-        break;
+        m_style.opacity.reset(static_cast<QSvgOpacityStyle*>(prop));
+        return;
     case QSvgStyleProperty::COMP_OP:
-        m_style.compop = static_cast<QSvgCompOpStyle*>(prop);
-        break;
+        m_style.compop.reset(static_cast<QSvgCompOpStyle*>(prop));
+        return;
     case QSvgStyleProperty::OFFSET:
-        m_style.offset = static_cast<QSvgOffsetStyle*>(prop);
-        break;
-    default:
-        qDebug("QSvgNode: Trying to append unknown property!");
-        break;
-    }
+        m_style.offset.reset(static_cast<QSvgOffsetStyle*>(prop));
+        return;
+    };
+    qCWarning(lcSvgDraw,
+              "QSvgNode: Trying to append unknown property %d",
+              int(prop->type()));
 }
 
 void QSvgNode::applyStyle(QPainter *p, QSvgExtraStates &states) const
@@ -270,9 +272,16 @@ void QSvgNode::applyStyle(QPainter *p, QSvgExtraStates &states) const
 */
 void QSvgNode::applyStyleRecursive(QPainter *p, QSvgExtraStates &states) const
 {
-    if (parent())
-        parent()->applyStyleRecursive(p, states);
-    applyStyle(p, states);
+    std::vector<const QSvgNode *> parents;
+
+    const QSvgNode *current = this;
+    do {
+        parents.push_back(current);
+        current = current->parent();
+    } while (current);
+
+    for (auto i = parents.crbegin(); i != parents.crend(); ++i)
+        (*i)->applyStyle(p, states);
 }
 
 void QSvgNode::revertStyle(QPainter *p, QSvgExtraStates &states) const
@@ -282,9 +291,11 @@ void QSvgNode::revertStyle(QPainter *p, QSvgExtraStates &states) const
 
 void QSvgNode::revertStyleRecursive(QPainter *p, QSvgExtraStates &states) const
 {
-    revertStyle(p, states);
-    if (parent())
-        parent()->revertStyleRecursive(p, states);
+    const QSvgNode *current = this;
+    do {
+        current->revertStyle(p, states);
+        current = current->parent();
+    } while (current);
 }
 
 void QSvgNode::applyAnimatedStyle(QPainter *p, QSvgExtraStates &states) const
@@ -551,8 +562,6 @@ void QSvgNode::setMaskId(const QString &str)
 
 bool QSvgNode::hasMask() const
 {
-    if (document()->options().testFlag(QtSvg::Tiny12FeaturesOnly))
-        return false;
     return !m_maskId.isEmpty();
 }
 
@@ -568,8 +577,6 @@ void QSvgNode::setFilterId(const QString &str)
 
 bool QSvgNode::hasFilter() const
 {
-    if (document()->options().testFlag(QtSvg::Tiny12FeaturesOnly))
-        return false;
     return !m_filterId.isEmpty();
 }
 
@@ -585,8 +592,6 @@ void QSvgNode::setMarkerStartId(const QString &str)
 
 bool QSvgNode::hasMarkerStart() const
 {
-    if (document()->options().testFlag(QtSvg::Tiny12FeaturesOnly))
-        return false;
     return !m_markerStartId.isEmpty();
 }
 
@@ -602,8 +607,6 @@ void QSvgNode::setMarkerMidId(const QString &str)
 
 bool QSvgNode::hasMarkerMid() const
 {
-    if (document()->options().testFlag(QtSvg::Tiny12FeaturesOnly))
-        return false;
     return !m_markerMidId.isEmpty();
 }
 
@@ -619,15 +622,11 @@ void QSvgNode::setMarkerEndId(const QString &str)
 
 bool QSvgNode::hasMarkerEnd() const
 {
-    if (document()->options().testFlag(QtSvg::Tiny12FeaturesOnly))
-        return false;
     return !m_markerEndId.isEmpty();
 }
 
 bool QSvgNode::hasAnyMarker() const
 {
-    if (document()->options().testFlag(QtSvg::Tiny12FeaturesOnly))
-        return false;
     return hasMarkerStart() || hasMarkerMid() || hasMarkerEnd();
 }
 

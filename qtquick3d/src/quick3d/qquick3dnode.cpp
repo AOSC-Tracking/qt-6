@@ -199,7 +199,7 @@ float QQuick3DNode::z() const
 QQuaternion QQuick3DNode::rotation() const
 {
     Q_D(const QQuick3DNode);
-    return d->m_rotation;
+    return d->m_rotation.toQuaternion();
 }
 
 /*!
@@ -387,7 +387,7 @@ void QQuick3DNodePrivate::calculateGlobalVariables()
 {
     Q_Q(QQuick3DNode);
     m_sceneTransformDirty = false;
-    QMatrix4x4 localTransform = QSSGRenderNode::calculateTransformMatrix(m_position, m_scale, m_pivot, m_rotation);
+    QMatrix4x4 localTransform = QSSGRenderNode::calculateTransformMatrix(m_position, m_scale, m_pivot, m_rotation.toQuaternion());
     QQuick3DNode *parent = q->parentNode();
     if (!parent) {
         m_sceneTransform = localTransform;
@@ -577,8 +577,8 @@ void QQuick3DNodePrivate::markSceneTransformDirty()
     if (m_sceneTransformConnectionCount > 0 || m_directionConnectionCount > 0)
         emitChangesToSceneTransform();
 
-    auto children = QQuick3DObjectPrivate::get(q)->childItems;
-    for (auto child : children) {
+    const auto children = QQuick3DObjectPrivate::get(q)->childItems;
+    for (auto *child : children) {
         if (auto node = qobject_cast<QQuick3DNode *>(child)) {
             QQuick3DNodePrivate::get(node)->markSceneTransformDirty();
         }
@@ -827,11 +827,11 @@ QSSGRenderGraphObject *QQuick3DNode::updateSpatialNode(QSSGRenderGraphObject *no
         if (!transformIsDirty && !qFuzzyCompare(d->m_scale, QSSGUtils::mat44::getScale(spacialNode->localTransform)))
             transformIsDirty = true;
 
-        if (!transformIsDirty && !qFuzzyCompare(d->m_rotation, QQuaternion::fromRotationMatrix(QSSGUtils::mat44::getUpper3x3(spacialNode->localTransform))))
+        if (!transformIsDirty && d->m_rotation != QQuaternion::fromRotationMatrix(QSSGUtils::mat44::getUpper3x3(spacialNode->localTransform)))
             transformIsDirty = true;
 
         if (transformIsDirty) {
-            spacialNode->localTransform = QSSGRenderNode::calculateTransformMatrix(d->m_position, d->m_scale, d->m_pivot, d->m_rotation);
+            spacialNode->localTransform = QSSGRenderNode::calculateTransformMatrix(d->m_position, d->m_scale, d->m_pivot, d->m_rotation.toQuaternion());
             spacialNode->markDirty(QSSGRenderNode::DirtyFlag::TransformDirty);
         }
     }
@@ -1015,7 +1015,7 @@ QVector3D QQuick3DNode::eulerRotation() const
 {
     const Q_D(QQuick3DNode);
 
-    return d->m_rotation;
+    return d->m_rotation.toEulerAngles();
 }
 
 void QQuick3DNode::itemChange(ItemChange change, const ItemChangeData &)
@@ -1034,7 +1034,8 @@ void QQuick3DNode::itemChange(ItemChange change, const ItemChangeData &)
     only render nodes that belong to the specified layers.
     The value is a bitmask, where each bit represents a layer.
 
-    By default nodes are assigned to the \c main layer, which is \l {ContentLayer.Layer0}{Layer0}.
+    By default nodes are assigned to the \c main layer, which is
+    \l {ContentLayer}{ContentLayer.Layer0}.
 
     \sa ContentLayer
 */

@@ -16,6 +16,9 @@
 
 QT_BEGIN_NAMESPACE
 
+QSvgRefCounted::~QSvgRefCounted()
+    = default;
+
 QSvgExtraStates::QSvgExtraStates()
     : fillOpacity(1.0),
       strokeOpacity(1.0),
@@ -30,8 +33,10 @@ QSvgExtraStates::QSvgExtraStates()
 }
 
 QSvgStyleProperty::~QSvgStyleProperty()
-{
-}
+    = default;
+
+QSvgPaintStyleProperty::~QSvgPaintStyleProperty()
+    = default;
 
 void QSvgPaintStyleProperty::apply(QPainter *, const QSvgNode *, QSvgExtraStates &)
 {
@@ -51,6 +56,9 @@ QSvgQualityStyle::QSvgQualityStyle(int color)
 {
     Q_UNUSED(color);
 }
+
+QSvgQualityStyle::~QSvgQualityStyle()
+    = default;
 
 void QSvgQualityStyle::setImageRendering(ImageRendering hint) {
     m_imageRendering = hint;
@@ -93,12 +101,14 @@ QSvgFillStyle::QSvgFillStyle()
     , m_oldFillRule(Qt::WindingFill)
     , m_fillOpacity(1.0)
     , m_oldFillOpacity(0)
-    , m_paintStyleResolved(1)
     , m_fillRuleSet(0)
     , m_fillOpacitySet(0)
     , m_fillSet(0)
 {
 }
+
+QSvgFillStyle::~QSvgFillStyle()
+    = default;
 
 void QSvgFillStyle::setFillRule(Qt::FillRule f)
 {
@@ -114,14 +124,14 @@ void QSvgFillStyle::setFillOpacity(qreal opacity)
 
 void QSvgFillStyle::setFillStyle(QSvgPaintStyleProperty* style)
 {
-    m_style = style;
+    m_style.reset(style);
     m_fillSet = 1;
 }
 
 void QSvgFillStyle::setBrush(QBrush brush)
 {
     m_fill = std::move(brush);
-    m_style = nullptr;
+    m_style.reset();
     m_fillSet = 1;
 }
 
@@ -158,6 +168,9 @@ QSvgViewportFillStyle::QSvgViewportFillStyle(const QBrush &brush)
 {
 }
 
+QSvgViewportFillStyle::~QSvgViewportFillStyle()
+    = default;
+
 void QSvgViewportFillStyle::apply(QPainter *p, const QSvgNode *, QSvgExtraStates &)
 {
     m_oldFill = p->brush();
@@ -168,6 +181,9 @@ void QSvgViewportFillStyle::revert(QPainter *p, QSvgExtraStates &)
 {
     p->setBrush(m_oldFill);
 }
+
+const int QSvgFontStyle::LIGHTER;
+const int QSvgFontStyle::BOLDER;
 
 QSvgFontStyle::QSvgFontStyle(QSvgFont *font, QSvgDocument *doc)
     : m_svgFont(font)
@@ -192,6 +208,9 @@ QSvgFontStyle::QSvgFontStyle()
     , m_textAnchorSet(0)
 {
 }
+
+QSvgFontStyle::~QSvgFontStyle()
+    = default;
 
 void QSvgFontStyle::apply(QPainter *p, const QSvgNode *, QSvgExtraStates &states)
 {
@@ -220,9 +239,9 @@ void QSvgFontStyle::apply(QPainter *p, const QSvgNode *, QSvgExtraStates &states
 
     if (m_weightSet) {
         if (m_weight == BOLDER) {
-            states.fontWeight = qMin(states.fontWeight + 100, static_cast<int>(QFont::Black));
+            states.fontWeight = qMin(states.fontWeight, QFont::Weight::Black - 100) + 100;
         } else if (m_weight == LIGHTER) {
-            states.fontWeight = qMax(states.fontWeight - 100, static_cast<int>(QFont::Thin));
+            states.fontWeight = qMax(states.fontWeight, QFont::Weight::Thin + 100) - 100;
         } else {
             states.fontWeight = m_weight;
         }
@@ -248,7 +267,6 @@ QSvgStrokeStyle::QSvgStrokeStyle()
     , m_strokeDashOffset(0)
     , m_oldStrokeDashOffset(0)
     , m_style(0)
-    , m_paintStyleResolved(1)
     , m_vectorEffect(0)
     , m_oldVectorEffect(0)
     , m_strokeSet(0)
@@ -262,6 +280,9 @@ QSvgStrokeStyle::QSvgStrokeStyle()
     , m_vectorEffectSet(0)
 {
 }
+
+QSvgStrokeStyle::~QSvgStrokeStyle()
+    = default;
 
 void QSvgStrokeStyle::apply(QPainter *p, const QSvgNode *n, QSvgExtraStates &states)
 {
@@ -378,10 +399,18 @@ QSvgSolidColorStyle::QSvgSolidColorStyle(const QColor &color)
 {
 }
 
+QSvgSolidColorStyle::~QSvgSolidColorStyle()
+    = default;
+
 QSvgGradientStyle::QSvgGradientStyle(QGradient *grad)
     : m_gradient(grad)
     , m_gradientStopsSet(false)
 {
+}
+
+QSvgGradientStyle::~QSvgGradientStyle()
+{
+    delete m_gradient;
 }
 
 QBrush QSvgGradientStyle::brush(QPainter *, const QSvgNode *, QSvgExtraStates &)
@@ -416,6 +445,9 @@ QSvgPatternStyle::QSvgPatternStyle(QSvgPattern *pattern)
 
 }
 
+QSvgPatternStyle::~QSvgPatternStyle()
+    = default;
+
 QBrush QSvgPatternStyle::brush(QPainter *p, const QSvgNode *node, QSvgExtraStates &states)
 {
     QBrush b(m_pattern->patternImage(p, states, node));
@@ -427,6 +459,9 @@ QSvgTransformStyle::QSvgTransformStyle(const QTransform &trans)
     : m_transform(trans)
 {
 }
+
+QSvgTransformStyle::~QSvgTransformStyle()
+    = default;
 
 void QSvgTransformStyle::apply(QPainter *p, const QSvgNode *, QSvgExtraStates &)
 {
@@ -491,6 +526,9 @@ QSvgCompOpStyle::QSvgCompOpStyle(QPainter::CompositionMode mode)
 
 }
 
+QSvgCompOpStyle::~QSvgCompOpStyle()
+    = default;
+
 void QSvgCompOpStyle::apply(QPainter *p, const QSvgNode *, QSvgExtraStates &)
 {
     m_oldMode = p->compositionMode();
@@ -506,6 +544,9 @@ QSvgStyleProperty::Type QSvgCompOpStyle::type() const
 {
     return COMP_OP;
 }
+
+QSvgOffsetStyle::~QSvgOffsetStyle()
+    = default;
 
 void QSvgOffsetStyle::apply(QPainter *, const QSvgNode *, QSvgExtraStates &)
 {
@@ -525,6 +566,9 @@ QSvgOpacityStyle::QSvgOpacityStyle(qreal opacity)
 {
 
 }
+
+QSvgOpacityStyle::~QSvgOpacityStyle()
+    = default;
 
 void QSvgOpacityStyle::apply(QPainter *p, const QSvgNode *, QSvgExtraStates &)
 {

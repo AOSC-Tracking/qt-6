@@ -14,25 +14,25 @@ include(CMakePackageConfigHelpers)
 qt_add_library(${PROJECT_NAME}
 {{#models}}
 {{#model}}
-    {{#lambda.lowercase}}{{{classname}}}{{/lambda.lowercase}}.h
+    {{classFilename}}.h
 {{/model}}
 {{/models}}
 {{#apiInfo}}
 {{#apis}}
 {{#operations}}
-    {{#lambda.lowercase}}{{{classname}}}{{/lambda.lowercase}}.h
+    {{classFilename}}.h
 {{/operations}}
 {{/apis}}
 {{/apiInfo}}
 {{#models}}
 {{#model}}
-    {{#lambda.lowercase}}{{{classname}}}{{/lambda.lowercase}}.cpp
+    {{classFilename}}.cpp
 {{/model}}
 {{/models}}
 {{#apiInfo}}
 {{#apis}}
 {{#operations}}
-    {{#lambda.lowercase}}{{{classname}}}{{/lambda.lowercase}}.cpp
+    {{classFilename}}.cpp
 {{/operations}}
 {{/apis}}
 {{/apiInfo}}

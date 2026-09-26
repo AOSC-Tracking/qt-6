@@ -1,5 +1,6 @@
 // Copyright (C) 2018 The Qt Company Ltd.
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only
+// Qt-Security score:critical reason:network-protocol
 
 #include "qwaylandxdgshell.h"
 #include "qwaylandxdgshell_p.h"
@@ -1319,7 +1320,7 @@ void QWaylandXdgToplevelPrivate::handleAckConfigure(uint serial)
 
     m_lastAckedConfigure = config;
 
-    for (uint state : changedStates) {
+    for (uint state : std::as_const(changedStates)) {
         switch (state) {
         case state_maximized:
             emit q->maximizedChanged();
@@ -1948,10 +1949,16 @@ uint QWaylandXdgPopupPrivate::sendConfigure(const QRect &geometry)
     return serial;
 }
 
-void QWaylandXdgPopupPrivate::xdg_popup_destroy(QtWaylandServer::xdg_popup::Resource *resource)
+void QWaylandXdgPopupPrivate::xdg_popup_destroy_resource(QtWaylandServer::xdg_popup::Resource *resource)
 {
     Q_UNUSED(resource);
-    qWarning() << Q_FUNC_INFO << "Not implemented"; //TODO
+    Q_Q(QWaylandXdgPopup);
+    delete q;
+}
+
+void QWaylandXdgPopupPrivate::xdg_popup_destroy(QtWaylandServer::xdg_popup::Resource *resource)
+{
+    wl_resource_destroy(resource->handle);
 }
 
 void QWaylandXdgPopupPrivate::xdg_popup_grab(QtWaylandServer::xdg_popup::Resource *resource, wl_resource *seat, uint32_t serial)

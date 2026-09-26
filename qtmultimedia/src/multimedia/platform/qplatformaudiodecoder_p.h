@@ -17,8 +17,8 @@
 
 #include <QtMultimedia/qaudiobuffer.h>
 #include <QtMultimedia/qaudiodecoder.h>
-#include <QtCore/qurl.h>
 #include <QtCore/private/qglobal_p.h>
+#include <QtCore/qurl.h>
 
 QT_BEGIN_NAMESPACE
 
@@ -50,7 +50,7 @@ public:
 
     void sourceChanged();
 
-    void error(int error, const QString &errorString);
+    void error(QAudioDecoder::Error error, const QString &errorString);
     void clearError() { error(QAudioDecoder::NoError, QString()); }
 
     void bufferReady();

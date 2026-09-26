@@ -15,9 +15,9 @@
 // We mean it.
 //
 
-#include <QtCore/qlist.h>
-#include <QtMultimedia/qaudiodevice.h>
 #include <QtMultimedia/private/qplatformaudiodevices_p.h>
+#include <QtMultimedia/qaudiodevice.h>
+#include <QtCore/qlist.h>
 
 QT_BEGIN_NAMESPACE
 
@@ -41,6 +41,8 @@ public:
                                         QObject *parent) override;
 
     QLatin1String backendName() const override { return QLatin1String{ "PipeWire" }; }
+
+    bool hasCallbackApi() const override { return true; }
 
 private:
     QList<QAudioDevice> m_sourceDeviceList;

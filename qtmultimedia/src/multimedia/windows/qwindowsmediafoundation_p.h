@@ -50,16 +50,18 @@ private:
     bool m_valid = false;
 };
 
-class QMFRuntimeInit
+class Q_MULTIMEDIA_EXPORT QMFRuntimeInit
 {
     Q_DISABLE_COPY_MOVE(QMFRuntimeInit)
+
 public:
-    QMFRuntimeInit(QWindowsMediaFoundation *wmf);
+    QMFRuntimeInit();
+    explicit QMFRuntimeInit(QWindowsMediaFoundation *wmf);
     ~QMFRuntimeInit();
 
 private:
-    QWindowsMediaFoundation *m_wmf;
-    HRESULT m_initResult;
+    QWindowsMediaFoundation *const m_wmf;
+    const HRESULT m_initResult;
 };
 
 QT_END_NAMESPACE

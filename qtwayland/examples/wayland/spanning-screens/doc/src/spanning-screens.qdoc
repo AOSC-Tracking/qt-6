@@ -13,7 +13,8 @@
  * Spanning screens is a Wayland compositor example that maximizes clients across a top and a bottom
  * screen.
  *
- * \image spanning-screens.jpg
+ * \image spanning-screens.jpg {Two compositor windows with client spanning
+ *        across both displays}
  *
  * For an introduction to the basic principles of creating a \l{Qt Wayland Compositor} with Qt,
  * see the \l{Minimal QML}{Minimal QML example}.

@@ -18,6 +18,7 @@
 #include "qloggingcategory.h"
 
 QT_BEGIN_NAMESPACE
+namespace ranges = QtMultimediaPrivate::ranges;
 
 Q_STATIC_LOGGING_CATEGORY(qLcFFmpegEncoder, "qt.multimedia.ffmpeg.encoder");
 
@@ -103,14 +104,6 @@ void RecordingEngine::addVideoSource(QPlatformVideoSource *source, const QVideoF
             firstFrame.isValid() ? firstFrame.surfaceFormat() : source->frameFormat();
 
     Q_ASSERT(frameFormat.isValid());
-
-    if (firstFrame.isValid() && frameFormat.streamFrameRate() <= 0.f) {
-        const qint64 startTime = firstFrame.startTime();
-        const qint64 endTime = firstFrame.endTime();
-        if (startTime != -1 && endTime > startTime)
-            frameFormat.setStreamFrameRate(static_cast<qreal>(VideoFrameTimeBase)
-                                           / (endTime - startTime));
-    }
 
     std::optional<AVPixelFormat> hwPixelFormat = source->ffmpegHWPixelFormat()
             ? AVPixelFormat(*source->ffmpegHWPixelFormat())
@@ -321,8 +314,8 @@ bool RecordingEngine::allOfEncoders(F &&f) const
 {
     auto predicate = [&f](const auto &encoder) { return std::invoke(f, encoder.get()); };
 
-    return std::all_of(m_audioEncoders.cbegin(), m_audioEncoders.cend(), predicate)
-            && std::all_of(m_videoEncoders.cbegin(), m_videoEncoders.cend(), predicate);
+    return ranges::all_of(m_audioEncoders, predicate)
+            && ranges::all_of(m_videoEncoders, predicate);
 }
 } // namespace QFFmpeg
 

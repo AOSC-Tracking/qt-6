@@ -19,8 +19,11 @@ private:
 
 public:
     enum {
-        pass_parameter_by_value =
-                std::is_arithmetic<T>::value || std::is_pointer<T>::value || std::is_enum<T>::value
+        pass_parameter_by_value = std::disjunction_v<
+                                    std::is_arithmetic<T>,
+                                    std::is_pointer<T>,
+                                    std::is_enum<T>
+                                  >,
     };
 
     typedef typename std::conditional<pass_parameter_by_value, T, const T &>::type parameter_type;
@@ -45,8 +48,8 @@ public:
     }
 
     Q_NODISCARD_CTOR
-    explicit QArrayDataPointer(std::pair<QTypedArrayData<T> *, T *> adata, qsizetype n = 0) noexcept
-        : d(adata.first), ptr(adata.second), size(n)
+    explicit QArrayDataPointer(QTypedArrayAllocationResult<T> adata, qsizetype n = 0) noexcept
+        : d(adata.header), ptr(adata.ptr), size(n)
     {
     }
 
@@ -81,24 +84,14 @@ public:
 
     QT_MOVE_ASSIGNMENT_OPERATOR_IMPL_VIA_MOVE_AND_SWAP(QArrayDataPointer)
 
-    DataOps &operator*() noexcept
+    DataOps operator*() noexcept
     {
-        return *static_cast<DataOps *>(this);
+        return DataOps(*this);
     }
 
-    DataOps *operator->() noexcept
+    DataOps operator->() noexcept
     {
-        return static_cast<DataOps *>(this);
-    }
-
-    const DataOps &operator*() const noexcept
-    {
-        return *static_cast<const DataOps *>(this);
-    }
-
-    const DataOps *operator->() const noexcept
-    {
-        return static_cast<const DataOps *>(this);
+        return DataOps(*this);
     }
 
     ~QArrayDataPointer()

@@ -5,6 +5,7 @@
 
 #include <QtCore/quuid.h>
 #include <QtCore/private/qcomptr_p.h>
+#include <QtCore/private/qfunctions_win_p.h>
 #include <QtMultimedia/private/qcameradevice_p.h>
 #include <QtMultimedia/private/qcomtaskresource_p.h>
 #include <QtMultimedia/private/qwindowsmultimediautils_p.h>
@@ -84,6 +85,8 @@ HWND createMessageOnlyWindow()
 QWindowsVideoDevices::QWindowsVideoDevices(QPlatformMediaIntegration *integration)
     : QPlatformVideoDevices(integration)
 {
+    qt_win_ensureComInitializedOnThisThread();
+
     m_videoDeviceMsgWindow = createMessageOnlyWindow();
     if (m_videoDeviceMsgWindow) {
         SetWindowLongPtr(m_videoDeviceMsgWindow, GWLP_USERDATA, (LONG_PTR)this);
@@ -182,13 +185,13 @@ static std::optional<QCameraDevice> createCameraDevice(const QWindowsMediaFounda
     info->description = getString(device, MF_DEVSOURCE_ATTRIBUTE_FRIENDLY_NAME);
     info->id = getString(device, MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE_VIDCAP_SYMBOLIC_LINK).toUtf8();
 
-    IMFMediaSource *source = NULL;
-    HRESULT hr = device->ActivateObject(IID_PPV_ARGS(&source));
+    ComPtr<IMFMediaSource> source;
+    HRESULT hr = device->ActivateObject(IID_PPV_ARGS(source.GetAddressOf()));
     if (FAILED(hr))
         return {};
 
     ComPtr<IMFSourceReader> reader;
-    hr = wmf.mfCreateSourceReaderFromMediaSource(source, NULL, reader.GetAddressOf());
+    hr = wmf.mfCreateSourceReaderFromMediaSource(source.Get(), NULL, reader.GetAddressOf());
     if (FAILED(hr))
         return {};
 

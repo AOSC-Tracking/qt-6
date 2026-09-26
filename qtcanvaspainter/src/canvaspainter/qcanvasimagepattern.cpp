@@ -43,6 +43,8 @@ QT_BEGIN_NAMESPACE
     \endcode
 
     \image imagepattern_example_1.png
+           {Rounded square tiled with concentric-circle pattern and a green
+           diagonal-stripe border}
 
     \note When using image patterns, images are often scaled to smaller
     and it can be useful to set \l QCanvasPainter::ImageFlag::GenerateMipmaps
@@ -268,8 +270,8 @@ QPointF QCanvasImagePattern::startPosition() const
 
 void QCanvasImagePattern::setStartPosition(float x, float y)
 {
-    auto *d = QCanvasImagePatternPrivate::get(this);
     detach();
+    auto *d = QCanvasImagePatternPrivate::get(this);
     d->x = x;
     d->y = y;
     d->changed = true;
@@ -303,8 +305,8 @@ QSizeF QCanvasImagePattern::imageSize() const
 
 void QCanvasImagePattern::setImageSize(float width, float height)
 {
-    auto *d = QCanvasImagePatternPrivate::get(this);
     detach();
+    auto *d = QCanvasImagePatternPrivate::get(this);
     d->width = width;
     d->height = height;
     d->changed = true;
@@ -335,8 +337,8 @@ QCanvasImage QCanvasImagePattern::image() const
 
 void QCanvasImagePattern::setImage(const QCanvasImage &image)
 {
-    auto *d = QCanvasImagePatternPrivate::get(this);
     detach();
+    auto *d = QCanvasImagePatternPrivate::get(this);
     d->image = image;
     d->changed = true;
 }
@@ -359,8 +361,8 @@ float QCanvasImagePattern::rotation() const
 
 void QCanvasImagePattern::setRotation(float rotation)
 {
-    auto *d = QCanvasImagePatternPrivate::get(this);
     detach();
+    auto *d = QCanvasImagePatternPrivate::get(this);
     d->angle = rotation;
     d->changed = true;
 }
@@ -385,8 +387,8 @@ QColor QCanvasImagePattern::tintColor() const
 
 void QCanvasImagePattern::setTintColor(const QColor &color)
 {
-    auto *d = QCanvasImagePatternPrivate::get(this);
     detach();
+    auto *d = QCanvasImagePatternPrivate::get(this);
     d->tintColor = color;
     d->changed = true;
 }

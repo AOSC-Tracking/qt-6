@@ -47,6 +47,7 @@ public:
 
     wl_display *display = nullptr;
     wl_compositor *compositor = nullptr;
+    wl_subcompositor *subCompositor = nullptr;
     QMap<uint, wl_output *> m_outputs;
     QMap<wl_output *, MockXdgOutputV1 *> m_xdgOutputs;
     wl_shm *shm = nullptr;
@@ -57,6 +58,7 @@ public:
     ivi_application *iviApplication = nullptr;
     zwp_idle_inhibit_manager_v1 *idleInhibitManager = nullptr;
     QtWayland::zxdg_output_manager_v1 *xdgOutputManager = nullptr;
+    wl_data_device_manager *dataDeviceManager = nullptr;
 
     QList<MockSeat *> m_seats;
 

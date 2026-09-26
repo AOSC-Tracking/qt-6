@@ -38,6 +38,8 @@ QT_BEGIN_NAMESPACE
     \endcode
 
     \image image_example_1.png
+           {Green-tinted Qt logo drawn over a tiled background of small Qt
+           logos}
 
     In the above example the QImage is static and addImage() is called
     on every repaint. This is not a problem as when the image and flags

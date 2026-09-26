@@ -183,7 +183,8 @@ SPDX-License-Identifier = "CC-BY-4.0"
 [[annotations]]
 path = ["tests/baseline/data/shared/maps/cubemap_bc1.ktx",
         "tests/manual/reflectionprobe/cubemap_bc1.ktx",
-        "tests/baseline/data/shared/maps/miptester_etc2.ktx"]
+        "tests/baseline/data/shared/maps/miptester_etc2.ktx",
+        "tests/baseline/data/shared/maps/miptester_bc3.ktx"]
 precedence = "override"
 SPDX-FileCopyrightText = "Unknown"
 SPDX-License-Identifier = "CC0-1.0"
@@ -204,8 +205,15 @@ SPDX-FileCopyrightText = "Unknown"
 SPDX-License-Identifier = "CC0-1.0"
 
 [[annotations]]
-path = "examples/quick3d/xr_shared/assets/arrows.gltf"
+path = "tests/baseline/data/shared/obj/plane_prb_opacity.mtl"
 precedence = "override"
-comment = "can't be read in file"
+comment = "Can't be read in file"
 SPDX-FileCopyrightText = "Copyright (C) The Qt Company Ltd."
-SPDX-License-Identifier = "LicenseRef-Qt-Commercial OR BSD-3-Clause"
+SPDX-License-Identifier = "LicenseRef-Qt-Commercial OR GPL-3.0-only"
+
+[[annotations]]
+path = "tests/baseline/data/shared/obj/plane_prb_opacity.obj"
+precedence = "override"
+comment = "Can't be read in file"
+SPDX-FileCopyrightText = "Copyright (C) The Qt Company Ltd."
+SPDX-License-Identifier = "LicenseRef-Qt-Commercial OR GPL-3.0-only"

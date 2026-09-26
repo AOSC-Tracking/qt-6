@@ -311,7 +311,13 @@ bool QTextCursorPrivate::movePosition(QTextCursor::MoveOperation op, QTextCursor
     if (!blockIt.isValid())
         return false;
 
-    if (blockIt.textDirection() == Qt::RightToLeft) {
+    const QTextLayout *layout = blockLayout(blockIt);
+
+    Qt::LayoutDirection blockDirection = layout->textOption().textDirection();
+    if (blockDirection == Qt::LayoutDirectionAuto)
+        blockDirection = blockIt.textDirection();
+
+    if (blockDirection == Qt::RightToLeft) {
         if (op == QTextCursor::WordLeft)
             op = QTextCursor::NextWord;
         else if (op == QTextCursor::WordRight)
@@ -325,7 +331,6 @@ bool QTextCursorPrivate::movePosition(QTextCursor::MoveOperation op, QTextCursor
         }
     }
 
-    const QTextLayout *layout = blockLayout(blockIt);
     int relativePos = position - blockIt.position();
     QTextLine line;
     if (!priv->isInEditBlock())
@@ -960,7 +965,8 @@ QTextLayout *QTextCursorPrivate::blockLayout(QTextBlock &block) const{
     \value EndOfWord Move to the end of the current word.
     \value EndOfBlock Move to the end of the current block.
     \value NextBlock Move to the beginning of the next block.
-    \value NextCharacter Move to the next character.
+    \value NextCharacter Move to the next character. If text is selected, the first call
+    to \c{movePosition(NextCharacter, MoveAnchor)} deselects the text without moving the cursor.
     \value NextWord Move to the next word.
     \value Down Move down one line.
     \value Right Move right one character.

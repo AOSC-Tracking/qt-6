@@ -42,7 +42,6 @@ QT_BEGIN_NAMESPACE
     \endtable
 */
 
-#define G_D() auto *d = QCanvasGradientPrivate::get(this)
 #define DECONST(d) const_cast<QCanvasLinearGradientPrivate *>(d)
 
 class QCanvasLinearGradientPrivate : public QCanvasGradientPrivate
@@ -71,7 +70,7 @@ public:
 QCanvasLinearGradient::QCanvasLinearGradient()
     : QCanvasGradient(new QCanvasLinearGradientPrivate)
 {
-    G_D();
+    auto *d = QCanvasGradientPrivate::get(this);
     d->data.linear.sx = 0.0f;
     d->data.linear.sy = 0.0f;
     d->data.linear.ex = 0.0f;
@@ -89,7 +88,7 @@ QCanvasLinearGradient::QCanvasLinearGradient()
 QCanvasLinearGradient::QCanvasLinearGradient(float startX, float startY, float endX, float endY)
     : QCanvasGradient(new QCanvasLinearGradientPrivate)
 {
-    G_D();
+    auto *d = QCanvasGradientPrivate::get(this);
     d->data.linear.sx = startX;
     d->data.linear.sy = startY;
     d->data.linear.ex = endX;
@@ -106,7 +105,7 @@ QCanvasLinearGradient::QCanvasLinearGradient(float startX, float startY, float e
 QCanvasLinearGradient::QCanvasLinearGradient(QPointF start, QPointF end)
     : QCanvasGradient(new QCanvasLinearGradientPrivate)
 {
-    G_D();
+    auto *d = QCanvasGradientPrivate::get(this);
     d->data.linear.sx = float(start.x());
     d->data.linear.sy = float(start.y());
     d->data.linear.ex = float(end.x());
@@ -123,7 +122,7 @@ QCanvasLinearGradient::~QCanvasLinearGradient()
 
 QPointF QCanvasLinearGradient::startPosition() const
 {
-    G_D();
+    auto *d = QCanvasGradientPrivate::get(this);
     return QPointF(d->data.linear.sx,
                    d->data.linear.sy);
 }
@@ -134,8 +133,8 @@ QPointF QCanvasLinearGradient::startPosition() const
 
 void QCanvasLinearGradient::setStartPosition(float x, float y)
 {
-    G_D();
     detach();
+    auto *d = QCanvasGradientPrivate::get(this);
     d->data.linear.sx = x;
     d->data.linear.sy = y;
     d->dirty |= QCanvasGradientPrivate::DirtyFlag::Values;
@@ -154,7 +153,7 @@ void QCanvasLinearGradient::setStartPosition(float x, float y)
 
 QPointF QCanvasLinearGradient::endPosition() const
 {
-    G_D();
+    auto *d = QCanvasGradientPrivate::get(this);
     return QPointF(d->data.linear.ex,
                    d->data.linear.ey);
 }
@@ -165,8 +164,8 @@ QPointF QCanvasLinearGradient::endPosition() const
 
 void QCanvasLinearGradient::setEndPosition(float x, float y)
 {
-    G_D();
     detach();
+    auto *d = QCanvasGradientPrivate::get(this);
     d->data.linear.ex = x;
     d->data.linear.ey = y;
     d->dirty |= QCanvasGradientPrivate::DirtyFlag::Values;
@@ -253,7 +252,6 @@ void QCanvasLinearGradientPrivate::createLinearGradient(const QColor &iColor, co
     }
 }
 
-#undef G_D
 #undef DECONST
 
 QT_END_NAMESPACE

@@ -90,8 +90,9 @@ void CSSStyleRule::setSelectorText(const ExecutionContext* execution_context,
 
   const auto* context = MakeGarbageCollected<CSSParserContext>(
       ParserContext(execution_context->GetSecureContextMode()));
+  CSSStyleSheet* parent_stylesheet = parentStyleSheet();
   StyleSheetContents* parent_contents =
-      parentStyleSheet() ? parentStyleSheet()->Contents() : nullptr;
+      parent_stylesheet ? parent_stylesheet->Contents() : nullptr;
   HeapVector<CSSSelector> arena;
 
   NestingContext nesting_context = CalculateNestingContext(parentRule());
@@ -111,9 +112,13 @@ void CSSStyleRule::setSelectorText(const ExecutionContext* execution_context,
       new_style_rule->AddChildRule(child_rule->Renest(new_style_rule));
     }
   }
+
+  position_hint_ = ReplaceChildRuleInParentIfExists(
+      /*old_rule=*/style_rule_, new_style_rule, position_hint_);
+
   if (parent_contents) {
-    position_hint_ = parent_contents->ReplaceRuleIfExists(
-        style_rule_, new_style_rule, position_hint_);
+    parent_contents->NotifyRuleChanged(style_rule_);
+    parent_contents->NotifyRuleChanged(new_style_rule);
   }
 
   // Updates style_rule_, as well as any inner CSSOM wrappers.
